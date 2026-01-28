@@ -1,7 +1,7 @@
 #include <kernel/printk.h>
 #include <kernel/serial.h>
 #include <kernel/vga.h>
-#include <shell.h>
+#include <lib/shell.h>
 
 void kernel_main(void) {
     serial_init();

@@ -1,7 +1,7 @@
-#include "shell.h"
+#include <lib/shell.h>
 #include <kernel/printk.h>
 #include <kernel/kbd.h>
-#include <commands.h>
+#include <lib/commands.h>
 
 void shell_readline(char* buf, int max_len) {
     int len = 0;

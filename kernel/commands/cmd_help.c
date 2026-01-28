@@ -1,5 +1,5 @@
 #include <kernel/printk.h>
-#include <commands.h>
+#include <lib/commands.h>
 
 void cmd_help(int argc, char** argv) {
     (void)argc; (void)argv;

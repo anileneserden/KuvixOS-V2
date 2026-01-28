@@ -32,10 +32,13 @@ SRC_C = \
     kernel/serial.c \
     kernel/drivers/kbd.c \
     kernel/drivers/ps2.c \
+    kernel/layout/layout.c \
+    kernel/layout/trq.c \
     lib/shell/shell.c \
     lib/commands/commands.c \
     lib/service/service.c \
-    lib/service/service_registry.c
+    lib/service/service_registry.c \
+    lib/string/string.c
 
 # 2. OTOMATİK KOMUT TARAMA: kernel/commands/ altındaki tüm .c dosyalarını bulur
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)

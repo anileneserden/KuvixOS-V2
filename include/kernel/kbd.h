@@ -3,16 +3,20 @@
 
 #include <stdint.h>
 
-// Sürücüyü ilklendirir
+// Klavye düzeni yapısı
+typedef struct {
+    const char* name;
+    const uint8_t* normal;
+    const uint8_t* shift;
+} kbd_layout_t;
+
 void kbd_init(void);
-
-// Donanımı sorgular (Polling)
 void kbd_poll(void);
-
-// Kuyruktan bir karakter çeker (Yoksa 0 döner)
 char kbd_get_char(void);
-
-// Scancode işleme (Dahili kullanım için prototip)
 void kbd_handle_byte(uint8_t sc);
+
+// Layout yönetimi fonksiyonları
+void kbd_set_layout(const char* name);
+const kbd_layout_t* kbd_get_current_layout(void);
 
 #endif
