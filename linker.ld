@@ -2,29 +2,33 @@ ENTRY(_start)
 
 SECTIONS
 {
+    /* Kernel 1MB noktasından başlayacak */
     . = 1M;
 
-    .multiboot ALIGN(4K) : {
-        *(.multiboot)
-    }
-
-    .text : {
+    .text BLOCK(4K) : ALIGN(4K)
+    {
+        /* Multiboot header'ı dosyanın tam başında tutar */
+        KEEP(*(.multiboot))
         *(.text*)
     }
 
-    .rodata : {
+    .rodata BLOCK(4K) : ALIGN(4K)
+    {
         *(.rodata*)
     }
 
-    .data : {
+    .data BLOCK(4K) : ALIGN(4K)
+    {
         *(.data*)
     }
 
-    .bss : {
+    .bss BLOCK(4K) : ALIGN(4K)
+    {
         *(COMMON)
         *(.bss*)
     }
 
+    /* Yığın (Stack) alanı */
     .stack (NOLOAD) : {
         . = ALIGN(16);
         stack_bottom = .;

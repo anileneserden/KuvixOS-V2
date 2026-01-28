@@ -1,3 +1,4 @@
 #pragma once
 
-void printk(const char* str);
+// Değişken sayıda argüman desteği (...) eklendi
+void printk(const char* fmt, ...);
