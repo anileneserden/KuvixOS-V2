@@ -1,71 +1,61 @@
-#include "commands.h"
+#include <commands.h>
 #include <kernel/printk.h>
+#include <stddef.h>
 
-/* command prototypes */
-void cmd_help(int argc, char** argv);
-void cmd_service(int argc, char** argv);
+// Linker Script içindeki sembolleri alıyoruz
+extern command_t _cmd_start;
+extern command_t _cmd_end;
 
-typedef struct {
-    const char*   name;
-    command_fn_t  fn;
-} command_entry_t;
-
-static command_entry_t commands[] = {
-    { "help",    cmd_help    },
-    { "service", cmd_service },
-};
-
-static const int commands_count =
-    sizeof(commands) / sizeof(commands[0]);
-
-static int streq(const char* a, const char* b) {
-    while (*a && *b && *a == *b) {
-        a++; b++;
+// Kendi string karşılaştırma fonksiyonumuz (libc olmadığı için)
+static int k_streq(const char* a, const char* b) {
+    int i = 0;
+    while (a[i] && b[i]) {
+        if (a[i] != b[i]) return 0;
+        i++;
     }
-    return (*a == 0 && *b == 0);
+    return a[i] == 0 && b[i] == 0;
 }
 
-static int split_line(char* line, char** argv, int max) {
+// Satırı boşluklara göre argümanlara böler (echo merhaba dunya -> argc=3)
+static int split_line(char* line, char** argv, int max_args) {
     int argc = 0;
     char* p = line;
 
-    while (*p && argc < max) {
+    while (*p && argc < max_args) {
+        // Baştaki boşlukları atla
         while (*p == ' ') p++;
         if (!*p) break;
 
         argv[argc++] = p;
 
+        // Kelimenin sonuna kadar ilerle
         while (*p && *p != ' ') p++;
-        if (*p) *p++ = 0;
+
+        // Boşluk bulduysak kelimeyi bitir ve bir sonrakine geç
+        if (*p == ' ') {
+            *p = '\0';
+            p++;
+        }
     }
     return argc;
 }
 
 void commands_execute(char* line) {
-    char* argv[8];
-    int argc = split_line(line, argv, 8);
-    if (argc == 0) return;
+    char* argv[16]; // Maksimum 16 argüman desteği
+    int argc = split_line(line, argv, 16);
 
-    for (int i = 0; i < commands_count; i++) {
-        if (streq(argv[0], commands[i].name)) {
-            commands[i].fn(argc, argv);
+    if (argc == 0) return; // Boş satır
+
+    // Linker tarafından oluşturulan cmd_section tablosunda arama yapıyoruz
+    command_t* cmd = &_cmd_start;
+    
+    // Pointer aritmetiği ile _cmd_start'tan _cmd_end'e kadar tüm command_t yapılarını gez
+    for (; cmd < &_cmd_end; cmd++) {
+        if (k_streq(argv[0], cmd->name)) {
+            cmd->fn(argc, argv);
             return;
         }
     }
 
-    printk("Unknown command. Try 'help'. \n");
-}
-
-#include <kernel/printk.h>
-
-void cmd_help(int argc, char** argv) {
-    printk("KuvixOS V2 Yardim Menusu\n");
-    printk("help - Bu yardim mesajini gosterir\n");
-}
-
-void cmd_service(int argc, char** argv) {
-    // service.c'deki listeleme fonksiyonunu çağırabilirsin
-    // extern void services_list(void);
-    // services_list();
-    printk("Servis yonetimi henuz tam hazir degil.\n");
+    printk("Bilinmeyen komut: '%s'. Yardim icin 'help' yazin.\n", argv[0]);
 }

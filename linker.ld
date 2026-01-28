@@ -17,6 +17,14 @@ SECTIONS
         *(.rodata*)
     }
 
+    /* YENİ BÖLÜM: Komut tablosunu burada oluşturuyoruz */
+    .cmd_section : ALIGN(4K)
+    {
+        _cmd_start = .;          /* Başlangıç adresini işaretle */
+        KEEP(*(.cmd_section))    /* Tüm dosyalardaki bu bölümü topla */
+        _cmd_end = .;            /* Bitiş adresini işaretle */
+    }
+
     .data BLOCK(4K) : ALIGN(4K)
     {
         *(.data*)

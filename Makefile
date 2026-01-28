@@ -10,14 +10,12 @@ ISO    = iso
 KERNEL = $(BUILD)/kernel.elf
 IMAGE  = KuvixOS.iso
 
-# -Iinclude sayesinde #include <shell.h> gibi kullanımlar çalışır
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
           -Iinclude
 
 ASFLAGS = -m32
-# -z'den sonra parametreyi ekledik ve RWX uyarısını kapattık
 LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 
@@ -25,7 +23,7 @@ LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
 
 SRC_S = boot/boot.S
 
-# Buraya yeni eklediğimiz kbd.c, shell.c ve commands.c dosyalarını ekliyoruz
+# 1. Sabit çekirdek dosyaları
 SRC_C = \
     kernel/kmain.c \
     kernel/printk.c \
@@ -39,6 +37,11 @@ SRC_C = \
     lib/service/service.c \
     lib/service/service_registry.c
 
+# 2. OTOMATİK KOMUT TARAMA: kernel/commands/ altındaki tüm .c dosyalarını bulur
+COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
+SRC_C += $(COMMAND_SOURCES)
+
+# Nesne dosyaları listesi (Source dosyalarının build içindeki karşılıkları)
 OBJS = \
     $(SRC_S:%.S=$(BUILD)/%.o) \
     $(SRC_C:%.c=$(BUILD)/%.o)
