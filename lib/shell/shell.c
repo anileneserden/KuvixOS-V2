@@ -40,13 +40,16 @@ void shell_init(void) {
 
     char line[128];
     while (1) {
-        printk("KuvixOS> ");
+        // \n\n karakterlerini sildik, böylece imleç promptun hemen yanında bekler.
+        printk("KuvixOS> "); 
+        
         shell_readline(line, sizeof(line));
         
         if (line[0] != '\0') {
             commands_execute(line);
-            // KOMUTTAN SONRA SATIR ATLA:
-            printk("\n"); 
+            // Komut bittikten sonra yeni satıra geçmek iyidir ama 
+            // commands_execute zaten bir çıktı veriyorsa buna gerek kalmayabilir.
+            // printk("\n"); 
         }
     }
 }
