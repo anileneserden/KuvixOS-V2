@@ -1,31 +1,57 @@
 #include <kernel/vga.h>
 #include <arch/x86/io.h>
 
+// Eğer io.h içindeki outb bazen sorun çıkarıyorsa garantiye alalım
+#ifndef outb
+#define outb(port, val) __asm__ volatile ("outb %b0, %w1" : : "a"(val), "Nd"(port))
+#endif
+
 static uint16_t* const VGA_BUFFER = (uint16_t*)0xB8000;
 static size_t row = 0;
 static size_t col = 0;
 static uint8_t color = 0x0F; // Beyaz üstüne siyah
 
+/* --- Fonksiyon Prototipleri --- */
+// Derleyiciye bu fonksiyonun aşağıda olduğunu önceden bildiriyoruz
+void vga_update_cursor(int x, int y);
+
 static inline uint16_t vga_entry(char c, uint8_t color) {
     return (uint16_t)c | (uint16_t)color << 8;
 }
 
-// EKLEDİĞİMİZ FONKSİYON:
+/* --- Fonksiyon Tanımları --- */
+
 void vga_init(void) {
     row = 0;
     col = 0;
-    // Tüm ekranı boşluk karakteriyle temizleyelim
+    // Ekranı temizle
     for (size_t y = 0; y < 25; y++) {
         for (size_t x = 0; x < 80; x++) {
-            const size_t index = y * 80 + x;
-            VGA_BUFFER[index] = vga_entry(' ', color);
+            VGA_BUFFER[y * 80 + x] = vga_entry(' ', color);
         }
     }
+
+    // İmleci (Cursor) donanımsal olarak etkinleştir
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, (inb(0x3D5) & 0xC0) | 0);
+    outb(0x3D4, 0x0B);
+    outb(0x3D5, (inb(0x3D5) & 0xE0) | 15);
+
+    vga_update_cursor(0, 0);
+}
+
+void vga_update_cursor(int x, int y) {
+    uint16_t pos = y * 80 + x;
+
+    outb(0x3D4, 0x0F);
+    outb(0x3D5, (uint8_t)(pos & 0xFF));
+    outb(0x3D4, 0x0E);
+    outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
 }
 
 void vga_putc(char c) {
-    // Backspace desteği (Shell için çok önemli!)
     if (c == '\b') {
+        // Backspace: Bir geri git ve orayı boşalt
         if (col > 0) {
             col--;
         } else if (row > 0) {
@@ -33,27 +59,26 @@ void vga_putc(char c) {
             col = 79;
         }
         VGA_BUFFER[row * 80 + col] = vga_entry(' ', color);
-        return;
-    }
-
-    if (c == '\n') {
+    } 
+    else if (c == '\n') {
         col = 0;
         row++;
-        return;
+    } 
+    else {
+        VGA_BUFFER[row * 80 + col] = vga_entry(c, color);
+        col++;
     }
 
-    VGA_BUFFER[row * 80 + col] = vga_entry(c, color);
-    col++;
-
+    // Satır sonu kontrolü
     if (col >= 80) {
         col = 0;
         row++;
     }
-    
-    // Basit bir scrolling (kaydırma) mantığı eklenebilir, 
-    // şimdilik row taşarsa başa döner veya ekranda kalır.
+
+    // Scrolling (Basit kaydırma)
     if (row >= 25) {
-        row = 0; // Şimdilik basitçe başa dön
+        row = 24; // Şimdilik en alt satırda kalalım
+        // İleride tüm ekranı yukarı kaydıran memmove eklenebilir
     }
 
     vga_update_cursor(col, row);
@@ -63,14 +88,4 @@ void vga_print(const char* str) {
     while (*str) {
         vga_putc(*str++);
     }
-}
-
-void vga_update_cursor(int x, int y) {
-    uint16_t pos = y * 80 + x;
-
-    // VGA kontrol portları üzerinden imleç konumu güncellenir
-    outb(0x3D4, 0x0F);
-    outb(0x3D5, (uint8_t)(pos & 0xFF));
-    outb(0x3D4, 0x0E);
-    outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
 }
