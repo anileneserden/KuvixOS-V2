@@ -1,0 +1,12 @@
+# Build artifacts
+/build
+*.o
+*.elf
+*.iso
+
+# Editors
+.vscode/
+*.swp
+
+# OS junk
+.DS_Store
