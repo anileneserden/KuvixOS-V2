@@ -10,3 +10,7 @@
 
 # OS junk
 .DS_Store
+
+# Geçici durum ve diff dosyaları
+diff.txt
+status.txt
