@@ -30,6 +30,8 @@ SRC_C = \
     kernel/panic.c \
     kernel/vga.c \
     kernel/serial.c \
+	kernel/ramfs.c \
+	kernel/vfs.c \
     kernel/drivers/kbd.c \
     kernel/drivers/ps2.c \
 	kernel/drivers/vga_font.c \
