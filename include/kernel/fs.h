@@ -13,9 +13,10 @@ typedef struct fs_node {
     char name[128];
     uint32_t flags;
     uint32_t length;
-    read_type_t read;
-    finddir_type_t finddir;
-    struct fs_node *next;
+    uintptr_t data;         // EKLE: Dosya içeriğinin RAM adresi
+    read_type_t read;       
+    finddir_type_t finddir; 
+    struct fs_node *next;    
 } fs_node_t;
 
 extern fs_node_t *fs_root;

@@ -22,3 +22,16 @@ fs_node_t *init_ramfs(void) {
     
     return ram_root;
 }
+
+uint32_t ramfs_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buffer) {
+    if (!node->data || offset > node->length) return 0;
+
+    // Okunacak miktarı dosya boyutuyla sınırla
+    if (offset + size > node->length) {
+        size = node->length - offset;
+    }
+
+    // Bellekten hedef buffer'a veriyi aktar
+    memcpy(buffer, (uint8_t*)(node->data + offset), size);
+    return size;
+}
