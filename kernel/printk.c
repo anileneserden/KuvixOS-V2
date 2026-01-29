@@ -68,21 +68,37 @@ void printk(const char* fmt, ...) {
         // --- Format Belirleyiciler (%d, %s vb.) ---
         p++; 
         switch (*p) {
-            case 'c': {
-                vga_putc((char)va_arg(args, int));
-                break;
-            }
             case 's': {
                 char* s = va_arg(args, char*);
-                // String içindeki Türkçe karakterleri de yakalamak için printk'yı recursive çağırmak yerine 
-                // stringi karakter karakter basarken yukarıdaki UTF-8 mantığını buraya da kurmak gerekebilir.
-                // Şimdilik düz basıyoruz:
-                while (*s) vga_putc(*s++);
+                if (!s) s = "(null)";
+                while (*s) {
+                    vga_putc(*s);
+                    serial_putc(*s);
+                    s++;
+                }
                 break;
             }
             case 'd': print_int(va_arg(args, int), 10); break;
             case 'x': vga_putc('0'); vga_putc('x'); print_int(va_arg(args, int), 16); break;
-            default: vga_putc('%'); vga_putc(*p); break;
+            case 'c': {
+                char c = (char)va_arg(args, int);
+                vga_putc(c);
+                serial_putc(c);
+                break;
+            }
+            case '%': {
+                vga_putc('%');
+                serial_putc('%');
+                break;
+            }
+            default: {
+                // Bilinmeyen karakteri yutma, olduğu gibi bas
+                vga_putc('%');
+                vga_putc(*p);
+                serial_putc('%');
+                serial_putc(*p);
+                break;
+            }
         }
     }
     va_end(args);

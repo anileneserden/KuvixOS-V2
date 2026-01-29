@@ -92,21 +92,17 @@ void vga_print(const char* str) {
 }
 
 void vga_clear(void) {
-    // VGA metin modu belleği (0xB8000)
-    // 80 sütun * 25 satır = 2000 karakterlik yer kaplar.
     uint16_t *vga_buffer = (uint16_t *)0xB8000;
-    
-    // Siyah arka plan üzerine beyaz boşluk karakteri
-    // 0x07 -> Standart gri/beyaz renk
-    // ' ' -> Boşluk karakteri
     uint16_t empty_char = (0x0F << 8) | ' '; 
 
     for (int i = 0; i < 80 * 25; i++) {
         vga_buffer[i] = empty_char;
     }
     
-    // İmleci (cursor) en başa, yani (0,0) konumuna çekmeyi unutma
-    // Eğer vga_set_cursor gibi bir metodun varsa burada çağırabilirsin.
+    // İmleci ve koordinatları en başa çekiyoruz
+    row = 0;
+    col = 0;
+    vga_update_cursor(0, 0);
 }
 
 void vga_set_color(uint8_t new_color) {

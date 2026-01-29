@@ -4,38 +4,50 @@
 #include <kernel/serial.h>  // <--- BU EKSİK OLABİLİR (serial_received ve serial_getc için)
 #include <lib/commands.h>
 #include <kernel/vga_font.h>
+#include <kernel/vga.h>
 
 void shell_readline(char* buffer, int max_len) {
     int i = 0;
     while (i < max_len - 1) {
         char c = 0;
 
-        // 1. Önce seri porttan (konsoldan) veri var mı diye bak
-        if (serial_received()) { 
-            c = serial_getc();
-        } 
-        // 2. Yoksa klavyeden veri gelmiş mi diye bak
-        else if (kbd_has_character()) { 
+        kbd_poll(); 
+
+        if (kbd_has_character()) { 
             c = kbd_get_char();
+        } else if (serial_received()) {
+            c = serial_getc();
         }
 
-        if (c == 0) continue; // Hiçbir veri yoksa döngüye devam et
+        if (c == 0) continue;
 
-        // Karakter işleme mantığı
+        // 1. ENTER: Satırı bitir
         if (c == '\n' || c == '\r') {
             buffer[i] = '\0';
-            printk("\n");
+            vga_putc('\n');
+            serial_putc('\r'); // Seri portta yeni satır için \r\n gerekebilir
+            serial_putc('\n');
             break;
         } 
-        else if (c == '\b' || c == 127) { // 127 bazı konsollarda Backspace'dir
+        // 2. BACKSPACE: Karakteri sil
+        else if (c == '\b' || c == 8 || c == 127) { 
             if (i > 0) {
                 i--;
-                printk("\b \b");
+                // VGA ekranından sil
+                vga_putc('\b');
+                vga_putc(' ');
+                vga_putc('\b');
+                // Seri porttan (Terminal) sil
+                serial_putc('\b');
+                serial_putc(' ');
+                serial_putc('\b');
             }
         } 
+        // 3. YAZILABİLİR KARAKTERLER: Ekrana bas ve kaydet
         else if (c >= 32 && c <= 126) {
             buffer[i++] = c;
-            printk("%c", c); // Bu hem ekrana hem seri porta basar
+            vga_putc(c);
+            serial_putc(c);
         }
     }
 }

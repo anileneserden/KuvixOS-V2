@@ -7,7 +7,7 @@ void cmd_ls(int argc, char** argv) {
     (void)argc; (void)argv;
     if (!fs_root) return;
 
-    fs_node_t *curr = fs_root->next;
+    fs_node_t *curr = fs_current->next; // YENİ: Mevcut dizin neyse onu listele
     printk("Dizin listeleniyor: /\n");
     printk("Isim            Boyut       Tip\n----            -----       ---\n");
 

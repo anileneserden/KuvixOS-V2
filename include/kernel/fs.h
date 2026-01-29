@@ -20,6 +20,7 @@ typedef struct fs_node {
 } fs_node_t;
 
 extern fs_node_t *fs_root;
+extern fs_node_t *fs_current;
 
 uint32_t read_fs(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buffer);
 fs_node_t *finddir_fs(fs_node_t *node, char *name);

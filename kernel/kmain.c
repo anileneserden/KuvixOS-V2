@@ -28,6 +28,7 @@ void kernel_main(void) {
     fs_root = init_ramfs();
     
     if (fs_root != 0) {
+        fs_current = fs_root;
         printk("VFS: RamFS '/' uzerine baglandi. KOK: 0x%x\n", (uintptr_t)fs_root);
     } else {
         // Eğer burası 0 gelirse sistem çöker, önlem alalım
