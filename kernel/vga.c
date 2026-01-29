@@ -1,5 +1,6 @@
 #include <kernel/vga.h>
 #include <arch/x86/io.h>
+#include <stdint.h>
 
 // Eğer io.h içindeki outb bazen sorun çıkarıyorsa garantiye alalım
 #ifndef outb
@@ -88,4 +89,22 @@ void vga_print(const char* str) {
     while (*str) {
         vga_putc(*str++);
     }
+}
+
+void vga_clear(void) {
+    // VGA metin modu belleği (0xB8000)
+    // 80 sütun * 25 satır = 2000 karakterlik yer kaplar.
+    uint16_t *vga_buffer = (uint16_t *)0xB8000;
+    
+    // Siyah arka plan üzerine beyaz boşluk karakteri
+    // 0x07 -> Standart gri/beyaz renk
+    // ' ' -> Boşluk karakteri
+    uint16_t empty_char = (0x0F << 8) | ' '; 
+
+    for (int i = 0; i < 80 * 25; i++) {
+        vga_buffer[i] = empty_char;
+    }
+    
+    // İmleci (cursor) en başa, yani (0,0) konumuna çekmeyi unutma
+    // Eğer vga_set_cursor gibi bir metodun varsa burada çağırabilirsin.
 }

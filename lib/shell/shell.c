@@ -2,6 +2,7 @@
 #include <kernel/printk.h>
 #include <kernel/kbd.h>
 #include <lib/commands.h>
+#include <kernel/vga_font.h>
 
 void shell_readline(char* buf, int max_len) {
     int len = 0;
@@ -34,6 +35,7 @@ void shell_readline(char* buf, int max_len) {
 }
 
 void shell_init(void) {
+    vga_load_tr_font();
     kbd_init();
     printk("KuvixOS Shell V2 Hazir!\n");
     printk("Komutlar icin 'help' yazabilirsiniz.\n\n");

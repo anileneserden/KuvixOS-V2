@@ -9,21 +9,6 @@ static uint8_t shift_active = 0;
 static uint8_t caps_lock    = 0;
 static uint8_t e0_prefix    = 0;
 
-/* US Klavye Haritası */
-static const uint8_t us_norm[128] = {
-    0, 27,'1','2','3','4','5','6','7','8','9','0','-','=', '\b',
-    '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',
-    0, 'a','s','d','f','g','h','j','k','l',';','\'','`', 0,
-    '\\','z','x','c','v','b','n','m',',','.','/', 0, '*', 0, ' '
-};
-
-static const uint8_t us_shift[128] = {
-    0, 27,'!','@','#','$','%','^','&','*','(',')','_','+', '\b',
-    '\t','Q','W','E','R','T','Y','U','I','O','P','{','}','\n',
-    0, 'A','S','D','F','G','H','J','K','L',':','"','~', 0,
-    '|','Z','X','C','V','B','N','M','<','>','?', 0, '*', 0, ' '
-};
-
 void kbd_init(void) {
     shift_active = 0;
     caps_lock = 0;
@@ -76,7 +61,11 @@ void kbd_handle_byte(uint8_t sc) {
         return; // Ok tuşları vb. şimdilik pas geçildi
     }
 
-    uint8_t c = shift_active ? us_shift[sc] : us_norm[sc];
+    // Aktif layout pointer'ını alıyoruz (layout.c içindeki motoru tetikler)
+    const kbd_layout_t* layout = kbd_get_current_layout();
+    
+    // Artık sabit diziden değil, o anki layout'un içindeki diziden okuyoruz
+    uint8_t c = shift_active ? layout->shift[sc] : layout->normal[sc];
     if (!c) return;
 
     // Harf ise Caps Lock kontrolü

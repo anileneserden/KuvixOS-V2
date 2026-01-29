@@ -1,14 +1,15 @@
 #include <kernel/kbd.h>
-#include <lib/string.h> // k_streq için
+#include <lib/string.h> // strcmp burada tanımlı
 
-// Diğer dosyalardaki layout objelerini extern ile alıyoruz
+// Diğer dosyalardan layout objelerini alıyoruz
 extern kbd_layout_t layout_us;
 extern kbd_layout_t layout_trq;
 
-static kbd_layout_t* current_layout = &layout_us; // Varsayılan US
+static kbd_layout_t* current_layout = &layout_us;
 
 void kbd_set_layout(const char* name) {
-    if (k_streq(name, "trq")) {
+    // strcmp iki string aynıysa 0 döndürür
+    if (strcmp(name, "trq") == 0) {
         current_layout = &layout_trq;
     } else {
         current_layout = &layout_us;

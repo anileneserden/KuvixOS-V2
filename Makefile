@@ -32,7 +32,9 @@ SRC_C = \
     kernel/serial.c \
     kernel/drivers/kbd.c \
     kernel/drivers/ps2.c \
+	kernel/drivers/vga_font.c \
     kernel/layout/layout.c \
+	kernel/layout/us.c \
     kernel/layout/trq.c \
     lib/shell/shell.c \
     lib/commands/commands.c \
