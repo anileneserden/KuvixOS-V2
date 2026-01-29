@@ -43,4 +43,7 @@ SECTIONS
         . += 16K;
         stack_top = .;
     }
+
+    end = .;
+    _end = .;
 }

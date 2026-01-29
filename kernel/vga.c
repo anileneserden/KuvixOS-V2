@@ -10,7 +10,7 @@
 static uint16_t* const VGA_BUFFER = (uint16_t*)0xB8000;
 static size_t row = 0;
 static size_t col = 0;
-static uint8_t color = 0x0F; // Beyaz üstüne siyah
+uint8_t color = 0x0F; // Beyaz üstüne siyah
 
 /* --- Fonksiyon Prototipleri --- */
 // Derleyiciye bu fonksiyonun aşağıda olduğunu önceden bildiriyoruz
@@ -107,4 +107,8 @@ void vga_clear(void) {
     
     // İmleci (cursor) en başa, yani (0,0) konumuna çekmeyi unutma
     // Eğer vga_set_cursor gibi bir metodun varsa burada çağırabilirsin.
+}
+
+void vga_set_color(uint8_t new_color) {
+    color = new_color;
 }

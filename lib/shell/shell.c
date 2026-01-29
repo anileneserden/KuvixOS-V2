@@ -1,37 +1,43 @@
 #include <lib/shell.h>
 #include <kernel/printk.h>
 #include <kernel/kbd.h>
+#include <kernel/serial.h>  // <--- BU EKSİK OLABİLİR (serial_received ve serial_getc için)
 #include <lib/commands.h>
 #include <kernel/vga_font.h>
 
-void shell_readline(char* buf, int max_len) {
-    int len = 0;
-    while (len < max_len - 1) {
-        // Polling'i kernel ana döngüsünde de yapabiliriz ama
-        // şimdilik readline içinde donanımı dinleyelim.
-        kbd_poll(); 
+void shell_readline(char* buffer, int max_len) {
+    int i = 0;
+    while (i < max_len - 1) {
+        char c = 0;
 
-        char c = kbd_get_char();
-        if (c == 0) continue;
-
-        if (c == '\n') {
-            printk("\n");
-            buf[len] = '\0';
-            return;
+        // 1. Önce seri porttan (konsoldan) veri var mı diye bak
+        if (serial_received()) { 
+            c = serial_getc();
         } 
-        else if (c == '\b') {
-            if (len > 0) {
-                len--;
-                // VGA üzerinde geri silme: geri git, boşluk bas, geri git.
-                printk("\b \b"); 
+        // 2. Yoksa klavyeden veri gelmiş mi diye bak
+        else if (kbd_has_character()) { 
+            c = kbd_get_char();
+        }
+
+        if (c == 0) continue; // Hiçbir veri yoksa döngüye devam et
+
+        // Karakter işleme mantığı
+        if (c == '\n' || c == '\r') {
+            buffer[i] = '\0';
+            printk("\n");
+            break;
+        } 
+        else if (c == '\b' || c == 127) { // 127 bazı konsollarda Backspace'dir
+            if (i > 0) {
+                i--;
+                printk("\b \b");
             }
         } 
-        else {
-            buf[len++] = c;
-            printk("%c", c); // Ekranda karakteri göster
+        else if (c >= 32 && c <= 126) {
+            buffer[i++] = c;
+            printk("%c", c); // Bu hem ekrana hem seri porta basar
         }
     }
-    buf[len] = '\0';
 }
 
 void shell_init(void) {

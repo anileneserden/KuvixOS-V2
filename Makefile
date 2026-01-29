@@ -38,6 +38,7 @@ SRC_C = \
     kernel/layout/layout.c \
 	kernel/layout/us.c \
     kernel/layout/trq.c \
+	kernel/memory/kmalloc.c \
     lib/shell/shell.c \
     lib/commands/commands.c \
     lib/service/service.c \

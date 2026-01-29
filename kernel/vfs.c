@@ -1,11 +1,17 @@
 #include <kernel/fs.h>
 
-fs_node_t *fs_root = 0; // Başlangıçta kök boş
+fs_node_t *fs_root = 0;
 
 uint32_t read_fs(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buffer) {
-    // Eğer dosyanın kendine has bir okuma fonksiyonu varsa onu çağır
     if (node && node->read) {
         return node->read(node, offset, size, buffer);
+    }
+    return 0;
+}
+
+fs_node_t *finddir_fs(fs_node_t *node, char *name) {
+    if (node && (node->flags & FS_DIRECTORY) && node->finddir) {
+        return node->finddir(node, name);
     }
     return 0;
 }
