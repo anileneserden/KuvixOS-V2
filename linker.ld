@@ -2,12 +2,10 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* Kernel 1MB noktasından başlayacak */
     . = 1M;
 
     .text BLOCK(4K) : ALIGN(4K)
     {
-        /* Multiboot header'ı dosyanın tam başında tutar */
         KEEP(*(.multiboot))
         *(.text*)
     }
@@ -17,12 +15,13 @@ SECTIONS
         *(.rodata*)
     }
 
-    /* YENİ BÖLÜM: Komut tablosunu burada oluşturuyoruz */
-    .cmd_section : ALIGN(4K)
+    /* TEK VE TEMİZ KOMUT BÖLÜMÜ */
+    .cmd_section BLOCK(4K) : ALIGN(4K)
     {
-        _cmd_start = .;          /* Başlangıç adresini işaretle */
-        KEEP(*(.cmd_section))    /* Tüm dosyalardaki bu bölümü topla */
-        _cmd_end = .;            /* Bitiş adresini işaretle */
+        _cmd_start = .;
+        KEEP(*(.cmd_section))
+        KEEP(*(.commands))
+        _cmd_end = .;
     }
 
     .data BLOCK(4K) : ALIGN(4K)
@@ -36,7 +35,6 @@ SECTIONS
         *(.bss*)
     }
 
-    /* Yığın (Stack) alanı */
     .stack (NOLOAD) : {
         . = ALIGN(16);
         stack_bottom = .;

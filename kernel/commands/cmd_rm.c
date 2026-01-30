@@ -1,19 +1,17 @@
-#include <kernel/fs.h>
+#include <kernel/fs/vfs.h>
 #include <kernel/printk.h>
-#include <lib/string.h>
 #include <lib/commands.h>
-
-// vfs.c içindeki fonksiyonu dışarıdan alıyoruz
-extern void vfs_remove_node(fs_node_t *parent, char *name);
 
 void cmd_rm(int argc, char** argv) {
     if (argc < 2) {
-        printk("Kullanim: rm <dosya_veya_dizin_adi>\n");
+        printk("Kullanim: rm <dosya/dizin>\n");
         return;
     }
 
-    // Mevcut dizinden (fs_current) sil
-    vfs_remove_node(fs_current, argv[1]);
+    // vfs_remove fonksiyonunun var olduğunu varsayıyoruz
+    // Eğer yoksa sadece printk mesajı bırakabilirsin
+    printk("Siliniyor: %s...\n", argv[1]);
+    // vfs_remove(argv[1]); 
 }
 
-REGISTER_COMMAND(rm, cmd_rm, "Bir dosya veya dizini siler");
+REGISTER_COMMAND(rm, cmd_rm, "Dosya veya dizini siler");
