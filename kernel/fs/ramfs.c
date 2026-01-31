@@ -246,13 +246,5 @@ int ramfs_read_all(const char* path, void* out, uint32_t cap, uint32_t* out_size
     return 1;
 }
 
-int ramfs_is_dir(const char* path) {
-    // Şimdilik her şeyin dosya olmadığını varsayalım
-    // İleride gerçek node kontrolü ekleyeceğiz
-    return 0; 
-}
-
-int ramfs_mkdir(const char* path) {
-    // Şimdilik klasör oluşturmayı kapatıyoruz
-    return -1; 
-}
+int ramfs_is_dir(const char* path) { (void)path; return 0; }
+int ramfs_mkdir(const char* path) { (void)path; return -1; }

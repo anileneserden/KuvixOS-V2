@@ -6,26 +6,25 @@
 #include <kernel/printk.h>
 
 int fs_init_once(void) {
-    // 1. VFS Temel Yapısını Hazırla (RAMFS burada başlar)
+    // 1. VFS Temel Yapısını Hazırla
     vfs_init();
 
-    // 2. ATA/IDE Sürücüsünü Başlat (disk.img'i görmesi için)
-    // Not: ata_init() fonksiyonunun adını kendi sürücüne göre kontrol et
-    ata_pio_init(); 
+    // 2. ATA/IDE Sürücüsünü Başlat
+    if (ata_pio_init()) {
+        // 3. Sürücü hazırsa, cihaz nesnesini al ve sisteme "Kök Cihaz" yap
+        blockdev_t* dev = ata_pio_get_dev();
+        if (dev) {
+            block_set_root(dev); // BU SATIR EKSİKTİ: g_root artık dolu!
+        }
+    }
 
-    // 3. Blok katmanına root cihazını tanıt (disk.img genellikle ilk disk)
-    // block_set_root(dev) gibi bir fonksiyonun varsa kullan, 
-    // yoksa KVXFS doğrudan block_read/write kullanacaktır.
-
-    // 4. KVXFS'i Başlat (/persist/ katmanı)
+    // 4. KVXFS'i Başlat
+    // g_root artık dolu olduğu için block_write() gerçek sürücüye gidecek.
     if (kvxfs_init()) {
         printk("KVXFS: Disk sistemi basariyla baglandi.\n");
     } else {
         printk("KVXFS: Kalici disk bulunamadi veya formatli degil.\n");
     }
 
-    // 5. ToyFS'i Başlat (Eğer blok cihazı üzerinden çalışıyorsa)
-    // toyfs_init(); 
-
-    return 1; // Hata verse bile shell açılsın diye 1 dönüyoruz
+    return 1;
 }

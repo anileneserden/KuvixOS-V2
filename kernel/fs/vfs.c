@@ -302,7 +302,7 @@ int vfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     return ramfs_write_all(path, data, size);
 }
 
-static int list_cb_dedupe(const char* path, uint32_t size, void* u) {
+__attribute__((unused)) static int list_cb_dedupe(const char* path, uint32_t size, void* u) {
     // u = original cb + user
     struct pack { int (*cb)(const char*,uint32_t,void*); void* u; } *p = (struct pack*)u;
     return p->cb(path, size, p->u);
@@ -405,4 +405,4 @@ int vfs_resolve_path(const char* in, char* out, uint32_t cap)
     return 1;
 }
 
-int vfs_remove_node(const char* path) { return -1; }
+int vfs_remove_node(const char* path) { (void)path; return -1; }

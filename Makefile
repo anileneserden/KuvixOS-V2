@@ -10,14 +10,14 @@ ISO    = iso
 KERNEL = $(BUILD)/kernel.elf
 IMAGE  = KuvixOS.iso
 
-# -Iinclude sayesinde VS Code ve Derleyici dosyaları include/ altında bulur
+# CFLAGS: -Iinclude ile başlık dosyaları dahil edilir
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
           -Iinclude
 
 ASFLAGS = -m32
-# Makefile içindeki LDFLAGS satırını şu şekilde güncelle:
+
 LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments \
           -Wl,--no-gc-sections
@@ -26,7 +26,6 @@ LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
 
 SRC_S = boot/boot.S
 
-# Yeni klasör yapına göre güncellenmiş SRC_C listesi
 SRC_C = \
     kernel/kmain.c \
     kernel/printk.c \
@@ -60,14 +59,12 @@ SRC_C = \
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 
-# Nesne dosyaları listesi
 OBJS = $(SRC_S:%.S=$(BUILD)/%.o) $(SRC_C:%.c=$(BUILD)/%.o)
 
 # --- Kurallar ---
 
 all: $(KERNEL)
 
-# Nesne dosyalarını derleme (Klasörleri otomatik oluşturur)
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -76,12 +73,10 @@ $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
-# Linkleme
 $(KERNEL): $(OBJS)
 	@mkdir -p $(BUILD)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)
 
-# ISO Oluşturma
 iso: $(KERNEL)
 	rm -rf $(ISO)
 	mkdir -p $(ISO)/boot/grub
@@ -95,12 +90,15 @@ iso: $(KERNEL)
 	@echo '}' >> $(ISO)/boot/grub/grub.cfg
 	grub2-mkrescue -o $(IMAGE) $(ISO) > /dev/null 2>&1
 
-# QEMU'da diski de bağlamak için "-drive" ekledim
-# Yeni QEMU komutu
+# --- Kritik Güncelleme Burası ---
 run: iso
-	# Eğer disk.img yoksa 10MB'lık boş bir dosya oluştur (Hata almamak için)
-	test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
-	qemu-system-i386 -cdrom $(IMAGE) -drive format=raw,file=disk.img,if=ide -m 256M -serial stdio -no-reboot
+	# Eğer disk.img yoksa 10MB'lık dosya oluştur ve yazma izni ver
+	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
+	@chmod 666 disk.img
+	# QEMU'yu ATA (IDE) diski tam erişimle (writeback cache) çalışacak şekilde başlatıyoruz
+	qemu-system-i386 -cdrom KuvixOS.iso \
+        -drive file=disk.img,format=raw,index=0,media=disk \
+        -m 256M -serial stdio -no-reboot
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)

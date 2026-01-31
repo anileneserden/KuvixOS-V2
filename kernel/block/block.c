@@ -2,6 +2,7 @@
 #include <kernel/block/blockdev.h>
 #include <kernel/drivers/virtio_blk.h>
 #include <kernel/drivers/ata_pio.h>
+#include <kernel/printk.h>
 
 // küçük helper (blockdev.c fonksiyonlarını burada forward ediyoruz)
 int blockdev_read(blockdev_t* d, uint64_t lba, uint32_t count, void* out);
@@ -51,6 +52,13 @@ int block_read(uint64_t lba, uint32_t count, void* out)
 
 int block_write(uint64_t lba, uint32_t count, const void* in)
 {
-    if (!g_root) return 0;
-    return blockdev_write(g_root, lba, count, in);
+    if (!g_root) {
+        printk("BLOCK: HATA - g_root null! Disk bagli degil.\n");
+        return 0;
+    }
+    int res = blockdev_write(g_root, lba, count, in);
+    if (!res) {
+        printk("BLOCK: HATA - blockdev_write basarisiz (LBA: %d)!\n");
+    }
+    return res;
 }

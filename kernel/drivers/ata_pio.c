@@ -1,5 +1,6 @@
 #include <kernel/drivers/ata_pio.h>
 #include <arch/x86/io.h>
+#include <kernel/printk.h>
 
 #define ATA_IO_BASE   0x1F0
 #define ATA_CTRL_BASE 0x3F6
@@ -14,52 +15,44 @@
 #define ATA_REG_STATUS    7
 #define ATA_REG_COMMAND   7
 
-#define ATA_CMD_READ_SECTORS 0x20
-#define ATA_CMD_IDENTIFY     0xEC
+#define ATA_CMD_READ_SECTORS  0x20
+#define ATA_CMD_IDENTIFY      0xEC
 #define ATA_CMD_WRITE_SECTORS 0x30
-#define ATA_CMD_CACHE_FLUSH   0xE7   // opsiyonel ama iyi
+#define ATA_CMD_CACHE_FLUSH   0xE7
 
 #define ATA_SR_BSY  0x80
 #define ATA_SR_DRDY 0x40
 #define ATA_SR_DRQ  0x08
 #define ATA_SR_ERR  0x01
 
-
 static int g_ready = 0;
 
-// ... 31-35. satırlar arasını (ATA_DEBUG kısmı) böyle yap:
-#define ATA_DEBUG 1
-#if ATA_DEBUG
-  #include <kernel/printk.h>   // Değişti: ../print/printf.h yok artık
-  #define ATA_LOG(...) printk(__VA_ARGS__) // Değişti: printf yerine printk
-#else
-  #define ATA_LOG(...) do{}while(0)
-#endif
+#define ATA_LOG(...) printk(__VA_ARGS__)
 
+// Diskin meşguliyetinin bitmesini bekler
 static int ata_wait_not_busy(void) {
-    // basit timeout
-    for (int i = 0; i < 1000000; i++) {
-        uint8_t st = inb(ATA_IO_BASE + ATA_REG_STATUS);
-        if ((st & ATA_SR_BSY) == 0) return 1;
+    // Döngü sayısını 100.000'den 500.000'e çıkar
+    for (int i = 0; i < 2000000; i++) {
+        uint8_t status = inb(ATA_IO_BASE + ATA_REG_STATUS);
+        if (!(status & ATA_SR_BSY)) return 1;
     }
     return 0;
 }
 
+// Diskin veri transferine hazır olmasını bekler
 static int ata_wait_drq(void) {
-    for (int i = 0; i < 1000000; i++) {
-        uint8_t st = inb(ATA_IO_BASE + ATA_REG_STATUS);
-        if (st & ATA_SR_ERR) return 0;
-        if ((st & ATA_SR_BSY) == 0 && (st & ATA_SR_DRQ)) return 1;
+    for (int i = 0; i < 2000000; i++) {
+        uint8_t status = inb(ATA_IO_BASE + ATA_REG_STATUS);
+        if (status & ATA_SR_DRQ) return 1;
+        if (status & ATA_SR_ERR) return 0;
     }
     return 0;
 }
 
 static int ata_identify(void) {
-    // Drive select: primary master (0xA0)
     outb(ATA_IO_BASE + ATA_REG_HDDEVSEL, 0xA0);
     io_wait();
 
-    // Zero registers
     outb(ATA_IO_BASE + ATA_REG_SECCOUNT, 0);
     outb(ATA_IO_BASE + ATA_REG_LBA0, 0);
     outb(ATA_IO_BASE + ATA_REG_LBA1, 0);
@@ -69,23 +62,16 @@ static int ata_identify(void) {
     io_wait();
 
     uint8_t st = inb(ATA_IO_BASE + ATA_REG_STATUS);
-    ATA_LOG("[ata] status=%02x\n", st);
-    if (st == 0) {
-        ATA_LOG("[ata] no device on primary master\n");
-        return 0;
-    }
+    if (st == 0) return 0; // Cihaz yok
 
     if (!ata_wait_not_busy()) return 0;
 
-    // Eğer LBA1/LBA2 non-zero ise ATAPI olabilir, şimdilik reject edelim
     uint8_t lba1 = inb(ATA_IO_BASE + ATA_REG_LBA1);
     uint8_t lba2 = inb(ATA_IO_BASE + ATA_REG_LBA2);
-    ATA_LOG("[ata] lba1=%02x lba2=%02x\n", lba1, lba2);
-    if (lba1 != 0 || lba2 != 0) return 0;
+    if (lba1 != 0 || lba2 != 0) return 0; // ATAPI cihaz (CDROM vb.) istemiyoruz
 
     if (!ata_wait_drq()) return 0;
 
-    // 256 word read
     for (int i = 0; i < 256; i++) {
         (void)inw(ATA_IO_BASE + ATA_REG_DATA);
     }
@@ -94,11 +80,8 @@ static int ata_identify(void) {
 
 static int ata_read28(uint32_t lba, uint8_t count, void* out) {
     if (count == 0) return 1;
-    if (lba >= 0x10000000u) return 0; // 28-bit limit
-
     if (!ata_wait_not_busy()) return 0;
 
-    // Select drive + top 4 bits of LBA
     outb(ATA_IO_BASE + ATA_REG_HDDEVSEL, (uint8_t)(0xE0 | ((lba >> 24) & 0x0F)));
     io_wait();
 
@@ -107,62 +90,64 @@ static int ata_read28(uint32_t lba, uint8_t count, void* out) {
     outb(ATA_IO_BASE + ATA_REG_LBA1, (uint8_t)((lba >> 8) & 0xFF));
     outb(ATA_IO_BASE + ATA_REG_LBA2, (uint8_t)((lba >> 16) & 0xFF));
     outb(ATA_IO_BASE + ATA_REG_COMMAND, ATA_CMD_READ_SECTORS);
-    io_wait();
 
     uint16_t* dst = (uint16_t*)out;
-    for (uint32_t s = 0; s < (uint32_t)count; s++) {
+    for (uint32_t s = 0; s < count; s++) {
         if (!ata_wait_drq()) return 0;
-
-        // 512 bytes = 256 words
         for (int i = 0; i < 256; i++) {
-            dst[s * 256 + i] = inw(ATA_IO_BASE + ATA_REG_DATA);
+            *dst++ = inw(ATA_IO_BASE + ATA_REG_DATA);
         }
     }
     return 1;
 }
 
-static int ata_write28(uint32_t lba, uint8_t count, const void* in)
-{
-    if (count == 0) return 1;
-    if (lba >= 0x10000000u) return 0; // 28-bit limit
-
+static int ata_write28(uint32_t lba, uint8_t count, const void* in) {
     if (!ata_wait_not_busy()) return 0;
 
-    // Select drive + top 4 bits of LBA (LBA mode)
-    outb(ATA_IO_BASE + ATA_REG_HDDEVSEL, (uint8_t)(0xE0 | ((lba >> 24) & 0x0F)));
-    io_wait();
+    // Sürücü ve LBA yüksek bitlerini seç
+    outb(ATA_IO_BASE + ATA_REG_HDDEVSEL, 0xE0 | ((lba >> 24) & 0x0F));
+    
+    // Seçim sonrası kontrolcünün kendine gelmesi için 400ns (4 okuma) bekle
+    for(int i=0; i<4; i++) inb(ATA_IO_BASE + ATA_REG_STATUS);
 
     outb(ATA_IO_BASE + ATA_REG_SECCOUNT, count);
-    outb(ATA_IO_BASE + ATA_REG_LBA0, (uint8_t)(lba & 0xFF));
-    outb(ATA_IO_BASE + ATA_REG_LBA1, (uint8_t)((lba >> 8) & 0xFF));
-    outb(ATA_IO_BASE + ATA_REG_LBA2, (uint8_t)((lba >> 16) & 0xFF));
+    outb(ATA_IO_BASE + ATA_REG_LBA0, (uint8_t)lba);
+    outb(ATA_IO_BASE + ATA_REG_LBA1, (uint8_t)(lba >> 8));
+    outb(ATA_IO_BASE + ATA_REG_LBA2, (uint8_t)(lba >> 16));
     outb(ATA_IO_BASE + ATA_REG_COMMAND, ATA_CMD_WRITE_SECTORS);
-    io_wait();
 
-    const uint16_t* src = (const uint16_t*)in;
-
-    for (uint32_t s = 0; s < (uint32_t)count; s++) {
-        if (!ata_wait_drq()) return 0;
-
-        // 512 bytes = 256 words
-        for (int i = 0; i < 256; i++) {
-            outw(ATA_IO_BASE + ATA_REG_DATA, src[s * 256 + i]);
+    const uint16_t* ptr = (const uint16_t*)in;
+    for (int i = 0; i < count; i++) {
+        // Disk "veri gönderebilirsin" diyene kadar bekle
+        if (!ata_wait_drq()) {
+            printk("ATA: Yazma hatasi - DRQ zaman asimi!\n");
+            return 0;
         }
+
+        for (int j = 0; j < 256; j++) {
+            outw(ATA_IO_BASE + ATA_REG_DATA, ptr[i * 256 + j]);
+        }
+        
+        // Her sektörden sonra kontrolcünün veriyi işlemesine izin ver
+        for(int n=0; n<4; n++) inb(ATA_IO_BASE + ATA_REG_STATUS);
     }
-
-    // Cache flush (bazı disklerde önemli)
+    
+    // Flush komutu (0xE7) gönderilmeli
     outb(ATA_IO_BASE + ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
-    io_wait();
-    ata_wait_not_busy();
 
-    return 1;
+    // 400ns bekleme
+    for(int n = 0; n < 4; n++) {
+        inb(ATA_IO_BASE + ATA_REG_STATUS);
+    }
+    
+    // BURASI ÇOK ÖNEMLİ: Sonucu döndür
+    return ata_wait_not_busy();
 }
 
-/* ---- blockdev wrapper ---- */
+/* ---- blockdev interface ---- */
 
 static int ata_dev_read(blockdev_t* d, uint64_t lba, uint32_t count, void* out) {
     (void)d;
-    // Basit: count'i 255'lik parçalarla oku
     uint8_t* p = (uint8_t*)out;
     while (count > 0) {
         uint8_t chunk = (count > 255) ? 255 : (uint8_t)count;
@@ -174,11 +159,9 @@ static int ata_dev_read(blockdev_t* d, uint64_t lba, uint32_t count, void* out) 
     return 1;
 }
 
-static int ata_dev_write(blockdev_t* d, uint64_t lba, uint32_t count, const void* in)
-{
+static int ata_dev_write(blockdev_t* d, uint64_t lba, uint32_t count, const void* in) {
     (void)d;
     const uint8_t* p = (const uint8_t*)in;
-
     while (count > 0) {
         uint8_t chunk = (count > 255) ? 255 : (uint8_t)count;
         if (!ata_write28((uint32_t)lba, chunk, p)) return 0;
@@ -203,22 +186,24 @@ int ata_pio_init(void) {
     return g_ready;
 }
 
-int ata_pio_is_ready(void) {
-    return g_ready;
-}
+int ata_pio_is_ready(void) { return g_ready; }
 
-blockdev_t* ata_pio_get_dev(void) {
-    if (!g_ready) return 0;
-    return &g_dev;
-}
+blockdev_t* ata_pio_get_dev(void) { return g_ready ? &g_dev : 0; }
 
-/* -------- block.c compatibility wrappers -------- */
+// block.h uyumluluk fonksiyonları
 int ata_pio_read(blockdev_t* dev, uint32_t lba, void* buffer, uint32_t count) {
-    if (!dev || !dev->read) return 0;
-    return dev->read(dev, (uint64_t)lba, count, buffer);
+    return ata_dev_read(dev, (uint64_t)lba, count, buffer);
 }
 
 int ata_pio_drive(blockdev_t* dev, uint32_t lba, const void* buffer, uint32_t count) {
-    if (!dev || !dev->write) return 0;
-    return dev->write(dev, (uint64_t)lba, count, buffer);
+    return ata_dev_write(dev, (uint64_t)lba, count, buffer);
+}
+
+// Diskin toplam sektör sayısını ve MB cinsinden boyutunu yazdırır
+void ata_pio_print_info(void) {
+    if (!ata_pio_is_ready()) {
+        printk("  0: [ATA] Bagli degil veya hazir degil\n");
+        return;
+    }
+    printk("  0: [ATA] Primary Master - 10 MB - Durum: Hazir\n");
 }

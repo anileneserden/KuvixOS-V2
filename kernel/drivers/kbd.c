@@ -12,13 +12,10 @@ static uint8_t e0_prefix    = 0;
 // --- YENİ EKLENEN FONKSİYON ---
 // Shell'in karakter gelip gelmediğini kontrol etmesini sağlar
 int kbd_has_character(void) {
-    // 1. Donanım seviyesinde yeni bir tuş basılmış mı bak (Polling)
-    // Eğer port 0x64'ün 0. biti 1 ise yeni veri var demektir.
+    // Port 0x64 durumunu kontrol et: 0. bit 1 ise veri var
     if (inb(0x64) & 0x01) {
-        kbd_poll(); // Veriyi oku ve kbd_handle_byte üzerinden kuyruğa (q) at
+        kbd_poll(); 
     }
-
-    // 2. Kuyrukta (buffer) işlenmemiş karakter var mı bak
     return (q_r != q_w);
 }
 
@@ -31,57 +28,46 @@ void kbd_init(void) {
 }
 
 void kbd_poll(void) {
-    // Port 0x64 durumunu kontrol et
     uint8_t status = inb(0x64);
-    if (status & 0x01) { // Veri varsa oku
+    if (status & 0x01) {
         uint8_t data = inb(0x60);
-        if (!(status & 0x20)) { // Mouse verisi değilse işle
+        if (!(status & 0x20)) { // Mouse değilse
             kbd_handle_byte(data);
         }
     }
 }
 
 void kbd_handle_byte(uint8_t sc) {
-    if (sc == 0xE0) {
-        e0_prefix = 1;
-        return;
-    }
+    if (sc == 0xE0) { e0_prefix = 1; return; }
 
+    // Tuş bırakma (Break code) kontrolü
     if (sc & 0x80) {
         uint8_t make = sc & 0x7F;
-        if (!e0_prefix && (make == 0x2A || make == 0x36)) {
-            shift_active = 0;
-        }
+        if (!e0_prefix && (make == 0x2A || make == 0x36)) shift_active = 0;
         e0_prefix = 0;
         return;
     }
 
-    if (!e0_prefix && (sc == 0x2A || sc == 0x36)) { 
-        shift_active = 1; 
-        return; 
-    }
-    if (!e0_prefix && sc == 0x3A) { 
-        caps_lock ^= 1; 
-        return; 
-    }
-
-    if (e0_prefix) {
-        e0_prefix = 0;
-        return;
-    }
+    // Tuş basma (Make code) kontrolü
+    if (!e0_prefix && (sc == 0x2A || sc == 0x36)) { shift_active = 1; return; }
+    if (!e0_prefix && sc == 0x3A) { caps_lock ^= 1; return; }
+    if (e0_prefix) { e0_prefix = 0; return; }
 
     const kbd_layout_t* layout = kbd_get_current_layout();
     if (!layout) return;
 
+    // Karakteri düzen tablosundan al
     uint8_t c = shift_active ? layout->shift[sc] : layout->normal[sc];
     if (!c) return;
 
-    if (caps_lock && (c >= 'a' && c <= 'z')) {
-        c -= 32;
-    } else if (caps_lock && (c >= 'A' && c <= 'Z')) {
-        c += 32;
+    // --- ÖNEMLİ: Caps Lock Mantığını Sadece Harflerle Sınırla ---
+    // Türkçe karakterler (ı, ş, ğ vb.) bazen standart A-Z dışında scancode'lara sahiptir.
+    if (caps_lock) {
+        if (c >= 'a' && c <= 'z') c -= 32;
+        else if (c >= 'A' && c <= 'Z') c += 32;
     }
 
+    // Kuyruğa yaz
     int n = (q_w + 1) % KBD_Q_SIZE;
     if (n != q_r) {
         q[q_w] = (uint16_t)c;
