@@ -2,11 +2,6 @@
 #include <arch/x86/io.h>
 #include <stdint.h>
 
-// Eğer io.h içindeki outb bazen sorun çıkarıyorsa garantiye alalım
-#ifndef outb
-#define outb(port, val) __asm__ volatile ("outb %b0, %w1" : : "a"(val), "Nd"(port))
-#endif
-
 static uint16_t* const VGA_BUFFER = (uint16_t*)0xB8000;
 static size_t row = 0;
 static size_t col = 0;
@@ -107,4 +102,11 @@ void vga_clear(void) {
 
 void vga_set_color(uint8_t new_color) {
     color = new_color;
+}
+
+void vga_disable_cursor() {
+    // 0x3D4 portuna 0x0A (Cursor Start Register) komutu gönderilir
+    outb(0x3D4, 0x0A);
+    // 0x20 değeri (5. bit) imleci tamamen devre dışı bırakır
+    outb(0x3D5, 0x20);
 }

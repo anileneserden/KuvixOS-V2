@@ -14,6 +14,7 @@ static const uint8_t trq_shift[128] = {
     0, ';', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', 10, 11, ':', 0, '*', 0, ' '
 };
 
+// kernel/drivers/input/keymaps/trq.c en altı
 kbd_layout_t layout_trq = {
     .name = "trq",
     .normal = trq_norm,

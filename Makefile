@@ -35,25 +35,40 @@ SRC_C = \
     kernel/memory/kmalloc.c \
     kernel/block/block.c \
     kernel/block/blockdev.c \
+    kernel/drivers/video/fb.c \
+    kernel/drivers/video/gfx.c \
     kernel/drivers/ata_pio.c \
     kernel/drivers/virtio_blk.c \
-    kernel/drivers/kbd.c \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
+    kernel/drivers/input/keyboard.c \
+    kernel/drivers/input/mouse_ps2.c \
     kernel/fs/vfs.c \
     kernel/fs/ramfs.c \
     kernel/fs/kvxfs.c \
     kernel/fs/toyfs.c \
     kernel/fs/toyfs_image.c \
     kernel/fs/fs_init.c \
-    kernel/layout/layout.c \
-    kernel/layout/us.c \
-    kernel/layout/trq.c \
+    kernel/drivers/input/keymaps/layout.c \
+    kernel/drivers/input/keymaps/us.c \
+    kernel/drivers/input/keymaps/trq.c \
+    kernel/ui/desktop.c \
+    kernel/ui/wm.c \
+    kernel/ui/mouse.c \
+    kernel/ui/wallpaper.c \
+    kernel/ui/window.c \
+    kernel/ui/app_manager.c \
+    kernel/ui/theme_builtin.c \
+    kernel/ui/theme_runtime.c \
+    kernel/ui/theme_bootstrap.c \
+    kernel/ui/theme_parser.c \
+    kernel/ui/theme_builtin_data.c \
     lib/shell/shell.c \
     lib/commands/commands.c \
     lib/service/service.c \
     lib/service/service_registry.c \
-    lib/string/string.c
+    lib/string/string.c \
+    lib/ui/font/font8x8_basic.c
 
 # OTOMATİK KOMUT TARAMA
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
