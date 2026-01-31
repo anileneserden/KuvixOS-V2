@@ -3,7 +3,10 @@
 #include <ui/font8x8_basic.h>
 
 void gfx_init(void) {
-    // Gelecekte hızlandırma veya buffer işlemleri buraya gelebilir
+    // Ekranı başlangıç için siyahla temizle
+    fb_clear(0x000000); 
+    // Temizlenen siyah ekranı donanıma gönder
+    fb_present();       
 }
 
 // Tüm ekranı bir ARGB rengiyle temizler

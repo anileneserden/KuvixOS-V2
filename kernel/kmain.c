@@ -1,44 +1,35 @@
-#include <kernel/printk.h>
-#include <kernel/serial.h>
-#include <kernel/vga.h>
-#include <kernel/fs/vfs.h>
-#include <kernel/fs/fs_init.h>
-#include <lib/shell.h>
+#include <stdint.h>
+#include <multiboot2.h>      // Multiboot 1 standardı için
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
+#include <kernel/serial.h>
 #include <ui/desktop.h>
 #include <ui/theme.h>
+#include <kernel/printk.h>
 
-void kernel_main(void) {
+void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     serial_init();
-    vga_init(); // İlk aşamada metin mesajları için
     
-    printk("KuvixOS V2 Baslatiliyor...\n");
-
-    // 1. Dosya sistemi ve Disk ilklendirme
-    if (fs_init_once()) {
-        printk("Dosya sistemi ve Diskler hazir.\n");
+    // 1. Framebuffer'ı başlat
+    if (magic == 0x2BADB002 && (mbi->flags & (1 << 12))) {
+        fb_init((uint32_t)mbi->framebuffer_addr); 
     } else {
-        printk("HATA: Dosya sistemi baslatilamadi!\n");
+        fb_init(0xFD000000); 
     }
 
-    // 2. Grafik Modu Hazırlığı
-    // Not: 0xFD000000 genel bir LFB adresidir, QEMU/BGA için uygundur.
-    fb_init(0xFD000000); 
+    // 2. Grafik ve Tema Sistemini Hazırla
     gfx_init();
-
-    printk("Masaustu yukleniyor...\n");
-
-    // Önce tema motorunu hazırla
     ui_theme_bootstrap_default();
 
-    // Sonra masaüstünü çalıştır
-    ui_desktop_run();
+    // 3. Ekranı temizle (Kırmızı ekrandan kurtulmak için)
+    gfx_clear(0x1a1a1a); 
+    fb_present(); 
 
-    // Eğer masaüstünden çıkılırsa (teorik olarak), Shell'e düşebilirsin.
-    shell_init();
+    printk("KuvixOS Masaustu Yukleniyor...\n");
 
-    while(1) { 
-        asm volatile("hlt"); 
-    }
+    // 4. Gerçek Masaüstü Döngüsüne Gir
+    // Bu fonksiyon kendi içinde pencereleri çizecektir.
+    ui_desktop_run(); 
+
+    while(1) { asm volatile("hlt"); }
 }

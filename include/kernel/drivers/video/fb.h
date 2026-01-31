@@ -16,7 +16,7 @@ typedef uint32_t fb_color_t;
 void fb_init(uint32_t vbe_lfb_addr);
 void fb_putpixel(int x, int y, fb_color_t color);
 void fb_draw_rect(int x, int y, int w, int h, fb_color_t color);
-void fb_draw_rect_outline(int x, int y, int w, int h, fb_color_t color); // Window.c için gerekli
+void fb_draw_rect_outline(int x, int y, int w, int h, uint32_t color);
 void fb_clear(fb_color_t color);
 void fb_present(void);
 

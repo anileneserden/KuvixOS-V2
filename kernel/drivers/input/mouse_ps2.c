@@ -2,6 +2,10 @@
 #include <arch/x86/io.h>
 #include <stdint.h>
 
+// Eğer yoksa, dosyanın en üstüne (include'lardan sonra) ekle:
+int mouse_x = 0;
+int mouse_y = 0;
+
 static void ps2_wait_write(void) {
     while (inb(0x64) & 0x02) { }
 }
