@@ -1,45 +1,39 @@
 #include <kernel/time.h>
+#include <arch/x86/io.h>
+#include <kernel/drivers/rtc/rtc.h>
 
-// sende zaten var:
-uint32_t g_ticks_ms = 0;
-uint64_t g_boot_epoch = 0;      // boot anındaki gerçek zaman (epoch)
+// --- Değişkenler ---
+volatile uint32_t g_ticks_ms = 0;
+uint64_t g_boot_epoch = 0;
+static uint32_t g_boot_ticks_ms = 0;
+int g_hour = 0, g_minute = 0, g_second = 0;
+volatile int test_counter = 0;
 
-static uint32_t g_boot_ticks_ms = 0;   // boot anındaki tick
+// --- Yardımcı Zaman Fonksiyonları (En Üste Alındı) ---
 
 static int is_leap(int y) {
-    // gregorian
-    if ((y % 4) != 0) return 0;
-    if ((y % 100) != 0) return 1;
-    return (y % 400) == 0;
+    return (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0));
 }
 
 static int days_in_month(int y, int m) {
     static const int dm[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
-    int d = dm[m-1];
-    if (m == 2 && is_leap(y)) d = 29;
-    return d;
+    if (m == 2 && is_leap(y)) return 29;
+    return dm[m-1];
 }
 
-// 1970-01-01'den itibaren gün sayısı
 static uint64_t days_since_epoch(int y, int m, int d) {
-    // y: full year, m:1-12, d:1-31
     uint64_t days = 0;
-
-    // years
     for (int yr = 1970; yr < y; yr++) {
         days += is_leap(yr) ? 366 : 365;
     }
-
-    // months
     for (int mo = 1; mo < m; mo++) {
         days += (uint64_t)days_in_month(y, mo);
     }
-
-    // days in month
     days += (uint64_t)(d - 1);
     return days;
 }
 
+// Hata veren fonksiyon buydu, artık yukarıda olduğu için sorun çıkmayacak
 static uint64_t datetime_to_epoch(const rtc_datetime_t* t) {
     uint64_t days = days_since_epoch((int)t->year, (int)t->month, (int)t->day);
     uint64_t sec  = days * 86400ULL;
@@ -80,46 +74,50 @@ static rtc_datetime_t epoch_to_datetime(uint64_t epoch) {
     return out;
 }
 
+// --- Ana Fonksiyonlar ---
+
+void timer_init(uint32_t freq) {
+    uint32_t divisor = 1193182 / freq;
+    outb(0x43, 0x36);
+    outb(0x40, (uint8_t)(divisor & 0xFF));
+    outb(0x40, (uint8_t)((divisor >> 8) & 0xFF));
+}
+
+void timer_handler(void) {
+    g_ticks_ms++;
+    if (g_ticks_ms % 1000 == 0) {
+        test_counter++;
+        g_second++;
+        if (g_second >= 60) {
+            g_second = 0;
+            g_minute++;
+            if (g_minute >= 60) {
+                g_minute = 0;
+                g_hour++;
+                if (g_hour >= 24) g_hour = 0;
+            }
+        }
+    }
+    outb(0x20, 0x20);
+}
+
 void time_init_from_rtc(void) {
     rtc_datetime_t t;
     if (rtc_read_datetime(&t)) {
+        // Artık datetime_to_epoch yukarıda tanımlı olduğu için derleyici hata vermez
         g_boot_epoch = datetime_to_epoch(&t);
-    } else {
-        // RTC okunamazsa 0'a düş (en azından crash olmasın)
-        g_boot_epoch = 0;
+        g_hour = t.hour;
+        g_minute = t.min;
+        g_second = t.sec;
     }
     g_boot_ticks_ms = g_ticks_ms;
 }
 
 uint64_t time_now_epoch_sec(void) {
     uint32_t dt_ms = g_ticks_ms - g_boot_ticks_ms;
-    uint64_t dt_s  = (uint64_t)(dt_ms / 1000U);
-    return g_boot_epoch + dt_s;
+    return g_boot_epoch + (uint64_t)(dt_ms / 1000U);
 }
 
 rtc_datetime_t time_now_datetime(void) {
     return epoch_to_datetime(time_now_epoch_sec());
-}
-
-static void two_digits(char* p, uint8_t v) {
-    p[0] = (char)('0' + (v / 10));
-    p[1] = (char)('0' + (v % 10));
-}
-
-void time_format_hhmm(char* out6) {
-    rtc_datetime_t t = time_now_datetime();
-    two_digits(&out6[0], t.hour);
-    out6[2] = ':';
-    two_digits(&out6[3], t.min);
-    out6[5] = 0;
-}
-
-void time_format_hhmmss(char* out9) {
-    rtc_datetime_t t = time_now_datetime();
-    two_digits(&out9[0], t.hour);
-    out9[2] = ':';
-    two_digits(&out9[3], t.min);
-    out9[5] = ':';
-    two_digits(&out9[6], t.sec);
-    out9[8] = 0;
 }

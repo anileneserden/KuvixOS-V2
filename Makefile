@@ -4,6 +4,7 @@
 
 CC = gcc
 LD = gcc
+AS = nasm
 # 64-bit matematik işlemleri için gerekli yardımcı kütüphane
 LIBGCC := $(shell $(CC) $(CFLAGS) -m32 -print-libgcc-file-name)
 
@@ -15,17 +16,24 @@ IMAGE  = KuvixOS.iso
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
-          -Iinclude
+          -Iinclude -DTIMEZONE_OFFSET=3
 
 ASFLAGS = -m32
+NASMFLAGS = -f elf32
 
 LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments \
           -Wl,--no-gc-sections
 
 # --- Kaynak Dosyalar ---
+
+# 1. Boot Dosyası (GAS)
 SRC_S = boot/boot.S
 
+# 2. Yeni Eklediğimiz Assembly Interrupt Dosyası (NASM)
+SRC_ASM = kernel/arch/x86/interrupt_entry.asm
+
+# 3. C Kaynak Dosyaları
 SRC_C = \
     kernel/kmain.c \
     kernel/printk.c \
@@ -78,26 +86,39 @@ SRC_C = \
     lib/service/service.c \
     lib/service/service_registry.c \
     lib/string/string.c \
-    lib/ui/font/font8x8_basic.c
+    lib/ui/font/font8x8_basic.c \
+    kernel/arch/x86/gdt.c \
+    kernel/arch/x86/idt.c
 
 # OTOMATİK KOMUT TARAMA
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 
-OBJS = $(SRC_S:%.S=$(BUILD)/%.o) $(SRC_C:%.c=$(BUILD)/%.o)
+# Tüm nesne dosyalarını (Object Files) birleştiriyoruz
+OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
+       $(SRC_ASM:%.asm=$(BUILD)/%.o) \
+       $(SRC_C:%.c=$(BUILD)/%.o)
 
 # --- Kurallar ---
 
 all: $(KERNEL)
 
+# C dosyalarını derle
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# S dosyalarını (GAS) derle
 $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
+# ASM dosyalarını (NASM) derle
+$(BUILD)/%.o: %.asm
+	@mkdir -p $(dir $@)
+	$(AS) $(NASMFLAGS) $< -o $@
+
+# Linkleme işlemi (Burada LDFLAGS ve OBJS birleşiyor)
 $(KERNEL): $(OBJS)
 	@mkdir -p $(BUILD)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
@@ -119,8 +140,8 @@ run: iso
 	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
 	@chmod 666 disk.img
 	qemu-system-i386 -cdrom KuvixOS.iso \
-        -drive file=disk.img,format=raw,index=0,media=disk \
-        -m 256M -serial stdio -no-reboot -no-shutdown -d int -D qemu.log
+		-drive file=disk.img,format=raw,index=0,media=disk \
+		-m 256M -serial stdio -no-reboot -no-shutdown -d int -D qemu.log
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)
