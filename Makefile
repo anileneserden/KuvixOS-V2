@@ -61,6 +61,7 @@ SRC_C = \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
     kernel/ui/power_screen.c \
+    kernel/ui/wm/hittest.c \
     kernel/ui/wm.c \
     kernel/ui/mouse.c \
     kernel/ui/wallpaper.c \

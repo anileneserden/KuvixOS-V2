@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include <ui/desktop.h>
 #include <ui/wm.h>
 #include <ui/mouse.h>
@@ -10,28 +11,27 @@
 #include <kernel/drivers/input/input.h>
 #include <kernel/drivers/input/keyboard.h>
 #include <kernel/drivers/input/mouse_ps2.h>
-#include <font/font8x8_basic.h>
+#include <kernel/drivers/rtc/rtc.h>
 #include <ui/theme.h>
-#include <arch/x86/io.h>
-#include <ui/wallpaper.h>
 #include <kernel/time.h>
-#include <stdbool.h>
 #include <kernel/printk.h>
-
-// Yeni eklediğimiz pencere sistemleri
 #include <ui/window.h>
 #include <ui/window_chrome.h>
 #include <ui/wm/hittest.h>
+#include <kernel/memory/kmalloc.h>
 
-// İkon verisi
+// İkon verisi (Projenizdeki yola göre kontrol edin)
 #include "icons/terminal/terminal.h"
 
-// Fare koordinatları
+extern app_t* terminal_app_create(void);
+extern app_t* demo_app_create(void);
+
+// Başka dosyalarda tanımlı global değişkenler
 extern int mouse_x;
 extern int mouse_y;
 
 // --- Pencere Durum Yönetimi ---
-static bool terminal_open = false;
+static bool terminal_open = true;
 static ui_window_t terminal_win = {
     .x = 150, .y = 100, 
     .w = 400, .h = 250, 
@@ -40,20 +40,12 @@ static ui_window_t terminal_win = {
 };
 
 // --- Masaüstü Çizim Yardımcıları ---
-static void desktop_draw_background(void) {
+void desktop_draw_background(void) {
     const ui_theme_t* th = ui_get_theme();
     fb_clear(th->desktop_bg);
 }
 
-void demo_app_create(void) { 
-    // Şimdilik boş
-}
-
-void terminal_app_create(void) { 
-    // Şimdilik boş
-}
-
-static void draw_desktop_icon(int x, int y, const uint8_t bitmap[20][20], const char* label, int mx, int my) {
+void draw_desktop_icon(int x, int y, const uint8_t bitmap[20][20], const char* label, int mx, int my) {
     if (mx >= x && mx <= x + 20 && my >= y && my <= y + 20) {
         gfx_fill_rect(x - 2, y - 2, 24, 24, 0x444444);
     }
@@ -69,7 +61,7 @@ static void draw_desktop_icon(int x, int y, const uint8_t bitmap[20][20], const 
     gfx_draw_text(x - 5, y + 22, 0xFFFFFF, label);
 }
 
-static void ui_overlay_draw(void) {
+void ui_overlay_draw(void) {
     const ui_theme_t* th = ui_get_theme();
     int sw = fb_get_width();
     int sh = fb_get_height();
@@ -80,7 +72,7 @@ static void ui_overlay_draw(void) {
     gfx_fill_round_rect(dock_x, dock_y, dock_w, dock_h, th->dock_radius, th->dock_bg);
 }
 
-static void ui_topbar_draw(void) {
+void ui_topbar_draw(void) {
     int sw = fb_get_width();
     int bar_h = 24;
     gfx_fill_rect(0, 0, sw, bar_h, 0x1A1A1A); 
@@ -99,133 +91,107 @@ void ui_desktop_run(void) {
     ps2_mouse_init();
 
     int dx, dy;
-    uint8_t buttons;
-    uint8_t last_buttons = 0;
-    bool menu_visible = false;
-    int menu_x = 0, menu_y = 0;
-
-    // --- Bu değişkenleri ui_desktop_run fonksiyonunun içinde, while(1)'in hemen üzerinde tanımla ---
+    uint8_t buttons, last_buttons = 0;
+    
+    // Etkileşim Değişkenleri
     bool is_dragging = false;
-    int drag_offset_x = 0;
-    int drag_offset_y = 0;
+    bool is_resizing = false;
+    wm_hittest_t active_resize_edge = HT_NONE;
+    int drag_off_x = 0, drag_off_y = 0;
 
     while(1) {
-        uint8_t status = inb(0x64);
-        if (status & 0x01) {
-            if (status & 0x20) { 
-                ps2_mouse_handle_byte(inb(0x60));
-            } else {
-                volatile uint8_t kbd_data = inb(0x60); (void)kbd_data;
-            }
+        ps2_mouse_poll();
+
+        // Hit-test: Fare neyin üzerinde?
+        wm_hittest_t hit = HT_NONE;
+        if (terminal_open) {
+            hit = ui_chrome_hittest(&terminal_win, mouse_x, mouse_y);
         }
 
         while (ps2_mouse_pop(&dx, &dy, &buttons)) {
-            mouse_x += dx;
-            mouse_y += dy;
+            mouse_x += dx; mouse_y += dy;
 
             // Ekran sınırları
             if (mouse_x < 0) mouse_x = 0;
             if (mouse_y < 0) mouse_y = 0;
-            if (mouse_x >= (int)fb_get_width())  mouse_x = fb_get_width() - 1;
+            if (mouse_x >= (int)fb_get_width()) mouse_x = fb_get_width() - 1;
             if (mouse_y >= (int)fb_get_height()) mouse_y = fb_get_height() - 1;
 
-            // Buton durumları
             bool left_down = (buttons & 0x01);
-            bool left_pressed = (buttons & 0x01) && !(last_buttons & 0x01);
+            bool left_pressed = left_down && !(last_buttons & 0x01);
 
-            // --- Etkileşim Kontrolleri ---
-            
-            if (left_pressed) {
-                menu_visible = false; // Herhangi bir yere sol tıklandığında menüyü kapat
-
-                // 1. İkon Tıklama Kontrolü (Sadece sürükleme yapmıyorsak)
-                if (mouse_x >= 50 && mouse_x <= 70 && mouse_y >= 50 && mouse_y <= 70) {
-                    terminal_open = true;
-                    printk("Terminal acildi.\n");
-                }
-
-                // 2. Pencere Kontrolleri
-                if (terminal_open) {
-                    wm_hittest_t hit = ui_chrome_hittest(&terminal_win, mouse_x, mouse_y);
-                    
+            if (terminal_open) {
+                if (left_pressed) {
                     if (hit == HT_BTN_CLOSE) {
                         terminal_open = false;
-                        is_dragging = false;
                     } 
-                    else if (hit == HT_TITLE) {
-                        // Sürüklemeyi başlat
-                        is_dragging = true;
-                        drag_offset_x = mouse_x - terminal_win.x;
-                        drag_offset_y = mouse_y - terminal_win.y;
+                    else if (hit >= HT_RESIZE_LEFT && hit <= HT_RESIZE_BOTTOM_RIGHT) {
+                        is_resizing = true;
+                        active_resize_edge = hit;
                     }
+                    else if (hit == HT_TITLE) {
+                        is_dragging = true;
+                        drag_off_x = mouse_x - terminal_win.x;
+                        drag_off_y = mouse_y - terminal_win.y;
+                    }
+                }
+
+                // Taşıma Mantığı
+                if (left_down && is_dragging) {
+                    terminal_win.x = mouse_x - drag_off_x;
+                    terminal_win.y = mouse_y - drag_off_y;
+                    if (terminal_win.y < 24) terminal_win.y = 24;
+                }
+
+                // Boyutlandırma Mantığı (Resize)
+                if (left_down && is_resizing) {
+                    if (active_resize_edge == HT_RESIZE_RIGHT || active_resize_edge == HT_RESIZE_BOTTOM_RIGHT) {
+                        terminal_win.w = mouse_x - terminal_win.x;
+                    }
+                    if (active_resize_edge == HT_RESIZE_BOTTOM || active_resize_edge == HT_RESIZE_BOTTOM_RIGHT) {
+                        terminal_win.h = mouse_y - terminal_win.y;
+                    }
+                    if (terminal_win.w < 150) terminal_win.w = 150;
+                    if (terminal_win.h < 100) terminal_win.h = 100;
+                }
+            } else {
+                if (left_pressed && mouse_x >= 50 && mouse_x <= 70 && mouse_y >= 50 && mouse_y <= 70) {
+                    terminal_open = true;
                 }
             }
 
-            // 3. Sürükleme Devam Ediyor mu?
-            if (left_down && is_dragging && terminal_open) {
-                terminal_win.x = mouse_x - drag_offset_x;
-                terminal_win.y = mouse_y - drag_offset_y;
-
-                // --- ESNEK SINIR KONTROLÜ (%20 DIŞARI ÇIKABİLİR) ---
-                int sw = (int)fb_get_width();
-                int sh = (int)fb_get_height();
-                int margin_w = terminal_win.w * 0.20; // Genişliğin %20'si
-                int margin_h = terminal_win.h * 0.20; // Yüksekliğin %20'si
-
-                // Sol Sınır: Pencerenin %80'i içeride kalmalı (x en fazla -margin_w olabilir)
-                if (terminal_win.x < -margin_w) terminal_win.x = -margin_w;
-
-                // Üst Sınır: Başlık çubuğu tamamen kaybolmasın diye TopBar (24px) altına sabitleyelim
-                // Eğer başlığın da çıkmasını istersen -margin_h yapabilirsin
-                if (terminal_win.y < 24) terminal_win.y = 24;
-
-                // Sağ Sınır: Pencerenin sol tarafı ekranın sağından (sw - (win.w * 0.80)) fazla gidemez
-                int max_x = sw - (terminal_win.w - margin_w);
-                if (terminal_win.x > max_x) terminal_win.x = max_x;
-
-                // Alt Sınır: Alt barın (dock) üzerine çok binmesin
-                int max_y = sh - 40; 
-                if (terminal_win.y > max_y) terminal_win.y = max_y;
-            }
-
-            // 4. Sürüklemeyi Bitir
             if (!left_down) {
                 is_dragging = false;
+                is_resizing = false;
+                active_resize_edge = HT_NONE;
             }
-
-            // Sağ Tık Menüsü Açma
-            if ((last_buttons & 0x02) && !(buttons & 0x02)) {
-                menu_visible = true;
-                menu_x = mouse_x; menu_y = mouse_y;
-            }
-
             last_buttons = buttons;
         }
 
-        // --- Çizim Katmanları (Z-Order) ---
-        desktop_draw_background();                                         
-        draw_desktop_icon(50, 50, terminal_icon_bitmap, "Term", mouse_x, mouse_y); 
-
-        if (terminal_open) {                                               
-            // Aktif pencere olduğu için 1 gönderiyoruz
+        // --- Render Katmanları ---
+        desktop_draw_background();
+        draw_desktop_icon(50, 50, terminal_icon_bitmap, "Terminal", mouse_x, mouse_y);
+        
+        if (terminal_open) {
             ui_window_draw(&terminal_win, 1, mouse_x, mouse_y);
             ui_rect_t rect = ui_window_client_rect(&terminal_win);
             gfx_draw_text(rect.x + 5, rect.y + 5, 0x00FF00, "root@kuvixos # _");
         }
 
-        ui_overlay_draw();                                                 
-        ui_topbar_draw();                                                  
+        ui_overlay_draw();
+        ui_topbar_draw();
 
-        if (menu_visible) {                                                
-            gfx_fill_rect(menu_x, menu_y, 130, 60, 0xFFFFFF);
-            gfx_fill_rect(menu_x + 1, menu_y + 1, 128, 58, 0x222222);
-            gfx_draw_text(menu_x + 10, menu_y + 10, 0xFFFFFF, "Yenile");
-            gfx_draw_text(menu_x + 10, menu_y + 35, 0xFFFFFF, "Kapat");
+        // --- İmleç Çizimi ---
+        wm_hittest_t current_hit = (is_resizing) ? active_resize_edge : hit;
+        if (current_hit == HT_RESIZE_LEFT || current_hit == HT_RESIZE_RIGHT) {
+            cursor_draw_resize_we(mouse_x, mouse_y);
+        } else if (current_hit == HT_RESIZE_TOP || current_hit == HT_RESIZE_BOTTOM) {
+            cursor_draw_resize_ns(mouse_x, mouse_y);
+        } else {
+            cursor_draw_arrow(mouse_x, mouse_y);
         }
 
-        cursor_draw_arrow(mouse_x, mouse_y);                               
         fb_present();
-        
         for(volatile int i=0; i<5000; i++);
     }
 }

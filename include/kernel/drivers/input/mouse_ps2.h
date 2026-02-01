@@ -12,3 +12,6 @@ void ps2_mouse_handle_byte(uint8_t data);
 
 // consumer buradan çeker
 int  ps2_mouse_pop(int* dx, int* dy, uint8_t* buttons);
+
+// Eğer header'da yoksa buraya ekle:
+void ps2_mouse_poll(void);

@@ -123,3 +123,16 @@ int ps2_mouse_pop(int* dx, int* dy, uint8_t* buttons)
     if (buttons) *buttons = ev.buttons;
     return 1;
 }
+
+void ps2_mouse_poll(void) {
+    // 0x64 portu durum portudur. Bit 0 (0x01) veri olduğunu gösterir.
+    while (inb(0x64) & 0x01) {
+        uint8_t status = inb(0x64);
+        uint8_t data = inb(0x60);
+        
+        // Eğer status bit 5 (0x20) set edilmişse bu veri MOUSE'a aittir
+        if (status & 0x20) {
+            ps2_mouse_handle_byte(data);
+        }
+    }
+}
