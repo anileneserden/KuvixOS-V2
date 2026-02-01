@@ -55,6 +55,9 @@ SRC_C = \
     kernel/fs/toyfs.c \
     kernel/fs/toyfs_image.c \
     kernel/fs/fs_init.c \
+    kernel/ui/bitmaps/icons/icon_close_16.c \
+    kernel/ui/bitmaps/icons/icon_max_16.c \
+    kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
     kernel/ui/power_screen.c \
@@ -62,6 +65,7 @@ SRC_C = \
     kernel/ui/mouse.c \
     kernel/ui/wallpaper.c \
     kernel/ui/window.c \
+    kernel/ui/window_chrome.c \
     kernel/ui/app_manager.c \
     kernel/ui/theme_builtin.c \
     kernel/ui/theme_runtime.c \

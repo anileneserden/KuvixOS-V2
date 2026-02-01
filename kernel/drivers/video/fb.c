@@ -77,3 +77,21 @@ uint32_t fb_get_height(void) { return FB_HEIGHT; }
 uint32_t fb_rgb(uint8_t r, uint8_t g, uint8_t b) {
     return (uint32_t)((r << 16) | (g << 8) | b);
 }
+
+// Belirli bir rengi (key) şeffaf sayarak bitmap çizer
+void fb_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key) {
+    for (int i = 0; i < h; i++) {
+        for (int j = 0; j < w; j++) {
+            uint32_t color = data[i * w + j];
+            if (color != key) {
+                fb_putpixel(x + j, y + i, color);
+            }
+        }
+    }
+}
+
+// Renk birleştirme fonksiyonu
+fb_color_t fb_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    // 32-bit ARGB formatı için (Alpha şimdilik kullanılmasa da formatı korur)
+    return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
