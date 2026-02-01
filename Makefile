@@ -63,12 +63,14 @@ SRC_C = \
     kernel/fs/toyfs.c \
     kernel/fs/toyfs_image.c \
     kernel/fs/fs_init.c \
+    kernel/ui/apps/settings_app.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
     kernel/ui/power_screen.c \
+    kernel/ui/select.c \
     kernel/ui/wm/hittest.c \
     kernel/ui/wm.c \
     kernel/ui/mouse.c \
@@ -81,6 +83,7 @@ SRC_C = \
     kernel/ui/theme_bootstrap.c \
     kernel/ui/theme_parser.c \
     kernel/ui/theme_builtin_data.c \
+    kernel/ui/ui_button.c \
     lib/shell/shell.c \
     lib/commands/commands.c \
     lib/service/service.c \
@@ -129,6 +132,10 @@ iso: $(KERNEL)
 	cp $(KERNEL) $(ISO)/boot/kernel.elf
 	@echo 'set timeout=0' >  $(ISO)/boot/grub/grub.cfg
 	@echo 'set default=0' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'insmod vbe' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'insmod vga' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'set gfxmode=1920x1080x32' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
 	@echo '' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'menuentry "KuvixOS V2" {' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg

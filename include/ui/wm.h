@@ -2,7 +2,7 @@
 #define WM_H
 
 #include <stdint.h>
-#include <ui/window.h>
+#include <ui/window/window.h>
 
 #define WM_MAX_WINDOWS 16
 

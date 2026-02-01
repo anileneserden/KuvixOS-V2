@@ -6,21 +6,19 @@
 static uint32_t* fb_addr = 0;        // Gerçek Video Belleği (Donanım)
 static uint32_t* fb_backbuffer = 0;  // Arka Tampon (Yazılım)
 
+uint32_t FB_WIDTH = 1920;  // Varsayılan değerler (Bootloader'dan gelenle eşleşmeli)
+uint32_t FB_HEIGHT = 1080;
+
+// fb.c içindeki fb_init kısmında en büyük boyutu ayır
 void fb_init(uint32_t vbe_lfb_addr) {
     fb_addr = (uint32_t*)vbe_lfb_addr;
     
-    // kmalloc yerine manuel bir güvenli bölge deneyelim (Örn: 8MB sonrası)
-    // Eğer kmalloc sistemin hazırsa kmalloc kullanman en iyisidir.
-    fb_backbuffer = (uint32_t*)kmalloc(FB_WIDTH * FB_HEIGHT * sizeof(uint32_t));
+    // En büyük çözünürlük (1920x1080) kadar yeri tek seferde ayırıyoruz
+    // Böylece kfree ihtiyacımız kalmıyor, hep bu alanı kullanıyoruz.
+    fb_backbuffer = (uint32_t*)kmalloc(1920 * 1080 * sizeof(uint32_t));
     
-    if (fb_backbuffer == NULL || fb_backbuffer == fb_addr) {
-        // kmalloc henüz çalışmıyorsa, test için LFB'nin 4MB ilerisini buffer yapalım
-        // NOT: Bu geçici bir çözümdür, kmalloc_init() çağrıldığından emin olmalısın.
-        fb_backbuffer = (uint32_t*)(vbe_lfb_addr + (FB_WIDTH * FB_HEIGHT * 4)); 
-    }
-    
-    fb_clear(0x1a1a1a); // Ekranı koyu gri ile temizle
-    fb_present();       // Donanıma gönder
+    fb_clear(0x1a1a1a);
+    fb_present();
 }
 
 void fb_putpixel(int x, int y, uint32_t color) {
@@ -94,4 +92,15 @@ void fb_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t
 fb_color_t fb_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     // 32-bit ARGB formatı için (Alpha şimdilik kullanılmasa da formatı korur)
     return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
+// kernel/drivers/video/fb.c içine ekle
+void fb_set_resolution(uint32_t width, uint32_t height) {
+    FB_WIDTH = width;
+    FB_HEIGHT = height;
+    
+    // Eğer kfree yoksa, fb_init'te ayırdığın büyük buffer'ı kullanmaya devam et
+    // Sadece yeni boyutlara göre temizle
+    fb_clear(0x1A1A1A); 
+    fb_present();
 }

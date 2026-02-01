@@ -1,4 +1,4 @@
-#include <ui/window.h>
+#include <ui/window/window.h>
 #include <ui/window_chrome.h>
 #include <kernel/drivers/video/fb.h>  // <--- Bunu ekle/güncelle
 #include <ui/theme.h>

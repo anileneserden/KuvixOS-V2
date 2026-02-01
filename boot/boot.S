@@ -18,8 +18,8 @@
 # Bu alanlar sadece VIDEO_MODE (bit 2) aktifse okunur
 .long 0, 0, 0, 0, 0     # Mod bilgisi için ayrılmış alanlar
 .long 0                 # 0 = Lineer Framebuffer (LFB) modu
-.long 800               # Genişlik
-.long 600               # Yükseklik
+.long 1920              # Genişlik
+.long 1080              # Yükseklik
 .long 32                # BPP (Bit Per Pixel)
 
 .section .text

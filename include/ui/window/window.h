@@ -13,6 +13,7 @@ typedef struct {
     int prev_x, prev_y, prev_w, prev_h;
     win_state_t state;
     const char* title;
+    int is_closed; // 1 ise çizme ve güncelleme
 } ui_window_t;
 
 typedef struct {

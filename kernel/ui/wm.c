@@ -1,7 +1,7 @@
 // src/lib/ui/wm/wm.c
 #include <stdint.h>
 #include <ui/wm.h>
-#include <ui/window.h>
+#include <ui/window/window.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
 #include <app/app.h>

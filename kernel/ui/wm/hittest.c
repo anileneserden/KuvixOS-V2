@@ -1,5 +1,5 @@
 #include <ui/wm/hittest.h>
-#include <ui/window.h>
+#include <ui/window/window.h>
 
 /**
  * Pencerenin hangi bölgesine tıklandığını tespit eder.

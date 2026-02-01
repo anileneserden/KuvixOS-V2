@@ -1,7 +1,7 @@
-// src/lib/ui/window/window_chrome.h
+// src/lib/ui/window_chrome.h
 #pragma once
 #include <stdint.h>
-#include "window.h"
+#include <ui/window/window.h>
 #include <ui/wm/hittest.h>
 
 typedef struct {
