@@ -64,6 +64,7 @@ SRC_C = \
     kernel/fs/toyfs_image.c \
     kernel/fs/fs_init.c \
     kernel/ui/apps/settings_app.c \
+    kernel/ui/apps/terminal_app.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
