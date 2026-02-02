@@ -210,6 +210,14 @@ int wm_get_window(int win_id, ui_window_t* out) {
     return 1;
 }
 
+ui_window_t* wm_get_window_ptr(int win_id) {
+    // 1. Sınır kontrolü (id geçerli mi?)
+    if (win_id < 0 || win_id >= g_count) return NULL;
+    
+    // 2. KRİTİK DÜZELTME: g_wins içindeki 'win' üyesinin adresini döndür
+    return &g_wins[win_id].win; 
+}
+
 static ui_rect_t g_draw_client_rect;
 const ui_rect_t* wm_get_draw_client_rect(void) { return &g_draw_client_rect; }
 
@@ -318,6 +326,17 @@ void wm_draw(void) {
                 app->v->on_draw(app); 
             }
         }
+    }
+
+}
+
+void wm_handle_key(uint16_t key) {
+    // 1. Odaktaki uygulamayı bul
+    app_t* active_app = wm_get_active_owner();
+    
+    // 2. Eğer aktif bir uygulama varsa ve 'on_key' fonksiyonu tanımlıysa ona gönder
+    if (active_app && active_app->v && active_app->v->on_key) {
+        active_app->v->on_key(active_app, key);
     }
 }
 

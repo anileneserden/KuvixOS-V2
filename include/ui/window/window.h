@@ -18,7 +18,13 @@ typedef struct {
     win_state_t state;      
     int is_closed;          
 
-    void* user_data;        // ✅ Bu satırı ekle (Her türlü veriyi/app'i buraya bağlayabiliriz)
+    // --- Yeni Eklenenler (Hataları Çözen Kısım) ---
+    int has_chrome;     // 1 ise başlık çubuğu çizilir
+    int has_close;      // 1 ise kapatma butonu çizilir
+    int is_active;      // Pencere şu an odakta mı?
+    // ---------------------------------------------
+
+    void* user_data;    
 } ui_window_t;
 
 typedef struct {

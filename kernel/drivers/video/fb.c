@@ -29,6 +29,11 @@ void fb_putpixel(int x, int y, uint32_t color) {
     fb_backbuffer[y * FB_WIDTH + x] = color;
 }
 
+uint32_t fb_getpixel(int x, int y) {
+    if (x < 0 || (uint32_t)x >= FB_WIDTH || y < 0 || (uint32_t)y >= FB_HEIGHT) return 0;
+    return fb_backbuffer[y * FB_WIDTH + x];
+}
+
 void fb_clear(uint32_t color) {
     // Tüm tamponu tek seferde boya
     for (int i = 0; i < FB_WIDTH * FB_HEIGHT; i++) {

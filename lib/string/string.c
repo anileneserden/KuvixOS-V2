@@ -21,6 +21,15 @@ char* strcpy(char* dst, const char* src) {
     return temp;
 }
 
+char* strcat(char* dest, const char* src) {
+    char* ptr = dest + strlen(dest);
+    while (*src != '\0') {
+        *ptr++ = *src++;
+    }
+    *ptr = '\0';
+    return dest;
+}
+
 int strncmp(const char* s1, const char* s2, size_t n) {
     while (n && *s1 && (*s1 == *s2)) {
         s1++; s2++; n--;
