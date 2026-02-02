@@ -1,37 +1,55 @@
 #include <lib/shell.h>
 #include <kernel/printk.h>
 #include <kernel/kbd.h>
+#include <kernel/serial.h>  // <--- BU EKSİK OLABİLİR (serial_received ve serial_getc için)
 #include <lib/commands.h>
 #include <kernel/vga_font.h>
+#include <kernel/vga.h>
 
-void shell_readline(char* buf, int max_len) {
-    int len = 0;
-    while (len < max_len - 1) {
-        // Polling'i kernel ana döngüsünde de yapabiliriz ama
-        // şimdilik readline içinde donanımı dinleyelim.
+void shell_readline(char* buffer, int max_len) {
+    int i = 0;
+    while (i < max_len - 1) {
+        char c = 0;
+
         kbd_poll(); 
 
-        char c = kbd_get_char();
+        if (kbd_has_character()) { 
+            c = kbd_get_char();
+        } else if (serial_received()) {
+            c = serial_getc();
+        }
+
         if (c == 0) continue;
 
-        if (c == '\n') {
-            printk("\n");
-            buf[len] = '\0';
-            return;
+        // 1. ENTER: Satırı bitir
+        if (c == '\n' || c == '\r') {
+            buffer[i] = '\0';
+            vga_putc('\n');
+            serial_putc('\r'); // Seri portta yeni satır için \r\n gerekebilir
+            serial_putc('\n');
+            break;
         } 
-        else if (c == '\b') {
-            if (len > 0) {
-                len--;
-                // VGA üzerinde geri silme: geri git, boşluk bas, geri git.
-                printk("\b \b"); 
+        // 2. BACKSPACE: Karakteri sil
+        else if (c == '\b' || c == 8 || c == 127) { 
+            if (i > 0) {
+                i--;
+                // VGA ekranından sil
+                vga_putc('\b');
+                vga_putc(' ');
+                vga_putc('\b');
+                // Seri porttan (Terminal) sil
+                serial_putc('\b');
+                serial_putc(' ');
+                serial_putc('\b');
             }
         } 
-        else {
-            buf[len++] = c;
-            printk("%c", c); // Ekranda karakteri göster
+        // 3. YAZILABİLİR KARAKTERLER: Ekrana bas ve kaydet
+        else if (c >= 32 && c <= 126) {
+            buffer[i++] = c;
+            vga_putc(c);
+            serial_putc(c);
         }
     }
-    buf[len] = '\0';
 }
 
 void shell_init(void) {

@@ -9,9 +9,9 @@ typedef struct {
     const char* help;
 } command_t;
 
-// Bu makro, komutu otomatik olarak linker bölümüne kaydeder
+// 'used' özniteliği linker'ın bu veriyi silmesini engeller
 #define REGISTER_COMMAND(name, func, help_text) \
-    command_t _cmd_##name __attribute__((section(".cmd_section"))) = {#name, func, help_text}
+    command_t _cmd_##name __attribute__((section(".cmd_section"), used)) = {#name, func, help_text}
 
 void commands_execute(char* line);
 

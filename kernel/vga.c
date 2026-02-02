@@ -2,15 +2,10 @@
 #include <arch/x86/io.h>
 #include <stdint.h>
 
-// Eğer io.h içindeki outb bazen sorun çıkarıyorsa garantiye alalım
-#ifndef outb
-#define outb(port, val) __asm__ volatile ("outb %b0, %w1" : : "a"(val), "Nd"(port))
-#endif
-
 static uint16_t* const VGA_BUFFER = (uint16_t*)0xB8000;
 static size_t row = 0;
 static size_t col = 0;
-static uint8_t color = 0x0F; // Beyaz üstüne siyah
+uint8_t color = 0x0F; // Beyaz üstüne siyah
 
 /* --- Fonksiyon Prototipleri --- */
 // Derleyiciye bu fonksiyonun aşağıda olduğunu önceden bildiriyoruz
@@ -92,19 +87,26 @@ void vga_print(const char* str) {
 }
 
 void vga_clear(void) {
-    // VGA metin modu belleği (0xB8000)
-    // 80 sütun * 25 satır = 2000 karakterlik yer kaplar.
     uint16_t *vga_buffer = (uint16_t *)0xB8000;
-    
-    // Siyah arka plan üzerine beyaz boşluk karakteri
-    // 0x07 -> Standart gri/beyaz renk
-    // ' ' -> Boşluk karakteri
     uint16_t empty_char = (0x0F << 8) | ' '; 
 
     for (int i = 0; i < 80 * 25; i++) {
         vga_buffer[i] = empty_char;
     }
     
-    // İmleci (cursor) en başa, yani (0,0) konumuna çekmeyi unutma
-    // Eğer vga_set_cursor gibi bir metodun varsa burada çağırabilirsin.
+    // İmleci ve koordinatları en başa çekiyoruz
+    row = 0;
+    col = 0;
+    vga_update_cursor(0, 0);
+}
+
+void vga_set_color(uint8_t new_color) {
+    color = new_color;
+}
+
+void vga_disable_cursor() {
+    // 0x3D4 portuna 0x0A (Cursor Start Register) komutu gönderilir
+    outb(0x3D4, 0x0A);
+    // 0x20 değeri (5. bit) imleci tamamen devre dışı bırakır
+    outb(0x3D5, 0x20);
 }
