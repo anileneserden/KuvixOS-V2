@@ -19,9 +19,58 @@ void gfx_putpixel(int x, int y, uint32_t color) {
     fb_putpixel(x, y, color);
 }
 
+// r, g, b: Yeni rengin bileşenleri
+// a: Saydamlık (0-255 arası, 0 tam saydam, 255 tam mat)
+void gfx_putpixel_alpha(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    if (x < 0 || y < 0 || (uint32_t)x >= fb_get_width() || (uint32_t)y >= fb_get_height()) return;
+
+    // 1. Arka plandaki mevcut rengi oku
+    uint32_t bg_color = fb_getpixel(x, y);
+
+    // 2. Arka plan bileşenlerini ayır (Sistemin ARGB/BGRA olduğuna göre kaydırmaları ayarla)
+    uint8_t bg_r = (bg_color >> 16) & 0xFF;
+    uint8_t bg_g = (bg_color >> 8) & 0xFF;
+    uint8_t bg_b = bg_color & 0xFF;
+
+    // 3. Harmanlama (Blending) işlemi
+    uint8_t out_r = ((r * a) + (bg_r * (255 - a))) / 255;
+    uint8_t out_g = ((g * a) + (bg_g * (255 - a))) / 255;
+    uint8_t out_b = ((b * a) + (bg_b * (255 - a))) / 255;
+
+    // 4. Yeni rengi birleştir ve yaz
+    uint32_t final_color = (out_r << 16) | (out_g << 8) | out_b;
+    fb_putpixel(x, y, final_color);
+}
+
+// İstediğin özel parametre sıralamasıyla Alpha Rect
+void gfx_draw_alpha_rect(int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int x, int y) {
+    for (int yy = 0; yy < h; yy++) {
+        for (int xx = 0; xx < w; xx++) {
+            // Mevcut pikselleri alpha ile harmanlayarak boyar
+            gfx_putpixel_alpha(x + xx, y + yy, r, g, b, a);
+        }
+    }
+}
+
 // Kare/Dikdörtgen çizimi
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color) {
     fb_draw_rect(x, y, w, h, color);
+}
+
+#define abs(x) ((x) < 0 ? -(x) : (x))
+
+void gfx_draw_line(int x0, int y0, int x1, int y1, uint32_t color) {
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy, e2;
+
+    while (1) {
+        gfx_putpixel(x0, y0, color); // veya sende adı neyse (put_pixel vb.)
+        if (x0 == x1 && y0 == y1) break;
+        e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
 }
 
 // Metin çizimi (8x8 font kullanarak)

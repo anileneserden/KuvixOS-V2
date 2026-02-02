@@ -25,6 +25,10 @@ void gfx_clear(uint32_t color);
 void gfx_putpixel(int x, int y, uint32_t color);
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color);
 
+void gfx_draw_line(int x0, int y0, int x1, int y1, uint32_t color);
+
+void gfx_draw_alpha_rect(int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int x, int y);
+
 // Gelişmiş Şekiller
 void gfx_fill_round_rect(int x, int y, int w, int h, int r, uint32_t color);
 void gfx_draw_bitmap(int x, int y, const bitmap_t* bmp);
