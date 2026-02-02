@@ -3,6 +3,7 @@
 #include <kernel/drivers/video/fb.h>  // <--- Bunu ekle/güncelle
 #include <ui/theme.h>
 #include <font/font8x8_basic.h>
+#include <kernel/drivers/video/gfx.h>
 
 // Mevcut hatalı satırları şunlarla değiştir:
 #include "bitmaps/icons/icon_close_16.h"
@@ -41,18 +42,34 @@ void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
     ui_chrome_layout_t L = ui_chrome_layout(win);
     wm_hittest_t hover = ui_chrome_hittest(win, mx, my);
 
-    // Arka plan ve Çerçeve
+    // 1. Arka plan ve Çerçeve
     uint32_t border = is_active ? 0x5078DC : th->window_border;
     fb_draw_rect(win->x, win->y, win->w, win->h, th->window_bg);
     fb_draw_rect_outline(win->x, win->y, win->w, win->h, border);
 
-    // Başlık Çubuğu
+    // 2. Başlık Çubuğu Arka Planı
     fb_draw_rect(win->x, win->y, win->w, L.title_h, th->window_title_bg);
-    if (win->title) draw_text8(win->x + 8, win->y + 8, th->window_title_text, win->title);
 
-    // Butonlar ve İkonlar
-    if (hover == HT_BTN_CLOSE) fb_draw_rect(L.btn_close_x, L.btn_y, L.btn_size, L.btn_size, darken(th->window_title_bg, 40));
+    // 3. İkon ve Metin Çizimi
+    if (win->icon) {
+        // SONUNA , 0 EKLEDİK (6. parametre: transparency key)
+        fb_blit_argb_key(L.icon_x, L.btn_y, 16, 16, win->icon, 0);
+
+        if (win->title) {
+            draw_text8(L.text_x, win->y + 8, th->window_title_text, win->title);
+        }
+    } else {
+        if (win->title) {
+            draw_text8(win->x + 8, win->y + 8, th->window_title_text, win->title);
+        }
+    }
+
+    // 4. Buton Hover Efekti (Kapatma butonu için)
+    if (hover == HT_BTN_CLOSE) {
+        fb_draw_rect(L.btn_close_x, L.btn_y, L.btn_size, L.btn_size, 0xAA0000); // Kırmızımsı vurgu
+    }
     
+    // 5. Pencere Butonlarını (Minimize, Maximize, Close) çiz
     fb_blit_argb_key(L.btn_min_x, L.btn_y, 16, 16, g_icon_min_16, 0);
     fb_blit_argb_key(L.btn_max_x, L.btn_y, 16, 16, g_icon_max_16, 0);
     fb_blit_argb_key(L.btn_close_x, L.btn_y, 16, 16, g_icon_close_16, 0);

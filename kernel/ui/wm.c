@@ -168,6 +168,42 @@ void wm_close_window(int idx) {
     g_mouse_down = 0; g_dragging = 0; g_drag_idx = -1;
 }
 
+// Pencerenin sahibini (app_t) belirlemek için kullanılır
+void wm_set_owner(int win_id, void* owner_app) {
+    if (win_id >= 0 && win_id < g_count) {
+        g_wins[win_id].owner = (app_t*)owner_app;
+    }
+}
+
+// Pencereyi odaklamak (öne getirmek) için kullanılır
+void wm_set_active(int win_id) {
+    if (win_id >= 0 && win_id < g_count) {
+        bring_to_front(win_id);
+    }
+}
+
+// app_manager.c'nin owner bilgisini çekebilmesi için gerekebilir
+void* wm_get_owner(int win_id) {
+    if (win_id >= 0 && win_id < g_count) {
+        return g_wins[win_id].owner;
+    }
+    return NULL;
+}
+
+int wm_find_window_at(int x, int y) {
+    // En üstteki pencereden (g_z[g_count-1]) en alttakine doğru kontrol et
+    for (int zi = g_count - 1; zi >= 0; zi--) {
+        int id = g_z[zi];
+        ui_window_t* w = &g_wins[id].win;
+        
+        // Eğer koordinatlar bu pencerenin içindeyse ID'yi döndür
+        if (x >= w->x && x < w->x + w->w && y >= w->y && y < w->y + w->h) {
+            return id;
+        }
+    }
+    return -1; // Hiçbir pencereye isabet etmedi (Masaüstü)
+}
+
 int wm_get_window(int win_id, ui_window_t* out) {
     if (!out || win_id < 0 || win_id >= g_count) return 0;
     *out = g_wins[win_id].win;
@@ -197,23 +233,63 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
         if (idx != -1) {
             bring_to_front(idx);
             ui_window_t* w = &g_wins[idx].win;
-            if (in_close_btn(w, mx, my)) { wm_close_window(idx); return; }
-            if (in_max_btn(w, mx, my)) { wm_toggle_maximize(idx); return; }
+
+            // 1. KAPAT BUTONU: Pencereyi yok et
+            if (in_close_btn(w, mx, my)) {
+                wm_close_window(idx);
+                return; // Pencere kapandı, devam etmeye gerek yok
+            }
+
+            // 2. MAXIMIZE BUTONU: Tam ekran yap veya eski haline döndür
+            if (in_max_btn(w, mx, my)) {
+                wm_toggle_maximize(idx);
+                return;
+            }
+
+            // 3. SÜRÜKLEME: Sadece başlık çubuğuna tıklandıysa (butonlar hariç)
             if (in_titlebar(w, mx, my)) {
-                g_mouse_down = 1; g_drag_idx = idx; g_down_x = mx; g_down_y = my;
+                g_mouse_down = 1;
+                g_drag_idx = idx;
+                g_down_x = mx;
+                g_down_y = my;
             }
         }
     }
     if (released & 0x01) { g_mouse_down = 0; g_dragging = 0; g_resizing = 0; }
 }
 
+void wm_handle_mouse_move(int mx, int my) {
+    g_mouse_x = mx;
+    g_mouse_y = my;
+
+    if (g_mouse_down && g_drag_idx != -1) {
+        ui_window_t* w = &g_wins[g_drag_idx].win;
+        
+        // Pencere maksimize edilmişse sürüklenemez
+        if (w->state == 1) return;
+
+        // Aradaki farkı pencere konumuna ekle
+        int dx = mx - g_down_x;
+        int dy = my - g_down_y;
+
+        w->x += dx;
+        w->y += dy;
+
+        // Başlangıç noktasını güncelle
+        g_down_x = mx;
+        g_down_y = my;
+        
+        g_dragging = 1;
+    }
+}
+
 ui_rect_t wm_get_client_rect(int win_id) {
-    ui_rect_t r = {0,0,0,0};
-    if (win_id < 0 || win_id >= g_count) return r;
     ui_window_t* w = &g_wins[win_id].win;
-    r.x = w->x + 2; r.y = w->y + 26;
-    r.w = (w->w > 4) ? w->w - 4 : 0;
-    r.h = (w->h > 30) ? w->h - 30 : 0;
+    ui_rect_t r;
+    r.x = w->x + 2;      // Kenarlık payı
+    r.y = w->y + 26;     // Başlık çubuğu payı
+    r.w = w->w - 4;
+    r.h = w->h - 28;
     return r;
 }
 
@@ -230,10 +306,17 @@ void wm_toggle_maximize(int idx) {
 void wm_draw(void) {
     for (int zi = 0; zi < g_count; ++zi) {
         int id = g_z[zi];
-        ui_window_draw(&g_wins[id].win, (id == g_active), g_mouse_x, g_mouse_y);
-        if (g_wins[id].win.title[0] == 'T') {
-            g_draw_client_rect = wm_get_client_rect(id);
-            terminal_on_draw_direct(); 
+        ui_window_t* win = &g_wins[id].win;
+        app_t* app = g_wins[id].owner;
+
+        if (app && app->visible) {
+            // 1. Pencere çerçevesini çiz (Başlık çubuğu vs.)
+            ui_window_draw(win, (id == g_active), g_mouse_x, g_mouse_y);
+
+            // 2. KRİTİK: Uygulamanın çizim fonksiyonunu çağır
+            if (app->v && app->v->on_draw) {
+                app->v->on_draw(app); 
+            }
         }
     }
 }

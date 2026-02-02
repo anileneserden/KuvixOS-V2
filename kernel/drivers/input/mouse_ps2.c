@@ -1,6 +1,7 @@
 #include <kernel/drivers/input/mouse_ps2.h>
 #include <arch/x86/io.h>
 #include <stdint.h>
+#include <ui/wm.h>
 
 // Eğer yoksa, dosyanın en üstüne (include'lardan sonra) ekle:
 int mouse_x = 400; // Ekran genişliğine göre (örn: 1024 / 2)
@@ -36,6 +37,35 @@ static void ps2_mouse_write(uint8_t data) {
     // Ardından asıl veri 0x60 portuna yazılır
     ps2_wait_write();
     outb(0x60, data);
+}
+
+void ps2_mouse_update(void) {
+    int dx, dy;
+    uint8_t buttons;
+    static uint8_t last_buttons = 0;
+
+    while (ps2_mouse_pop(&dx, &dy, &buttons)) {
+        mouse_x += dx;
+        mouse_y += dy;
+
+        // Ekran sınırları (KuvixOS çözünürlüğüne göre ayarla)
+        if (mouse_x < 0) mouse_x = 0;
+        if (mouse_y < 0) mouse_y = 0;
+        if (mouse_x > 1023) mouse_x = 1023; // Örnek 1024x768
+        if (mouse_y > 767) mouse_y = 767;
+
+        // Window Manager'a hareketi bildir
+        wm_handle_mouse_move(mouse_x, mouse_y);
+
+        uint8_t pressed = buttons & ~last_buttons;
+        uint8_t released = last_buttons & ~buttons;
+
+        if (pressed || released) {
+            wm_handle_mouse(mouse_x, mouse_y, pressed, released, buttons);
+        }
+
+        last_buttons = buttons;
+    }
 }
 
 void ps2_mouse_init(void) {

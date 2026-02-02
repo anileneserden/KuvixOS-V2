@@ -11,9 +11,14 @@ typedef enum {
 typedef struct {
     int x, y, w, h;
     int prev_x, prev_y, prev_w, prev_h;
-    win_state_t state;
-    const char* title;
-    int is_closed; // 1 ise çizme ve güncelleme
+    
+    const char* title;      
+    uint32_t* icon;         
+    
+    win_state_t state;      
+    int is_closed;          
+
+    void* user_data;        // ✅ Bu satırı ekle (Her türlü veriyi/app'i buraya bağlayabiliriz)
 } ui_window_t;
 
 typedef struct {

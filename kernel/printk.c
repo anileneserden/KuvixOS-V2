@@ -5,8 +5,12 @@
 #include <stdbool.h> // bool için
 
 // Terminal fonksiyonunu dışarıdan alıyoruz
-extern void terminal_putc(char c);
+void terminal_putc(char c);
 static bool gui_mode_enabled = true;
+
+void terminal_putc(char c) {
+    serial_putc(c); // Çekirdek loglarını seri porta yönlendirir
+}
 
 // GUI modunu açıp kapatmak için bir yardımcı fonksiyon
 void printk_set_gui_mode(bool enable) {
