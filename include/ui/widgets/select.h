@@ -1,6 +1,6 @@
 #pragma once
 #include <stdint.h>
-#include <kernel/drivers/video/fb.h>   // fb_color_t
+#include <kernel/drivers/video/fb.h>
 
 typedef struct {
     int x, y, w, h;

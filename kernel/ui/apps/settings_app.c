@@ -1,7 +1,7 @@
 #include <ui/apps/settings/settings_app.h>
 #include <ui/window/window.h>
-#include <ui/ui_button/ui_button.h>
-#include <ui/select/select.h>
+#include <ui/widgets/button.h>
+#include <ui/widgets/select.h>
 #include <kernel/drivers/video/fb.h>
 #include <lib/string.h> // strcmp için
 

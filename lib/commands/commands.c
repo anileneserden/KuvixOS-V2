@@ -1,20 +1,12 @@
 #include <lib/commands.h>
 #include <kernel/printk.h>
 #include <stddef.h>
+#include <lib/string.h>
+#include <stdbool.h>
 
 // Linker Script içindeki sembolleri alıyoruz
 extern command_t _cmd_start;
 extern command_t _cmd_end;
-
-// Kendi string karşılaştırma fonksiyonumuz (libc olmadığı için)
-static int k_streq(const char* a, const char* b) {
-    int i = 0;
-    while (a[i] && b[i]) {
-        if (a[i] != b[i]) return 0;
-        i++;
-    }
-    return a[i] == 0 && b[i] == 0;
-}
 
 // Satırı boşluklara göre argümanlara böler (echo merhaba dunya -> argc=3)
 static int split_line(char* line, char** argv, int max_args) {
@@ -41,21 +33,48 @@ static int split_line(char* line, char** argv, int max_args) {
 }
 
 void commands_execute(char* line) {
-    char* argv[16]; // Maksimum 16 argüman desteği
+    // 1. ADIM: Girdi Kontrolü
+    if (!line || strlen(line) == 0) return;
+
+    // Sondaki görünmez karakterleri (ENTER, Boşluk vs.) temizle
+    int len = strlen(line);
+    while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' ')) {
+        line[--len] = '\0';
+    }
+
+    char* argv[16];
     int argc = split_line(line, argv, 16);
+    if (argc == 0) return;
 
-    if (argc == 0) return; // Boş satır
+    // 2. ADIM: Linker Check (Sistem neden çalışmıyor?)
+    command_t* start = &_cmd_start;
+    command_t* end = &_cmd_end;
+    uint32_t count = end - start;
 
-    // Linker tarafından oluşturulan cmd_section tablosunda arama yapıyoruz
-    command_t* cmd = &_cmd_start;
-    
-    // Pointer aritmetiği ile _cmd_start'tan _cmd_end'e kadar tüm command_t yapılarını gez
-    for (; cmd < &_cmd_end; cmd++) {
-        if (k_streq(argv[0], cmd->name)) {
-            cmd->fn(argc, argv);
-            return;
+    if (count == 0 || count > 1000) { // Mantıksız bir sayı varsa
+        printk("\n[SISTEM HATASI] Komut tablosu yuklenemedi!\n");
+        printk("Linker Sembolleri: Start: 0x%x, End: 0x%x\n", (uint32_t)start, (uint32_t)end);
+        return;
+    }
+
+    // 3. ADIM: Arama ve Eşleşme
+    command_t* cmd = start;
+    bool found = false;
+
+    for (uint32_t i = 0; i < count; i++) {
+        // Debug için her komutu seri porta bas (Sadece sorunu çözene kadar)
+        // printk("Deneniyor: %s == %s\n", argv[0], cmd[i].name);
+
+        if (strcmp(argv[0], cmd[i].name) == 0) {
+            cmd[i].fn(argc, argv);
+            found = true;
+            break;
         }
     }
 
-    printk("Bilinmeyen komut: '%s'. Yardim icin 'help' yazin.\n", argv[0]);
+    // 4. ADIM: Hata Bildirimi
+    if (!found) {
+        printk("\n[!] Komut bulunamadi: '%s'\n", argv[0]);
+        printk("Kayitli toplam komut sayisi: %d\n", count);
+    }
 }

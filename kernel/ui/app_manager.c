@@ -9,7 +9,9 @@
 // --- 1. DIŞARIDAN GELEN VTABLE TANIMLARI ---
 // Bu tablolar ilgili .c dosyalarında tanımlı olmalıdır.
 extern const app_vtbl_t terminal_vtbl; 
+extern const app_vtbl_t debug_font_vtbl;
 extern const app_vtbl_t file_manager_app; 
+extern const app_vtbl_t test_ui_vtbl; // BİZİM YENİ UYGULAMA BURADA!
 
 // --- 2. UYGULAMA TANIMLAMA YAPISI ---
 typedef struct {
@@ -23,8 +25,9 @@ typedef struct {
 // Yeni bir uygulama eklemek istersen sadece bu listeye ekleme yapman yeterli.
 static app_definition_t app_registry[] = {
     { 1, "Terminal",         &terminal_vtbl,      120, 90, 520, 320 },
-    { 2, "KuvixOS Demo",     NULL,                80, 60, 420, 260 },
+    { 2, "UI Test Lab",      &test_ui_vtbl,       200, 150, 400, 300 }, // ID: 5 olarak ekledik
     { 3, "Dosya Yoneticisi", &file_manager_app,   150, 150, 500, 350 },
+    { 4, "Font Debugger",    &debug_font_vtbl,    50, 50, 640, 400 },
     { 0, NULL,               NULL,                0, 0, 0, 0 } 
 };
 
@@ -108,3 +111,4 @@ app_t* appmgr_start_app(int app_id) {
 
 // Yardımcı kısayollar
 app_t* appmgr_start_terminal(void) { return appmgr_start_app(1); }
+app_t* appmgr_start_testui(void) { return appmgr_start_app(2); } // ID 2 olanı başlat

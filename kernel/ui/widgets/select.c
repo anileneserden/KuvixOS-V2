@@ -1,4 +1,4 @@
-#include <ui/select/select.h>
+#include <ui/widgets/select.h>
 #include <stdint.h>
 
 #include <kernel/drivers/video/fb.h>

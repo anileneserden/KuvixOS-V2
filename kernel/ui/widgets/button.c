@@ -1,5 +1,5 @@
 // src/lib/ui/ui_button/ui_button.c
-#include <ui/ui_button/ui_button.h>
+#include <ui/widgets/button.h>
 #include <ui/mouse.h>
 #include <kernel/drivers/video/fb.h>
 #include <font/font8x8_basic.h>

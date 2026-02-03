@@ -63,16 +63,23 @@ SRC_C = \
     kernel/fs/toyfs.c \
     kernel/fs/toyfs_image.c \
     kernel/fs/fs_init.c \
+    kernel/ui/apps/debug_app.c \
     kernel/ui/apps/settings_app.c \
     kernel/ui/apps/terminal_app.c \
     kernel/ui/apps/file_manager_app.c \
+    kernel/ui/apps/test_ui_app.c \
+    kernel/ui/widgets/button.c \
+    kernel/ui/widgets/input.c \
+    kernel/ui/widgets/label.c \
+    kernel/ui/widgets/progressbar.c \
+    kernel/ui/widgets/select.c \
+    kernel/ui/widgets/textbox.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
     kernel/ui/power_screen.c \
-    kernel/ui/select.c \
     kernel/ui/wm/hittest.c \
     kernel/ui/wm.c \
     kernel/ui/mouse.c \
@@ -85,7 +92,6 @@ SRC_C = \
     kernel/ui/theme_bootstrap.c \
     kernel/ui/theme_parser.c \
     kernel/ui/theme_builtin_data.c \
-    kernel/ui/ui_button.c \
     lib/shell/shell.c \
     lib/commands/commands.c \
     lib/service/service.c \

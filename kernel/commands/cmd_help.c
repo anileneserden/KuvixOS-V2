@@ -7,16 +7,11 @@ void cmd_help(int argc, char** argv) {
     extern command_t _cmd_start;
     extern command_t _cmd_end;
 
-    printk("KuvixOS V2 Yardim Menusu:\n");
-    printk("--------------------------\n");
+    printk("KuvixOS V2 Yardim Menusu:\n--------------------------\n");
 
     for (command_t* cmd = &_cmd_start; cmd < &_cmd_end; cmd++) {
-        // %-10s yerine basit bir boşluk veya tab kullanalım
-        printk("  ");
-        printk(cmd->name);
-        printk(" - ");
-        printk(cmd->help);
-        printk("\n");
+        // Her şeyi tek bir formatlı printk içinde topla
+        printk("  %s - %s\n", cmd->name, cmd->help);
     }
 }
 
