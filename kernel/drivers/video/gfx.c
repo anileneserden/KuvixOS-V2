@@ -1,6 +1,6 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
-#include <ui/font8x8_basic.h>
+#include <font/font8x16_tr.h>
 #include <stdint.h>
 
 // kernel/drivers/video/gfx.c
@@ -33,6 +33,8 @@ void gfx_clear(uint32_t color) {
 }
 
 void gfx_putpixel(int x, int y, uint32_t color) {
+    // Ekran sınırlarını kontrol etmeyi unutma
+    if (x < 0 || y < 0 || (uint32_t)x >= fb_get_width() || (uint32_t)y >= fb_get_height()) return;
     fb_putpixel(x, y, color);
 }
 
@@ -76,68 +78,53 @@ void gfx_draw_line(int x0, int y0, int x1, int y1, uint32_t color) {
     }
 }
 
+void gfx_draw_char(int x, int y, uint32_t color, unsigned char c) {
+    // 1. Font dizisine erişim: Her karakter 16 byte (satır) uzunluğunda
+    // font8x16_tr[c] bize o karakterin 16 satırlık verisini verir.
+    
+    for (int row = 0; row < 16; row++) {
+        // Karakterin o satırdaki 8 bitlik verisini alıyoruz
+        uint8_t row_data = font8x16_tr[c][row];
+
+        for (int col = 0; col < 8; col++) {
+            // Bit kontrolü: En anlamlı bitten (MSB) başlıyoruz
+            // (1 << (7 - col)) mantığı bitleri soldan sağa okumamızı sağlar
+            if (row_data & (1 << (7 - col))) {
+                gfx_putpixel(x + col, y + row, color);
+            }
+        }
+    }
+}
+
 // --- GÜNCELLENMİŞ METİN ÇİZİMİ ---
 void gfx_draw_text(int x, int y, uint32_t color, const char* s) {    
     if (!s) return;
     
-    while (*s) {
-        uint8_t c = (uint8_t)*s++;
-        
-        if (c >= 14 && c <= 25) {
-            const uint8_t* glyph = tr_glyphs[c - 14]; 
-            for (int row = 0; row < 16; row++) {
-                uint8_t line = glyph[row];
-                for (int col = 0; col < 8; col++) {
-                    if (line & (1u << (7 - col))) {
-                        // KRİTİK AYAR: y + row - 8 
-                        // Harfi 8 piksel yukarıdan başlatıyoruz ki taban çizgisi eşitleşsin.
-                        gfx_putpixel(x + col, y + row - 8, color); 
-                    }
-                }
-            }
-        } else {
-            // Standart 8x8 font çizimi (Dokunma)
-            const uint8_t* glyph = font8x8_basic[c];
-            for (int row = 0; row < 8; row++) {
-                uint8_t line = glyph[row];
-                for (int col = 0; col < 8; col++) {
-                    if (line & (1u << (7 - col))) {
-                        gfx_putpixel(x + col, y + row, color);
-                    }
-                }
-            }
-        }
-        x += 8; 
+    // İşaretçiyi unsigned char yaparak 128 üstü (Türkçe) karakterleri güvenle oku
+    unsigned char* ptr = (unsigned char*)s;
+    
+    while (*ptr) {
+        gfx_draw_char(x, y, color, *ptr);
+        x += 8; // Her harf 8 piksel genişliğinde (sabit genişlikli font)
+        ptr++;
     }
 }
 
+// --- HİZALAMA VE KUTU GÖRSELLEŞTİRME TESTİ ---
 void gfx_draw_text_debug(int x, int y, uint32_t text_color, const char* s) {
     if (!s) return;
-    uint32_t debug_bg = 0x0000FF; // Parlak Mavi Arka Plan
+    uint32_t debug_bg = 0xCC0000; // Kutuları kırmızı yapalım
 
-    while (*s) {
-        uint8_t c = (uint8_t)*s++;
-        
-        // 1. Önce 8x8'lik MAVİ kutuyu çiz (Hizalamayı görmek için)
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                gfx_putpixel(x + j, y + i, debug_bg);
-            }
-        }
+    unsigned char* ptr = (unsigned char*)s;
+    while (*ptr) {
+        // 1. 8x16'lık KIRMIZI kutuyu çiz (Harfin kapladığı alanı gör)
+        gfx_fill_rect(x, y, 8, 16, debug_bg);
 
-        // 2. Harfi bu mavi kutunun üzerine çiz
-        const uint8_t* glyph = font8x8_basic[c];
-        for (int row = 0; row < 8; row++) {
-            uint8_t line = glyph[row];
-            for (int col = 0; col < 8; col++) {
-                if (line & (1u << (7 - col))) {
-                    gfx_putpixel(x + col, y + row, text_color);
-                }
-            }
-        }
+        // 2. Harfi üzerine çiz
+        gfx_draw_char(x, y, text_color, *ptr);
         
-        // Harfler arasında 1 piksel boşluk bırakalım ki kutular birbirine yapışmasın
-        x += 9; 
+        x += 9; // Kutular arası 1 piksel boşluk
+        ptr++;
     }
 }
 

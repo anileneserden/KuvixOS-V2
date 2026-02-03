@@ -34,6 +34,8 @@ void gfx_fill_round_rect(int x, int y, int w, int h, int r, uint32_t color);
 void gfx_draw_bitmap(int x, int y, const bitmap_t* bmp);
 
 // Metin Çizimi
+// Mevcut gfx_draw_text satırının hemen üstüne veya altına ekle:
+void gfx_draw_char(int x, int y, uint32_t color, unsigned char c);
 void gfx_draw_text(int x, int y, uint32_t color, const char* s);
 
 #endif

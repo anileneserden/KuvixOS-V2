@@ -79,6 +79,8 @@ SRC_C = \
     kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
+    kernel/ui/font_atlas.c \
+    kernel/ui/keyboard_test.c \
     kernel/ui/power_screen.c \
     kernel/ui/wm/hittest.c \
     kernel/ui/wm.c \
@@ -97,7 +99,7 @@ SRC_C = \
     lib/service/service.c \
     lib/service/service_registry.c \
     lib/string/string.c \
-    lib/ui/font/font8x8_basic.c \
+    lib/ui/font/font8x16_tr.c \
     kernel/arch/x86/gdt.c \
     kernel/arch/x86/idt.c
 

@@ -10,11 +10,14 @@
 #include <arch/x86/idt.h>
 #include <kernel/time.h>
 #include "kernel/drivers/input/mouse_ps2.h"
+#include <ui/keyboard_test.h>
+#include <ui/font_atlas.h>
 
 // Eksik extern tanımları
 extern void kbd_init(void);         // Klavye sürücüsü başlangıç fonksiyonu
 extern void ps2_mouse_init(void);
 extern void timer_init(uint32_t freq);
+extern void ui_keyboard_test_run(void);
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     // 1. Düşük Seviye Donanım & Debug Portu
@@ -53,7 +56,10 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     // 6. Masaüstü Ortamını Başlat (Sonsuz Döngüye Girer)
     // ui_desktop_run genelde kendi içinde draw_loop barındırır
-    ui_desktop_run(); 
+    // ui_desktop_run(); 
+
+    // ui_keyboard_test_run(); // Doğrudan bizim testimize gir
+    ui_show_font_atlas();
 
     // Eğer desktop'tan çıkılırsa (hata veya shutdown), CPU'yu durdur
     while(1) { 

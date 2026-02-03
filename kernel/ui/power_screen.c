@@ -1,32 +1,20 @@
 #include <ui/power_screen.h>
-
 #include <kernel/drivers/video/fb.h>
-#include <font/font8x8_basic.h>
+#include <kernel/drivers/video/gfx.h>  // Merkezi çizim fonksiyonları için
+#include <font/font8x16_tr.h>          // Yeni font tanımları için
 #include <kernel/power.h>
 #include <stdint.h>
 
-/* --------- küçük yardımcılar --------- */
-static void draw_text8(int x, int y, uint32_t color, const char* s)
-{
-    while (*s) {
-        uint8_t c = (uint8_t)*s++;
-        const uint8_t* glyph = font8x8_basic[c];
-        for (int row = 0; row < 8; row++) {
-            uint8_t line = glyph[row];
-            for (int col = 0; col < 8; col++) {
-                if (line & (1u << (7 - col))) fb_putpixel(x + col, y + row, color);
-            }
-        }
-        x += 8;
-    }
+/* --------- Yardımcı Fonksiyonlar --------- */
+
+static int kstrlen(const char* s) { 
+    int n = 0; 
+    while(s && s[n]) n++; 
+    return n; 
 }
 
-static int kstrlen(const char* s){ int n=0; while(s && s[n]) n++; return n; }
-
-// çok basit busy-wait (interrupt gerekmez)
-static void sleep_ms_busy(uint32_t ms)
-{
-    // QEMU’da hızlıysa iç döngüyü büyütebilirsin (ör: 600000)
+// Meşgul bekleme (Busy-wait) animasyon hızı için
+static void sleep_ms_busy(uint32_t ms) {
     while (ms--) {
         for (volatile uint32_t i = 0; i < 60000; i++) {
             __asm__ __volatile__("pause");
@@ -34,62 +22,63 @@ static void sleep_ms_busy(uint32_t ms)
     }
 }
 
-static void power_anim(const char* msg, uint32_t seconds, int do_reboot)
-{
+static void power_anim(const char* msg, uint32_t seconds, int do_reboot) {
     const char spin[4] = {'|','/','-','\\'};
 
     int sw = (int)fb_get_width();
     int sh = (int)fb_get_height();
 
+    // Harf genişliği 8px, yükseklik 16px.
     int msg_w = kstrlen(msg) * 8;
     int x_msg = (sw - msg_w) / 2;
-    int y_msg = sh/2 - 20;
+    int y_msg = sh / 2 - 40; // Yazıyı biraz daha yukarı çektik
 
     for (int t = (int)seconds; t > 0; t--) {
         for (int f = 0; f < 10; f++) {
-            fb_clear(fb_rgb(0,0,0));
+            fb_clear(fb_rgb(0, 0, 0));
 
-            draw_text8(x_msg, y_msg, fb_rgb(255,255,255), msg);
+            // Merkezi gfx_draw_text kullanımı (8x16 destekli)
+            gfx_draw_text(x_msg, y_msg, fb_rgb(255, 255, 255), msg);
 
-            char cnt[6];
-            cnt[0] = (char)('0' + t);  // 1..9 için yeter
-            cnt[1] = '.';
-            cnt[2] = '.';
-            cnt[3] = '.';
-            cnt[4] = 0;
+            // Geri sayım metni hazırlığı
+            char cnt[8];
+            cnt[0] = (char)('0' + t); 
+            cnt[1] = '.'; cnt[2] = '.'; cnt[3] = '.'; cnt[4] = 0;
 
-            int x_cnt = (sw - 4*8) / 2;
-            int y_cnt = y_msg + 16;
-            draw_text8(x_cnt, y_cnt, fb_rgb(200,200,200), cnt);
+            int x_cnt = (sw - 4 * 8) / 2;
+            int y_cnt = y_msg + 24; // 16px harf + 8px boşluk
+            gfx_draw_text(x_cnt, y_cnt, fb_rgb(200, 200, 200), cnt);
 
-            char sp[2] = { spin[(t*10 + f) & 3], 0 };
+            // Spinner (Dönen çizgi) animasyonu
+            char sp[2] = { spin[(t * 10 + f) & 3], 0 };
             int x_sp = (sw / 2) - 4;
-            int y_sp = y_cnt + 16;
-            draw_text8(x_sp, y_sp, fb_rgb(200,200,200), sp);
+            int y_sp = y_cnt + 24; // Geri sayımın altına yerleştir
+            gfx_draw_text(x_sp, y_sp, fb_rgb(200, 200, 200), sp);
 
             fb_present();
             sleep_ms_busy(10);
         }
     }
 
-    // Son frame
-    fb_clear(fb_rgb(0,0,0));
-    draw_text8(x_msg, y_msg, fb_rgb(255,255,255), msg);
+    // Son kare: Sadece ana mesajı göster
+    fb_clear(fb_rgb(0, 0, 0));
+    gfx_draw_text(x_msg, y_msg, fb_rgb(255, 255, 255), msg);
     fb_present();
     sleep_ms_busy(200);
 
-    // BURADA artık sistemi kapat/reboot et
+    // Donanım seviyesinde kapatma/reboot
     if (do_reboot) power_reboot();
     else           power_shutdown();
 }
 
-/* --------- dış API --------- */
-void ui_power_screen_shutdown(uint32_t seconds)
-{
+/* --------- Dışarıdan Çağrılan API --------- */
+
+void ui_power_screen_shutdown(uint32_t seconds) {
+    // "Sistem Kapatiliyor" mesajında 'I' harfi yerine TR fontun varsa 0xDD (İ) de basabilirsin
+    // Şimdilik string içindeki ASCII karakterlerle test et.
     power_anim("Sistem Kapatiliyor", seconds, 0);
 }
 
-void ui_power_screen_reboot(uint32_t seconds)
-{
+void ui_power_screen_reboot(uint32_t seconds) {
     power_anim("Sistem Yeniden Baslatiliyor", seconds, 1);
 }
