@@ -25,7 +25,7 @@ void gfx_putpixel_alpha(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a
     if (x < 0 || y < 0 || (uint32_t)x >= fb_get_width() || (uint32_t)y >= fb_get_height()) return;
 
     // 1. Arka plandaki mevcut rengi oku
-    uint32_t bg_color = fb_getpixel(x, y);
+    fb_color_t bg_color = fb_getpixel(x, y);
 
     // 2. Arka plan bileşenlerini ayır (Sistemin ARGB/BGRA olduğuna göre kaydırmaları ayarla)
     uint8_t bg_r = (bg_color >> 16) & 0xFF;

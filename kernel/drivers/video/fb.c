@@ -22,19 +22,19 @@ void fb_init(uint32_t vbe_lfb_addr) {
 }
 
 void fb_putpixel(int x, int y, uint32_t color) {
-    // Sınır kontrolü çok önemli, aksi halde kernel panic oluşur
-    if (x < 0 || x >= FB_WIDTH || y < 0 || y >= FB_HEIGHT) return;
+    // x ve y'yi uint32_t'ye çevirerek (cast) karşılaştırma uyarısını çözüyoruz
+    if (x < 0 || (uint32_t)x >= FB_WIDTH || y < 0 || (uint32_t)y >= FB_HEIGHT) return;
     
-    // Pikseller her zaman arka tampona yazılır
     fb_backbuffer[y * FB_WIDTH + x] = color;
 }
 
 void fb_clear(uint32_t color) {
-    // Tüm tamponu tek seferde boya
-    for (int i = 0; i < FB_WIDTH * FB_HEIGHT; i++) {
+    // i değişkenini uint32_t yaparak karşılaştırma uyarısını çözüyoruz
+    for (uint32_t i = 0; i < FB_WIDTH * FB_HEIGHT; i++) {
         fb_backbuffer[i] = color;
     }
 }
+
 
 void fb_present(void) {
     if (!fb_addr || !fb_backbuffer || fb_addr == fb_backbuffer) return;
@@ -103,4 +103,9 @@ void fb_set_resolution(uint32_t width, uint32_t height) {
     // Sadece yeni boyutlara göre temizle
     fb_clear(0x1A1A1A); 
     fb_present();
+}
+
+uint32_t fb_getpixel(int x, int y) {
+    if (x < 0 || (uint32_t)x >= FB_WIDTH || y < 0 || (uint32_t)y >= FB_HEIGHT) return 0;
+    return fb_backbuffer[y * FB_WIDTH + x];
 }

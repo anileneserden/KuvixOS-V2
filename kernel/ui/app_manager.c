@@ -9,7 +9,7 @@
 // --- 1. DIŞARIDAN GELEN VTABLE TANIMLARI ---
 // Bu tablolar ilgili .c dosyalarında tanımlı olmalıdır.
 extern const app_vtbl_t terminal_vtbl; 
-extern const app_vtbl_t file_manager_app; 
+// extern const app_vtbl_t file_manager_app; 
 
 // --- 2. UYGULAMA TANIMLAMA YAPISI ---
 typedef struct {
@@ -24,7 +24,6 @@ typedef struct {
 static app_definition_t app_registry[] = {
     { 1, "Terminal",         &terminal_vtbl,      120, 90, 520, 320 },
     { 2, "KuvixOS Demo",     NULL,                80, 60, 420, 260 },
-    { 3, "Dosya Yoneticisi", &file_manager_app,   150, 150, 500, 350 },
     { 0, NULL,               NULL,                0, 0, 0, 0 } 
 };
 
