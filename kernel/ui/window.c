@@ -17,18 +17,6 @@ void ui_windows_init(void) {
     icon_min_16_init();
 }
 
-static void draw_text8(int x, int y, uint32_t color, const char* s) {
-    while (*s) {
-        const uint8_t* glyph = font8x8_basic[(unsigned char)*s];
-        for (int row = 0; row < 8; row++) {
-            for (int col = 0; col < 8; col++) {
-                if (glyph[row] & (1u << (7 - col))) fb_putpixel(x + col, y + row, color);
-            }
-        }
-        x += 8; s++;
-    }
-}
-
 static uint32_t darken(uint32_t argb, int amount) {
     int r = ((argb >> 16) & 0xFF) - amount;
     int g = ((argb >> 8) & 0xFF) - amount;
@@ -56,11 +44,11 @@ void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
         fb_blit_argb_key(L.icon_x, L.btn_y, 16, 16, win->icon, 0);
 
         if (win->title) {
-            draw_text8(L.text_x, win->y + 8, th->window_title_text, win->title);
+            gfx_draw_text(L.text_x, win->y + 8, th->window_title_text, win->title);
         }
     } else {
         if (win->title) {
-            draw_text8(win->x + 8, win->y + 8, th->window_title_text, win->title);
+            gfx_draw_text(win->x + 8, win->y + 8, th->window_title_text, win->title);
         }
     }
 
