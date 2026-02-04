@@ -5,14 +5,13 @@
 #include <stdbool.h>
 
 // Yapı tanımını buraya taşıyoruz
-typedef struct { 
-    int x, y; 
-    char label[32];
+typedef struct {
+    int x, y;
+    char label[32];    // Ekranda görünen (Uzantısız: "Editor")
+    char vfs_name[32]; // Gerçek dosya adı (Uzantılı: "Editor.klink")
+    int app_id;
+    bool is_selected;
     bool dragging;
-    bool is_selected; // <-- YENİ: Toplu seçim için kriti
-    int app_id; 
-    // Varsa custom_icon pointer'ın:
-    const uint8_t (*custom_icon)[20];
 } desktop_icon_t;
 
 // Global değişkenleri diğer dosyaların görebilmesi için 'extern' olarak tanımla

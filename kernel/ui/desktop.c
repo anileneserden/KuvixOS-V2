@@ -20,6 +20,8 @@
 #include <ui/desktop_icons/text_file.h>
 #include <ui/desktop_icons/generic_file.h>
 
+#include <kernel/fs/vfs.h>
+
 // --- EXTERN TANIMLAR (Hataları çözen kısım) ---
 extern int kbd_is_ctrl_pressed(void); // keyboard.c'deki fonksiyonu çağırır
 
@@ -88,6 +90,25 @@ extern int kbd_has_character(void);
 extern char kbd_get_char(void);
 extern app_t* appmgr_get_app_by_window_id(int win_id);
 
+typedef struct {
+    char title[32];
+    char message[64];
+    bool visible;
+    int x, y, w, h;
+} messagebox_t;
+
+static messagebox_t sys_msgbox = { "Sistem", "", false, 0, 0, 250, 120 };
+
+// MessageBox'ı tetikleyecek fonksiyon
+void show_messagebox(const char* title, const char* msg) {
+    strncpy(sys_msgbox.title, title, 31);
+    strncpy(sys_msgbox.message, msg, 63);
+    
+    // Ekranın ortasına hizala
+    sys_msgbox.x = (fb_get_width() - sys_msgbox.w) / 2;
+    sys_msgbox.y = (fb_get_height() - sys_msgbox.h) / 2;
+    sys_msgbox.visible = true;
+}
 
 desktop_icon_t desktop_icons[MAX_DESKTOP_ICONS];
 int icon_count = 0;
@@ -104,10 +125,10 @@ bool ends_with(const char* str, const char* suffix) {
 static void update_icon_app_type(desktop_icon_t* icon) {
     if (ends_with(icon->label, ".txt")) {
         icon->app_id = 4; // Not Defteri
-    } else if (ends_with(icon->label, ".bin") || ends_with(icon->label, ".exe")) {
-        icon->app_id = 2; // Terminal
+    } else if (ends_with(icon->label, ".kef")) {
+        icon->app_id = 5; // KEF Loader / Program Başlatıcı (ID'yi sistemine göre ayarla)
     } else {
-        icon->app_id = 0; // Bilinmeyen
+        icon->app_id = 0; // Bilinmeyen / Özel işlem gerektiren
     }
 }
 
@@ -125,91 +146,117 @@ static void snap_to_grid(int* x, int* y) {
     *y = 40 + (gy * 80);
 }
 
-void init_desktop_icons(void) {
+// vfs_list'in her dosya için çağıracağı "işçi" fonksiyon
+static int desktop_load_callback(const char* path, uint32_t size, void* u) {
+    (void)size; (void)u;
+    
+    // 1. Dosya adını ayıkla
+    const char* filename = strrchr(path, '/');
+    if (filename) filename++; else filename = path;
+
+    // . ve .. dizinlerini atla
+    if (filename[0] == '.' || filename[0] == '\0') return 1;
+
+    if (icon_count >= MAX_DESKTOP_ICONS) return 0;
+
+    // 2. VFS'den dosya tipini sor
+    vfs_stat_t st;
+    if (vfs_stat(path, &st)) {
+        printk("VFS BULDU: %s | Tip: %d\n", filename, st.type);
+    } else {
+        printk("VFS HATA: %s bulunamadi!\n", path);
+        return 1;
+    }
+
+    // 3. Verileri Doldur
+    strncpy(desktop_icons[icon_count].vfs_name, filename, 31);
+    strncpy(desktop_icons[icon_count].label, filename, 31);
+
+    // Tip Belirle
+    if (st.type == VFS_T_DIR) {
+        desktop_icons[icon_count].app_id = 1; // KLASÖR
+    } else if (ends_with(filename, ".txt")) {
+        desktop_icons[icon_count].app_id = 4; // METİN
+    } else {
+        desktop_icons[icon_count].app_id = 0; // GENERIC
+    }
+
+    // Pozisyon ayarla
+    desktop_icons[icon_count].x = 40 + (icon_count / 5 * 90);
+    desktop_icons[icon_count].y = 40 + (icon_count % 5 * 85);
+
+    icon_count++;
+    return 1;
+}
+
+void init_desktop_icons() {
     icon_count = 0;
 
-    // 1. İkon: Terminal (0. Grid Sütunu)
-    desktop_icons[icon_count].x = 20; // (20 + 0*80)
-    desktop_icons[icon_count].y = 40; // (40 + 0*80)
-    strcpy(desktop_icons[icon_count].label, "Terminal");
-    desktop_icons[icon_count].dragging = false; 
-    desktop_icons[icon_count].app_id = 1;
-    icon_count++;
+    // Önce masaüstü dizinini hazırla
+    vfs_mkdir("/home");
+    vfs_mkdir("/home/desktop");
 
-    // 2. İkon: Dosyalar (1. Grid Sütunu)
-    desktop_icons[icon_count].x = 100; // (20 + 1*80)
-    desktop_icons[icon_count].y = 40; 
-    strcpy(desktop_icons[icon_count].label, "Dosyalar");
-    desktop_icons[icon_count].dragging = false; 
-    desktop_icons[icon_count].app_id = 3;
-    icon_count++;
+    // --- TEST VERİLERİ ---
+    vfs_mkdir("/home/desktop/Projeler");      // SARI KLASÖR görünmeli (Uzantı yok)
+    vfs_mkdir("/home/desktop/Resimler");      // SARI KLASÖR görünmeli
+    vfs_write_all("/home/desktop/deneme.txt", (uint8_t*)"test", 4); // BEYAZ KAĞIT görünmeli
+
+    // VFS'den klasör içeriğini tara
+    vfs_list("/home/desktop", desktop_load_callback, 0);
 }
 
 void draw_desktop_icon(desktop_icon_t* icon, int mx, int my, int index) {
-    // 1. SEÇİLİ VE HOVER DURUMU (Arka Plan)
-    // DEĞİŞİKLİK: 'selected_icon_index == index' yerine 'icon->is_selected' kontrolü geldi
+    // Seçili kutucuğu (Seçim karesi)
     if (icon->is_selected) {
-        // Seçili ikonlar için mavi şeffaf arka plan ve beyaz çerçeve
         gfx_fill_rect(icon->x - 6, icon->y - 6, 44, 54, COLOR_SELECTION);
-        
-        // Çerçeve (Çizgiler)
-        gfx_fill_rect(icon->x - 6, icon->y - 6, 44, 1, COLOR_WHITE);  // Üst
-        gfx_fill_rect(icon->x - 6, icon->y + 47, 44, 1, COLOR_WHITE); // Alt
-        gfx_fill_rect(icon->x - 6, icon->y - 6, 1, 54, COLOR_WHITE);  // Sol
-        gfx_fill_rect(icon->x + 37, icon->y - 6, 1, 54, COLOR_WHITE); // Sağ
-    } 
-    else if (mx >= icon->x && mx <= icon->x + 32 && my >= icon->y && my <= icon->y + 32) {
-        // Hover (Üzerine gelme) efekti - Sadece seçili değilse göster
-        gfx_fill_rect(icon->x - 4, icon->y - 4, 40, 50, 0x334455);
     }
 
-    // 2. İKON ÇİZİMİ (Buradaki mantığın aynı kalıyor)
-    if (ends_with(icon->label, ".txt")) {
-        for (int r = 0; r < 20; r++) {
-            for (int c = 0; c < 20; c++) {
-                uint8_t pixel = text_file_icon[r][c];
-                if (pixel == 1)      fb_putpixel(icon->x + c, icon->y + r, 0x000000); 
-                else if (pixel == 2) fb_putpixel(icon->x + c, icon->y + r, 0xFFFFFF); 
-                else if (pixel == 3) fb_putpixel(icon->x + c, icon->y + r, 0xAAAAAA);
+    // --- RENDER DÖNGÜSÜ ---
+    for (int r = 0; r < 20; r++) {
+        for (int c = 0; c < 20; c++) {
+            uint8_t p = 0;
+            uint32_t color = 0;
+
+            // APP_ID'ye göre hangi bitmap kullanılacak?
+            if (icon->app_id == 1) { 
+                // KLASÖR ÇİZİMİ (Örn: folder_icon_bitmap)
+                // Şimdilik basit sarı bir dikdörtgen çizelim (Test için)
+                if (r > 2 && r < 18 && c > 0 && c < 19) color = 0xFFCC00; // Sarı
+            } 
+            else if (icon->app_id == 4) {
+                // METİN DOSYASI (BEYAZ KAĞIT)
+                p = text_file_icon[r][c];
+                if (p == 1)      color = 0x000000; // Kenarlık
+                else if (p == 2) color = 0xFFFFFF; // Kağıt beyazı
+                else if (p == 3) color = 0xAAAAAA; // Çizgiler
             }
-        }
-    } 
-    else if (ends_with(icon->label, ".bin") || ends_with(icon->label, ".exe")) {
-        for (int r = 0; r < 20; r++) {
-            for (int c = 0; c < 20; c++) {
-                uint8_t p = terminal_icon_bitmap[r][c];
-                if (p == 1) fb_putpixel(icon->x + c, icon->y + r, 0xFFFFFF);
-                else if (p == 2) fb_putpixel(icon->x + c, icon->y + r, 0x222222);
-                else if (p == 3) fb_putpixel(icon->x + c, icon->y + r, 0x00FF00);
+            else if (icon->app_id == 99) {
+                // KISAYOL (Mavi dosya gibi)
+                p = generic_file_icon[r][c];
+                if (p == 1)      color = 0x000000;
+                else if (p == 2) color = 0x00AAFF; 
             }
-        }
-    } 
-    else {
-        for (int r = 0; r < 20; r++) {
-            for (int c = 0; c < 20; c++) {
-                uint8_t p = generic_file_icon[r][c];
-                if (p == 1)      fb_putpixel(icon->x + c, icon->y + r, 0x000000);
-                else if (p == 2) fb_putpixel(icon->x + c, icon->y + r, 0xCCCCCC);
+            else {
+                // DİĞER (GENERIC)
+                p = generic_file_icon[r][c];
+                if (p == 1)      color = 0x000000;
+                else if (p == 2) color = 0xCCCCCC;
+            }
+
+            if (color != 0) {
+                fb_putpixel(icon->x + c, icon->y + r, color);
             }
         }
     }
 
-    // 3. İSİM VE RENAME ÇİZİMİ
-    // Rename için hala 'renaming_icon_index' kullanıyoruz çünkü aynı anda 
-    // sadece bir dosyanın ismini değiştirebiliriz.
-    if (renaming_icon_index == index) {
-        gfx_fill_rect(icon->x - 20, icon->y + 28, 75, 14, 0x111111);
-        char disp[35];
-        strcpy(disp, rename_buffer);
-        
-        if ((g_ticks_ms / 500) % 2 == 0) {
-            int len = strlen(disp);
-            disp[len] = '|'; disp[len+1] = '\0';
-        }
-        gfx_draw_text(icon->x - 15, icon->y + 31, 0x00FF00, disp);
-    } else {
-        gfx_draw_text(icon->x - 10, icon->y + 30, COLOR_WHITE, icon->label);
+    // --- KISAYOL OKU (OVERLAY) ---
+    if (icon->app_id == 99) {
+        gfx_fill_rect(icon->x, icon->y + 14, 6, 6, 0xFFFFFF); // Beyaz kutu
+        fb_putpixel(icon->x + 2, icon->y + 17, 0x0000FF);    // Mavi ok ucu
     }
+
+    // --- ETİKET ÇİZİMİ ---
+    gfx_draw_text(icon->x - 10, icon->y + 25, COLOR_WHITE, icon->label);
 }
 
 void ui_desktop_run(void) {
@@ -219,6 +266,7 @@ void ui_desktop_run(void) {
     wm_init();
     appmgr_init();
     init_desktop_icons(); 
+    show_messagebox("Hos Geldiniz", "KuvixOS v2 Masaustu Hazir!");
     
     while(1) {
         ps2_mouse_poll();
@@ -292,6 +340,19 @@ void ui_desktop_run(void) {
 
             // --- 3. SOL TIK MANTIĞI ---
             if (pressed & 1) {
+                if (sys_msgbox.visible) {
+                    // "Tamam" butonuna tıklandı mı?
+                    int btn_x = sys_msgbox.x + (sys_msgbox.w / 2) - 30;
+                    int btn_y = sys_msgbox.y + sys_msgbox.h - 35;
+                    
+                    if (mouse_x >= btn_x && mouse_x <= btn_x + 60 &&
+                        mouse_y >= btn_y && mouse_y <= btn_y + 25) {
+                        sys_msgbox.visible = false;
+                    }
+                    // MessageBox açıkken masaüstüne tıklanmasını engellemek için:
+                    continue; 
+                }
+
                 if (desktop_ctx_menu.visible) {
                     // Tıklanan öğeyi bul (Yeni dinamik yükseklik ile)
                     if (mouse_x >= desktop_ctx_menu.x && mouse_x <= desktop_ctx_menu.x + desktop_ctx_menu.w &&
@@ -309,11 +370,31 @@ void ui_desktop_run(void) {
                         if (mouse_x >= desktop_icons[i].x && mouse_x <= desktop_icons[i].x + 32 &&
                             mouse_y >= desktop_icons[i].y && mouse_y <= desktop_icons[i].y + 32) {
                             
-                            uint32_t current_time = g_ticks_ms;
+uint32_t current_time = g_ticks_ms;
+                            
+                            // --- ÇİFT TIKLAMA KONTROLÜ ---
                             if (i == last_clicked_icon_index && (current_time - last_click_time) < 500) {
-                                appmgr_start_app(desktop_icons[i].app_id);
+                                const char* label = desktop_icons[i].label;
+                                
+                                printk("Cift Tiklandi: %s\n", label);
+
+                                if (ends_with(label, ".exe") || ends_with(label, ".bin")) {
+                                    show_messagebox("Sistem Hatasi", "Bu format desteklenmiyor!");
+                                } else {
+                                    appmgr_start_app(desktop_icons[i].app_id);
+                                }
+                                
+                                // Çift tıklama işlendi, değerleri sıfırla (ÖNEMLİ!)
+                                last_click_time = 0; 
+                                last_clicked_icon_index = -1;
+                            } 
+                            else {
+                                // Çift tıklama değilse, bu ilk tıklamadır; zamanı şimdi kaydet
+                                last_click_time = current_time;
+                                last_clicked_icon_index = i;
                             }
 
+                            // --- SEÇİM VE SÜRÜKLEME ---
                             if (ctrl) {
                                 desktop_icons[i].is_selected = !desktop_icons[i].is_selected;
                             } else {
@@ -326,8 +407,6 @@ void ui_desktop_run(void) {
                             desktop_icons[i].dragging = true;
                             icon_drag_offset_x = mouse_x - desktop_icons[i].x;
                             icon_drag_offset_y = mouse_y - desktop_icons[i].y;
-                            last_click_time = current_time;
-                            last_clicked_icon_index = i;
                             hit = true;
                             break;
                         }
@@ -430,6 +509,31 @@ void ui_desktop_run(void) {
                 gfx_draw_text(desktop_ctx_menu.x + 12, item_y + 10, 0xFFFFFF, items[i]);
             }
         }
+
+        // --- MESSAGEBOX ÇİZİMİ ---
+if (sys_msgbox.visible) {
+    int x = sys_msgbox.x;
+    int y = sys_msgbox.y;
+    int w = sys_msgbox.w;
+    int h = sys_msgbox.h;
+
+    // Arka plan ve gölge efekti (hafif ofsetli koyu dikdörtgen)
+    gfx_fill_rect(x + 4, y + 4, w, h, 0x22000000); 
+    gfx_fill_rect(x, y, w, h, 0xFFDDDDDD); // Ana gövde
+    
+    // Başlık çubuğu (Koyu mavi/gri)
+    gfx_fill_rect(x, y, w, 25, 0xFF0055AA);
+    gfx_draw_text(x + 10, y + 5, 0xFFFFFFFF, sys_msgbox.title);
+    
+    // Mesaj metni
+    gfx_draw_text(x + 20, y + 50, 0xFF000000, sys_msgbox.message);
+    
+    // "Tamam" Butonu
+    int btn_x = x + (w / 2) - 30;
+    int btn_y = y + h - 35;
+    gfx_fill_rect(btn_x, btn_y, 60, 25, 0xFFBBBBBB);
+    gfx_draw_text(btn_x + 10, btn_y + 5, 0xFF000000, "Tamam");
+}
 
         cursor_draw_arrow(mouse_x, mouse_y);
         fb_present();

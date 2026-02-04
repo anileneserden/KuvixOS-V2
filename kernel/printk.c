@@ -2,29 +2,28 @@
 #include <kernel/vga.h>
 #include <kernel/serial.h>
 #include <stdarg.h>
-#include <stdbool.h> // bool için
+#include <stdbool.h>
 
-// Terminal fonksiyonunu dışarıdan alıyoruz
-void terminal_putc(char c);
-static bool gui_mode_enabled = true;
+// --- MERKEZİ KARAKTER BASMA ---
+// Tüm çıktılar buradan geçer, böylece akışı tek noktadan yönetirsin.
+static void printk_putc(char c) {
+    // 1. Fiziksel VGA ekranına karakteri bas (0xB8000 adresine yazar)
+    vga_putc(c);
 
-void terminal_putc(char c) {
-    serial_putc(c); // Çekirdek loglarını seri porta yönlendirir
+    // 2. Seri porta karakteri bas (Hata ayıklama logları için)
+    // Eğer seri portta hala çift görüyorsan, vga_putc'nin içini kontrol etmelisin; 
+    // vga_putc kendi içinde serial_putc çağırıyor olabilir.
+    serial_putc(c);
 }
 
-// GUI modunu açıp kapatmak için bir yardımcı fonksiyon
-void printk_set_gui_mode(bool enable) {
-    gui_mode_enabled = enable;
-}
-
-void print_int(int value, int base) {
+// --- SAYI YAZDIRMA (DEBUG İÇİN) ---
+void print_int(unsigned int value, int base) {
     char buf[32];
     int i = 0;
     char *digits = "0123456789ABCDEF";
 
     if (value == 0) {
-        vga_putc('0'); serial_putc('0');
-        if (gui_mode_enabled) terminal_putc('0');
+        printk_putc('0');
         return;
     }
 
@@ -34,12 +33,11 @@ void print_int(int value, int base) {
     }
 
     while (--i >= 0) {
-        vga_putc(buf[i]);
-        serial_putc(buf[i]);
-        if (gui_mode_enabled) terminal_putc(buf[i]);
+        printk_putc(buf[i]);
     }
 }
 
+// --- ANA PRINTK ---
 void printk(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -48,133 +46,69 @@ void printk(const char* fmt, ...) {
         if (*p != '%') {
             unsigned char c = (unsigned char)*p;
 
-            // --- UTF-8 DÖNÜŞTÜRME KATMANI (Senin kodun aynen kalıyor) ---
+            // --- TÜRKÇE KARAKTER / UTF-8 DESTEĞİ ---
+            // Bu kısım VGA fontundaki (CP437 veya özel) indislerle eşleşir.
             if (c == 0xC3) { 
                 unsigned char next = (unsigned char)*(++p);
-                if (next == 0xBC) c = 6;
-                else if (next == 0xB6) c = 4;
-                else if (next == 0xA7) c = 5;
-                else if (next == 0x87) c = 11;
-                else if (next == 0x9C) c = 12;
-                else if (next == 0x96) c = 10;
-                else { 
-                    vga_putc(0xC3); serial_putc(0xC3); if (gui_mode_enabled) terminal_putc(0xC3);
-                    vga_putc(next); serial_putc(next); if (gui_mode_enabled) terminal_putc(next);
-                    continue; 
-                }
+                if (next == 0xBC) c = 6;      // ü
+                else if (next == 0xB6) c = 4; // ö
+                else if (next == 0xA7) c = 5; // ç
+                else if (next == 0x87) c = 11;// Ç
+                else if (next == 0x9C) c = 12;// Ü
+                else if (next == 0x96) c = 10;// Ö
+                else { printk_putc(0xC3); printk_putc(next); continue; }
             } 
             else if (c == 0xC4) {
                 unsigned char next = (unsigned char)*(++p);
-                if (next == 0x9F) c = 1;
-                else if (next == 0x9E) c = 7;
-                else if (next == 0xB1) c = 3;
-                else if (next == 0xB0) c = 9;
-                else { 
-                    vga_putc(0xC4); serial_putc(0xC4); if (gui_mode_enabled) terminal_putc(0xC4);
-                    vga_putc(next); serial_putc(next); if (gui_mode_enabled) terminal_putc(next);
-                    continue; 
-                }
+                if (next == 0x9F) c = 1;      // ğ
+                else if (next == 0x9E) c = 7; // Ğ
+                else if (next == 0xB1) c = 3; // ı
+                else if (next == 0xB0) c = 9; // İ
+                else { printk_putc(0xC4); printk_putc(next); continue; }
             } 
             else if (c == 0xC5) {
                 unsigned char next = (unsigned char)*(++p);
-                if (next == 0x9F) c = 2;
-                else if (next == 0x9E) c = 8;
-                else { 
-                    vga_putc(0xC5); serial_putc(0xC5); if (gui_mode_enabled) terminal_putc(0xC5);
-                    vga_putc(next); serial_putc(next); if (gui_mode_enabled) terminal_putc(next);
-                    continue; 
-                }
+                if (next == 0x9F) c = 2;      // ş
+                else if (next == 0x9E) c = 8; // Ş
+                else { printk_putc(0xC5); printk_putc(next); continue; }
             }
 
-            vga_putc(c);
-            serial_putc(c);
-            if (gui_mode_enabled) terminal_putc(c);
+            printk_putc(c);
             continue;
         }
 
-        p++; 
+        p++; // '%' karakterini atla
         switch (*p) {
             case 's': {
                 char* s = va_arg(args, char*);
                 if (!s) s = "(null)";
-                while (*s) {
-                    vga_putc(*s);
-                    serial_putc(*s);
-                    if (gui_mode_enabled) terminal_putc(*s);
-                    s++;
-                }
-                break;
-            }
-            case 'd': print_int(va_arg(args, int), 10); break;
-            case 'x': 
-                vga_putc('0'); serial_putc('0'); if (gui_mode_enabled) terminal_putc('0');
-                vga_putc('x'); serial_putc('x'); if (gui_mode_enabled) terminal_putc('x');
-                print_int(va_arg(args, int), 16); 
-                break;
-            case 'c': {
-                char c = (char)va_arg(args, int);
-                vga_putc(c); serial_putc(c); if (gui_mode_enabled) terminal_putc(c);
-                break;
-            }
-            case '%': {
-                vga_putc('%'); serial_putc('%'); if (gui_mode_enabled) terminal_putc('%');
-                break;
-            }
-            default: {
-                vga_putc('%'); serial_putc('%'); if (gui_mode_enabled) terminal_putc('%');
-                vga_putc(*p); serial_putc(*p); if (gui_mode_enabled) terminal_putc(*p);
-                break;
-            }
-        }
-    }
-    va_end(args);
-}
-
-// Basit bir ksprintf uygulaması (Senin printk mantığıyla uyumlu)
-int ksprintf(char *buf, const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    
-    char *ptr = buf;
-    const char *p;
-    
-    for (p = fmt; *p != '\0'; p++) {
-        if (*p != '%') {
-            *ptr++ = *p;
-            continue;
-        }
-        
-        p++;
-        switch (*p) {
-            case 's': {
-                char *s = va_arg(args, char *);
-                if (!s) s = "(null)";
-                while (*s) *ptr++ = *s++;
+                while (*s) printk_putc(*s++);
                 break;
             }
             case 'd': {
                 int val = va_arg(args, int);
-                if (val == 0) {
-                    *ptr++ = '0';
-                } else {
-                    char tmp[32];
-                    int i = 0;
-                    while (val > 0) {
-                        tmp[i++] = (val % 10) + '0';
-                        val /= 10;
-                    }
-                    while (--i >= 0) *ptr++ = tmp[i];
+                if (val < 0) {
+                    printk_putc('-');
+                    val = -val;
                 }
+                print_int((unsigned int)val, 10);
                 break;
             }
-            // İhtiyacın olursa %x vb. buraya eklenebilir
+            case 'x': 
+                printk_putc('0'); printk_putc('x');
+                print_int(va_arg(args, unsigned int), 16); 
+                break;
+            case 'c': 
+                printk_putc((char)va_arg(args, int));
+                break;
+            case '%': 
+                printk_putc('%');
+                break;
             default:
-                *ptr++ = *p;
+                printk_putc('%');
+                printk_putc(*p);
                 break;
         }
     }
-    
-    *ptr = '\0'; // String'i sonlandır
     va_end(args);
-    return (ptr - buf); // Yazılan karakter sayısı
 }

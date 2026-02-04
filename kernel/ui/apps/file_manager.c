@@ -1,104 +1,104 @@
-#include <ui/apps/file_manager.h>
+#include <app/app.h>
 #include <ui/wm.h>
-#include <ui/desktop.h> // desktop_icons dizisine erişim için
 #include <kernel/drivers/video/gfx.h>
-#include <kernel/drivers/video/fb.h>
 #include <lib/string.h>
+#include <stdint.h>
 
-// Diğer dosyalarda tanımlı olduğunu bildiriyoruz
-extern bool ends_with(const char* str, const char* suffix);
+// --- Sabitler ve Taslak Veriler ---
+#define SIDEBAR_WIDTH 140
+#define ITEM_HEIGHT    28
 
-// Tasarım Sabitleri
-#define COLOR_SIDEBAR   0x2C2C2C
-#define COLOR_LIST_BG   0x1E1E1E
-#define COLOR_TEXT      0xEEEEEE
-#define SIDEBAR_WIDTH   130
-#define ITEM_HEIGHT     22
+static const char* sidebar_links[] = { "Masaustu", "Sistem", "Belgeler", "Cöp Kutusu" };
+static const char* dummy_files[]   = { "kernel.elf", "config.sys", "notlar.txt", "readme.md" };
 
-static int selected_item = -1;
+// 1. Fonksiyon Ön Bildirimleri
+void file_mgr_on_create(app_t* app);
+void file_mgr_on_draw(app_t* app);
+void file_mgr_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_t released, uint8_t buttons);
+void file_mgr_on_key(app_t* app, uint16_t key);
 
-void file_manager_on_draw(app_t* a) {
-    ui_rect_t r = wm_get_client_rect(a->win_id);
-    int head_h = 24; // Pencere başlık payı
-    int content_y = r.y + head_h;
-    int content_h = r.h - head_h;
-
-    // 1. Arka Planları Çiz
-    // Sidebar
-    fb_draw_rect(r.x, content_y, SIDEBAR_WIDTH, content_h, COLOR_SIDEBAR);
-    // Liste Alanı
-    fb_draw_rect(r.x + SIDEBAR_WIDTH, content_y, r.w - SIDEBAR_WIDTH, content_h, COLOR_LIST_BG);
-    // Ayırıcı Çizgi
-    fb_draw_rect(r.x + SIDEBAR_WIDTH - 1, content_y, 1, content_h, 0x444444);
-
-    // 2. Sidebar İçeriği
-    gfx_draw_text(r.x + 10, content_y + 15, 0xAAAAAA, "HIZLI ERISIM");
-    gfx_draw_text(r.x + 15, content_y + 40, 0x55AAFF, "> Masaustu");
-    gfx_draw_text(r.x + 15, content_y + 65, COLOR_TEXT, "  Sistem (/)");
-
-    // 3. Dosya Listesini Çiz (Desktop'tan çekiyoruz)
-    // Dışarıdan 'icon_count' ve 'desktop_icons' dizisine ulaştığını varsayıyoruz
-    extern int icon_count; 
-    extern desktop_icon_t desktop_icons[];
-
-    for (int i = 0; i < icon_count; i++) {
-        int item_y = content_y + 10 + (i * ITEM_HEIGHT);
-        int item_x = r.x + SIDEBAR_WIDTH + 10;
-
-        // Seçili öğe vurgusu
-        if (selected_item == i) {
-            fb_draw_rect(r.x + SIDEBAR_WIDTH, item_y - 2, r.w - SIDEBAR_WIDTH, ITEM_HEIGHT, 0x0055AA);
-        }
-
-        // Dosya Tipine Göre İkon/Metin
-        char* label = desktop_icons[i].label;
-        if (ends_with(label, ".txt")) {
-            gfx_draw_text(item_x, item_y, 0xFFFF00, "[TXT]"); // Sarı metin ikonu
-        } else if (ends_with(label, ".kef") || ends_with(label, ".bin")) {
-            gfx_draw_text(item_x, item_y, 0x00FF00, "[EXE]"); // Yeşil exe ikonu
-        } else {
-            gfx_draw_text(item_x, item_y, 0xBBBBBB, "[DAT]"); // Gri veri ikonu
-        }
-
-        // Dosya İsmi
-        gfx_draw_text(item_x + 45, item_y, COLOR_TEXT, label);
-    }
-}
-
-void file_manager_on_mouse(app_t* a, int mx, int my, uint8_t pressed, uint8_t released, uint8_t buttons) {
-    (void)a;        // Kullanılmayanları sustur
-    (void)released; // Hatayı gideren satır
-    
-    ui_rect_t r = wm_get_client_rect(a->win_id);
-    int head_h = 24;
-    extern int icon_count;
-    extern desktop_icon_t desktop_icons[];
-
-    if (pressed & 1) { // Sol tık
-        // Liste alanında mı?
-        if (mx > r.x + SIDEBAR_WIDTH) {
-            int relative_y = my - (r.y + head_h + 10);
-            int clicked_index = relative_y / ITEM_HEIGHT;
-
-            if (clicked_index >= 0 && clicked_index < icon_count) {
-                selected_item = clicked_index;
-            } else {
-                selected_item = -1;
-            }
-        }
-    }
-
-    // Çift Tıklama ile Dosya Açma Mantığı (Basit simülasyon)
-    if (buttons & 1 && selected_item != -1) {
-        // Burada desktop.c'deki çift tık mantığını çağırabilirsin
-    }
-}
-
-app_vtbl_t file_manager_vtbl = {
-    .on_create   = 0,
-    .on_destroy  = 0,
-    .on_mouse    = file_manager_on_mouse,
-    .on_key      = 0,
-    .on_update   = 0,
-    .on_draw     = file_manager_on_draw 
+// 2. VTABLE Tanımı
+const app_vtbl_t file_manager_vtbl = {
+    .on_create  = file_mgr_on_create,
+    .on_draw    = file_mgr_on_draw,
+    .on_mouse   = file_mgr_on_mouse,
+    .on_key     = file_mgr_on_key,
+    .on_destroy = 0
 };
+
+// 3. Fonksiyon İçerikleri
+
+void file_mgr_on_create(app_t* app) {
+    // Uygulama ilk açıldığında yapılacak başlangıç ayarları (varsa)
+    (void)app;
+}
+
+void file_mgr_on_draw(app_t* app) {
+    if (!app) return;
+
+    // Pencerenin o anki çizilebilir alanını (client area) al
+    ui_rect_t client = wm_get_client_rect(app->win_id);
+
+    // 1. Ana Arka Plan (Dosya Listesi Alanı - Beyaz)
+    gfx_fill_rect(client.x, client.y, client.w, client.h, 0xFFFFFFFF);
+
+    // 2. Sidebar Arka Planı (Hafif Gri)
+    gfx_fill_rect(client.x, client.y, SIDEBAR_WIDTH, client.h, 0xFFF0F0F0);
+    
+    // Sidebar Sağ Sınır Çizgisi
+    gfx_fill_rect(client.x + SIDEBAR_WIDTH - 1, client.y, 1, client.h, 0xFFCCCCCC);
+
+    // 3. Sidebar Öğelerini Çiz
+    for (int i = 0; i < 4; i++) {
+        int iy = client.y + 10 + (i * ITEM_HEIGHT);
+        // Örnek: İlk öğe (Masaüstü) seçili görünsün
+        if (i == 0) {
+            gfx_fill_rect(client.x + 5, iy, SIDEBAR_WIDTH - 10, ITEM_HEIGHT - 4, 0xFF0055AA);
+            gfx_draw_text(client.x + 15, iy + 6, 0xFFFFFFFF, sidebar_links[i]);
+        } else {
+            gfx_draw_text(client.x + 15, iy + 6, 0xFF333333, sidebar_links[i]);
+        }
+    }
+
+    // 4. İçerik Alanı Başlıkları
+    int content_start_x = client.x + SIDEBAR_WIDTH + 15;
+    gfx_draw_text(content_start_x, client.y + 10, 0xFF888888, "Dosya Adi");
+    gfx_draw_text(content_start_x + 180, client.y + 10, 0xFF888888, "Boyut");
+    
+    // Ayırıcı yatay çizgi
+    gfx_fill_rect(client.x + SIDEBAR_WIDTH + 5, client.y + 28, client.w - SIDEBAR_WIDTH - 10, 1, 0xFFEEEEEE);
+
+    // 5. Dummy Dosyaları Listele
+    for (int i = 0; i < 4; i++) {
+        int fy = client.y + 40 + (i * ITEM_HEIGHT);
+        
+        // Dosya İsmi
+        gfx_draw_text(content_start_x, fy, 0xFF000000, dummy_files[i]);
+        
+        // Dosya Boyutu (Dummy)
+        gfx_draw_text(content_start_x + 180, fy, 0xFF666666, "14 KB");
+        
+        // Alt çizgi (isteğe bağlı)
+        gfx_fill_rect(client.x + SIDEBAR_WIDTH + 10, fy + 22, client.w - SIDEBAR_WIDTH - 20, 1, 0xFFF9F9F9);
+    }
+}
+
+void file_mgr_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_t released, uint8_t buttons) {
+    // Burada ileride dosyalara tıklama ve seçme mantığı eklenecek
+    (void)app; (void)mx; (void)my; (void)pressed; (void)released; (void)buttons;
+}
+
+void file_mgr_on_key(app_t* app, uint16_t key) {
+    // F5 yenileme veya Delete ile silme gibi tuşlar buraya gelecek
+    (void)app; (void)key;
+}
+
+// File Manager için callback
+static int file_mgr_list_cb(const char* path, uint32_t size, void* u) {
+    app_t* app = (app_t*)u;
+    // Burada dosyaları ekrana basacağız veya bir listeye alacağız.
+    // Şimdilik çizim anında çağrıldığını varsayarsak:
+    // (Ancak vfs_list'i on_draw içinde çağırmak performansı düşürür, 
+    // en iyisi uygulama açılırken bir diziye almaktır.)
+    return 1;
+}

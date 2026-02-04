@@ -50,3 +50,20 @@ void* memcpy(void* dest, const void* src, size_t n) {
     while (n--) *d++ = *s++;
     return dest;
 }
+
+// Belirli bir karakterin dizideki ilk konumunu bulur
+char* strchr(const char* s, int c) {
+    while (*s != (char)c) {
+        if (!*s++) return 0;
+    }
+    return (char*)s;
+}
+
+// Belirli bir karakterin dizideki SON konumunu bulur (Dosya yolları için çok kritiktir)
+char* strrchr(const char* s, int c) {
+    char* last = 0;
+    do {
+        if (*s == (char)c) last = (char*)s;
+    } while (*s++);
+    return last;
+}

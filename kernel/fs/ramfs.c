@@ -246,5 +246,23 @@ int ramfs_read_all(const char* path, void* out, uint32_t cap, uint32_t* out_size
     return 1;
 }
 
-int ramfs_is_dir(const char* path) { (void)path; return 0; }
-int ramfs_mkdir(const char* path) { (void)path; return -1; }
+// ramfs_is_dir: Yolun bir dizin olup olmadığını kontrol et
+int ramfs_is_dir(const char* path) {
+    int idx = find_node(path);
+    if (idx >= 0 && g_nodes[idx].type == RAMFS_T_DIR) {
+        return 1;
+    }
+    return 0;
+}
+
+// ramfs_mkdir: Yeni bir dizin düğümü oluştur
+int ramfs_mkdir(const char* path) {
+    if (ramfs_exists(path)) return 0; // Zaten varsa hata
+
+    int idx = alloc_node(path);
+    if (idx < 0) return -1;
+
+    g_nodes[idx].type = RAMFS_T_DIR; // Tipini klasör yap
+    g_nodes[idx].size = 0;           // Klasörlerin boyutu olmaz (mantıksal olarak)
+    return 1;
+}
