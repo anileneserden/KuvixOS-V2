@@ -15,6 +15,8 @@
 #include "icons/terminal/terminal.h"
 #include <app/app.h>
 #include <app/app_manager.h>
+#include <ui/window/window.h>
+#include <lib/game_engine.h>
 
 // --- Harici Tanımlar ---
 extern int mouse_x, mouse_y;
@@ -30,6 +32,9 @@ extern app_t* appmgr_get_app_by_window_id(int win_id);
 #define GRID_SIZE_H 80
 #define GRID_OFFSET_X 20
 #define GRID_OFFSET_Y 40
+
+// --- DEBUG İÇİN GLOBAL DEĞİŞKEN ---
+static uint16_t last_raw_scancode = 0; // En son gelen ham kodu tutar
 
 // --- Yardımcı Fonksiyonlar ---
 static void local_itoa(int n, char* s) {
@@ -54,8 +59,9 @@ static void snap_to_grid(int* x, int* y) {
 }
 
 typedef struct { int x, y; const char* label; bool dragging; int app_id; } desktop_icon_t;
-static desktop_icon_t terminal_icon = {40, 60, "Terminal", false, 1};
-static desktop_icon_t file_manager_icon = {140, 60, "Dosyalar", false, 3};
+static desktop_icon_t game_engine_icon = {140, 60, "Game Engine", false, 1};
+static desktop_icon_t terminal_icon = {40, 60, "Terminal", false, 2};
+// static desktop_icon_t file_manager_icon = {140, 60, "Dosyalar", false, 3};
 
 void draw_desktop_icon(desktop_icon_t* icon, int mx, int my) {
     // Hover efekti (İkonun üzerine gelince hafif aydınlanma)
@@ -79,21 +85,58 @@ void ui_topbar_draw(void) {
     int sw = (int)fb_get_width();
     gfx_fill_rect(0, 0, sw, 24, 0x1A1A1A); 
     gfx_draw_text(10, 6, 0xAAAAAA, "KuvixOS V2");
+
+    // --- BURAYI EKLE/GÜNCELLE ---
+    // Ham Scancode Bilgisi
+    char code_buf[32];
+    local_itoa(last_raw_scancode, code_buf);
+    gfx_draw_text(150, 6, 0xFFFF00, "Ham Kod:"); 
+    gfx_draw_text(220, 6, 0xFFFFFF, code_buf);
+
+    if (last_raw_scancode == 0x1E) {
+        gfx_draw_text(260, 6, 0x00FF00, "[A TUSU OK]"); 
+    } else if (last_raw_scancode == 0x20) {
+        gfx_draw_text(260, 6, 0x00FF00, "[D TUSU OK]");
+    }
+    // ----------------------------
+
     char buf[16];
     local_itoa(g_ticks_ms / 1000, buf);
     gfx_draw_text(sw - 60, 6, 0x00FF00, buf);
 }
 
 void draw_debug_info(void) {
-    fb_draw_rect(5, 30, 150, 20, 0x000000); 
+    // Bilgi kutusunu çiz
+    fb_draw_rect(5, 30, 180, 45, 0x000000); 
     gfx_draw_text(10, 35, 0xFFFF00, "Odak:"); 
     
     int active = wm_get_active_id();
     if (active == -1) {
         gfx_draw_text(60, 35, 0x00FF00, "Masaustu");
     } else {
-        char buf[8]; local_itoa(active, buf);
+        // ID Yazdır
+        char buf[16]; 
+        local_itoa(active, buf);
         gfx_draw_text(60, 35, 0xFFFFFF, buf);
+
+        // --- AKTİF PENCERE BOYUTUNU ÇEK ---
+        ui_window_t win;
+        // wm.c'deki wm_get_window fonksiyonunu kullanarak veriyi çekiyoruz
+        if (wm_get_window(active, &win)) {
+            gfx_draw_text(10, 50, 0x00FFFF, "Size:");
+            
+            // Genişlik (w)
+            char w_buf[10]; 
+            local_itoa(win.w, w_buf);
+            gfx_draw_text(60, 50, 0xFFFFFF, w_buf);
+            
+            gfx_draw_text(95, 50, 0xFFFFFF, "x");
+            
+            // Yükseklik (h)
+            char h_buf[10]; 
+            local_itoa(win.h, h_buf);
+            gfx_draw_text(110, 50, 0xFFFFFF, h_buf);
+        }
     }
 }
 
@@ -109,93 +152,84 @@ void ui_desktop_run(void) {
     settings_init();
     
     while(1) {
-        // 1. Donanımdan ham verileri oku (Kritik: Veri gelmezse kuyruk dolmaz)
+        // --- 1. DONANIMI OKU (MOUSE & KEYBOARD) ---
         ps2_mouse_poll();
 
-        // 2. KLAVYE KONTROLÜ
-        if (kbd_has_character()) {
-            char c = kbd_get_char();
-            int active_win = wm_get_active_id();
-            if (active_win != -1) {
-                app_t* active_app = appmgr_get_app_by_window_id(active_win);
-                if (active_app && active_app->v && active_app->v->on_key) {
-                    active_app->v->on_key(active_app, (uint16_t)c); 
+        // Klavye İşleme (Unity'deki Input Manager'ın arka planı gibi çalışır)
+        while (kbd_has_character()) { 
+            uint16_t raw_code = kbd_pop_event();
+            if (raw_code != 0) {
+                last_raw_scancode = raw_code; // Debug için sakla
+
+                // 0x80 biti set edilmişse (örn: 0x9E) tuş BIRAKILMIŞTIR.
+                // 0x80 biti yoksa (örn: 0x1E) tuş BASILMIŞTIR.
+                bool is_break_code = (raw_code & 0x80) != 0;
+                uint8_t state = is_break_code ? 0 : 1;
+                
+                // MOTORUN HARİTASINI GÜNCELLE
+                // Not: engine_internal_set_key fonksiyonun raw_code içinden 
+                // 0x80'i temizleyip (key & 0x7F) tabloyu güncellemeli.
+                engine_internal_set_key(raw_code, state); 
+
+                // --- EVENT BAZLI SİSTEM (Terminal gibi uygulamalar için) ---
+                int active_win = wm_get_active_id();
+                if (active_win != -1) {
+                    app_t* active_app = appmgr_get_app_by_window_id(active_win);
+                    if (active_app && active_app->v && active_app->v->on_key) {
+                        // Uygulamaya sadece 'basılma' anında temiz kod gönder
+                        if (!is_break_code) {
+                            active_app->v->on_key(active_app, raw_code & 0x7F);
+                        }
+                    }
                 }
             }
         }
 
-        // 3. FARE KONTROLÜ VE ETKİLEŞİM
+        // --- 2. MOUSE ETKİLEŞİMİ ---
         while (ps2_mouse_pop(&dx, &dy, &btn)) {
-            // Koordinat güncelleme
-            mouse_x += dx; 
-            mouse_y += dy;
-
-            // Ekran sınırlarını koru
+            mouse_x += dx; mouse_y += dy;
+            // Sınır korumaları...
             if (mouse_x < 0) mouse_x = 0;
             if (mouse_y < 0) mouse_y = 0;
-            if (mouse_x > (int)fb_get_width() - 2) mouse_x = (int)fb_get_width() - 2;
-            if (mouse_y > (int)fb_get_height() - 2) mouse_y = (int)fb_get_height() - 2;
+            if (mouse_x > (int)fb_get_width() - 5) mouse_x = (int)fb_get_width() - 5;
+            if (mouse_y > (int)fb_get_height() - 5) mouse_y = (int)fb_get_height() - 2;
 
-            // Tıklama ve bırakma olaylarını hesapla
             uint8_t pressed = btn & ~last_btn;
             uint8_t released = ~btn & last_btn;
 
-            // --- PENCERE YÖNETİMİ (WM) ---
-            // Önce hareketi bildir (Pencere sürükleme burada gerçekleşir)
             wm_handle_mouse_move(mouse_x, mouse_y);
-            // Sonra tıklama/bırakma olaylarını bildir
             wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
 
-            // --- İKON KONTROLÜ (Sadece boş masaüstündeyken) ---
-            if (wm_find_window_at(mouse_x, mouse_y) == -1) { 
-                if (pressed & 1) { 
-                    // Terminal İkonu Tıklama
+            // İkon Tıklama Mantığı
+            if (wm_find_window_at(mouse_x, mouse_y) == -1) {
+                if (pressed & 1) {
                     if (mouse_x >= terminal_icon.x && mouse_x <= terminal_icon.x + 32 &&
                         mouse_y >= terminal_icon.y && mouse_y <= terminal_icon.y + 32) {
-                        terminal_icon.dragging = true;
-                        appmgr_start_app(terminal_icon.app_id); 
+                        appmgr_start_app(terminal_icon.app_id);
                     }
-                    // Dosya Yöneticisi İkonu Tıklama
-                    else if (mouse_x >= file_manager_icon.x && mouse_x <= file_manager_icon.x + 32 &&
-                            mouse_y >= file_manager_icon.y && mouse_y <= file_manager_icon.y + 32) {
-                        file_manager_icon.dragging = true;
-                        appmgr_start_app(file_manager_icon.app_id); 
+                    else if (mouse_x >= game_engine_icon.x && mouse_x <= game_engine_icon.x + 32 &&
+                            mouse_y >= game_engine_icon.y && mouse_y <= game_engine_icon.y + 32) {
+                        appmgr_start_app(game_engine_icon.app_id);
                     }
                 }
             }
-
-            // İkon sürükleme ve bırakma mantığı
-            if (!(btn & 1)) { // Sol tuş bırakıldıysa
-                if (terminal_icon.dragging) snap_to_grid(&terminal_icon.x, &terminal_icon.y);
-                if (file_manager_icon.dragging) snap_to_grid(&file_manager_icon.x, &file_manager_icon.y);
-                terminal_icon.dragging = false;
-                file_manager_icon.dragging = false;
-            } else { // Sol tuş basılıyken hareket ettir
-                if (terminal_icon.dragging) { terminal_icon.x = mouse_x - 16; terminal_icon.y = mouse_y - 16; }
-                if (file_manager_icon.dragging) { file_manager_icon.x = mouse_x - 16; file_manager_icon.y = mouse_y - 16; }
-            }
-
             last_btn = btn;
         }
 
-        // 4. ÇİZİM AŞAMASI (Double Buffering)
+        // --- 3. ÇİZİM (DOUBLE BUFFERING) ---
+        // Saniyede 60 kez burası döner (Render Loop)
         fb_clear(0x182838); 
         
-        // Katman 1: Arkaplan ve İkonlar
+        draw_desktop_icon(&game_engine_icon, mouse_x, mouse_y);
         draw_desktop_icon(&terminal_icon, mouse_x, mouse_y);
-        draw_desktop_icon(&file_manager_icon, mouse_x, mouse_y); 
 
-        // Katman 2: Uygulama Pencereleri (İçerikleriyle birlikte)
+        // Uygulama Pencereleri ve İÇLERİNDEKİ OYUNLAR
+        // wm_draw -> app->on_draw -> game_on_draw -> engine_loop
         wm_draw(); 
         
-        // Katman 3: Sabit UI ve Panel
         ui_topbar_draw(); 
-        draw_debug_info(); 
-        
-        // Katman 4: En Üst (Fare İmleci)
         cursor_draw_arrow(mouse_x, mouse_y); 
         
-        // Çizilen tüm arka plan buffer'ını ekrana bas
-        fb_present();
+        fb_present(); // Arka planı ekrana yansıt
     }
 }

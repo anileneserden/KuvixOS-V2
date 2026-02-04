@@ -1,25 +1,35 @@
 #include <kernel/panic.h>
-#include <kernel/printk.h>
-#include <kernel/vga.h>
 #include <kernel/serial.h>
+#include <kernel/power.h> // power_reboot için
+#include <kernel/time.h>  // g_ticks_ms veya bekleme için
+
+extern void draw_panic_screen(const char* message);
 
 void panic(const char *message) {
-    // 1. Ekranı temizleyip kırmızı bir "Kernel Panic" uyarısı verelim
-    vga_set_color(0x4); // Kırmızı renk (VGA_COLOR_RED)
-    
-    printk("\n------------------------------------------------\n");
-    printk("KERNEL PANIC: %s\n", message);
-    printk("Sistem durduruldu. Lutfen yeniden baslatin.\n");
-    printk("------------------------------------------------\n");
+    // 1. Interruptları kapat
+    asm volatile ("cli");
 
-    // 2. Aynı mesajı seri porta da gönder (QEMU logları için)
-    serial_write("\n!!! KERNEL PANIC !!!\n");
+    // 2. Logları seri porta yaz
+    serial_write("\n[PANIC] ");
     serial_write(message);
-    serial_write("\nHALTING SYSTEM...\n");
+    serial_write("\n");
 
-    // 3. İşlemciyi sonsuz döngüye sok ve durdur
-    // Interrupt'ları (kesmeleri) kapatıyoruz ki sistem uyanmasın
-    asm volatile ("cli"); 
+    // 3. Mavi ekranı çiz ve ekrana bas (fb_present içermeli)
+    draw_panic_screen(message);
+
+    // 4. Kullanıcıya mesajı okuması için süre tanı (Yaklaşık 5 saniye)
+    // Not: Interruptlar kapalı olduğu için zamanlayıcı (timer) çalışmayabilir.
+    // Bu yüzden basit bir "busy loop" kullanıyoruz.
+    serial_write("Sistem 5 saniye icinde yeniden baslatilacak...\n");
+    for (volatile int i = 0; i < 500000000; i++) {
+        asm volatile ("nop");
+    }
+
+    // 5. Yeniden başlat!
+    serial_write("Reboot tetikleniyor...\n");
+    power_reboot();
+
+    // Eğer reboot başarısız olursa (fallback)
     while (1) {
         asm volatile ("hlt");
     }

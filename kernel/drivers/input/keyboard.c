@@ -6,17 +6,17 @@
 #define KBD_DATA_PORT 0x60
 #define KBD_STATUS_PORT 0x64
 
-/* Basit bir event kuyruğu */
-static uint16_t kbd_buffer[256];
-static uint8_t head = 0;
-static uint8_t tail = 0;
+/* Tampon boyutunu artırdık */
+static uint16_t kbd_buffer[512];
+static volatile uint16_t head = 0;
+static volatile uint16_t tail = 0;
 
 extern kbd_layout_t layout_trq;
 extern kbd_layout_t layout_us;
 static kbd_layout_t* current_layout = &layout_us;
 
 void kbd_push_scan_code(uint8_t scancode) {
-    uint8_t next = (head + 1) % 256;
+    uint16_t next = (head + 1) % 512;
     if (next != tail) {
         kbd_buffer[head] = scancode;
         head = next;
@@ -24,57 +24,71 @@ void kbd_push_scan_code(uint8_t scancode) {
 }
 
 void kbd_init(void) {
-    // TEMİZLİK: Sadece klavye verilerini temizle, fare verilerine dokunma
-    uint8_t status;
-    while ((status = inb(KBD_STATUS_PORT)) & 0x01) {
-        uint8_t data = inb(KBD_DATA_PORT);
-        // Eğer bu veri fareye (AUX) aitse (bit 5 set), fare sürücüsü için bırakılabilir 
-        // veya ilk açılışta her şey temizlensin diye hepsi okunabilir.
-        // Genelde init aşamasında her şeyi yutmak en güvenlisidir.
+    // Portu temizle
+    while (inb(KBD_STATUS_PORT) & 0x01) {
+        inb(KBD_DATA_PORT);
     }
     
     outb(KBD_STATUS_PORT, 0xAE); // Klavyeyi aktif et
     current_layout = &layout_trq; 
 }
 
-uint16_t kbd_pop_event(void) {
-    if (head == tail) return 0;
-    uint16_t code = kbd_buffer[tail];
-    tail = (tail + 1) % 256;
-    return code;
-}
+// kernel/drivers/input/keyboard.c içinde
 
-char kbd_get_char(void) {
-    uint16_t scancode = kbd_pop_event();
-    if (scancode == 0 || (scancode & 0x80)) return 0; // Release (bırakma) bitini kontrol et
-    return current_layout->normal[scancode & 0x7F];
-}
-
-int kbd_has_character(void) {
-    return (head != tail);
-}
-
-/**
- * @brief Donanım portunu kontrol eder. 
- * Çakışmayı önlemek için 5. biti kontrol eder.
- */
 void kbd_poll(void) {
     uint8_t status = inb(KBD_STATUS_PORT);
 
-    // KURAL: Veri var mı (bit 0 == 1) VE bu veri fareye mi ait (bit 5 == 1)?
-    // Eğer bit 5 set edilmişse, bu veri fare verisidir. Klavyeden okuma yapma!
+    // Eğer veri varsa (bit 0) VE bu veri fareye ait değilse (bit 5 değilse)
     if ((status & 0x01) && !(status & 0x20)) {
         uint8_t sc = inb(KBD_DATA_PORT);
         kbd_push_scan_code(sc);
     }
 }
 
-// Assembly'deki "call kbd_handler" burayı çalıştıracak
-void kbd_handler(void) {
-    // Mevcut polling mantığını kesme geldiğinde de kullanalım
-    kbd_poll();
+uint16_t kbd_pop_event(void) {
+    if (head == tail) return 0;
+    uint16_t code = kbd_buffer[tail];
+    tail = (tail + 1) % 512;
+    return code;
+}
 
-    // Kesmenin bittiğini PIC'e bildir (Master PIC için)
-    // Eğer bunu yapmazsan ilk tuş basışından sonra klavye kilitlenir
+char kbd_get_char(void) {
+    uint16_t scancode = kbd_pop_event();
+    if (scancode == 0) return 0;
+    
+    // Release bitini ayıkla (0x80)
+    uint8_t key_only = scancode & 0x7F;
+    if (scancode & 0x80) return 0; 
+
+    // Layout sınır kontrolü (Kritik: A tuşu 0x1E'dir)
+    if (key_only < 128) {
+        return current_layout->normal[key_only];
+    }
+    return 0;
+}
+
+int kbd_has_character(void) {
+    return (head != tail);
+}
+
+// ASIL DEĞİŞİKLİK BURADA: Polling ve Interrupt ayrılmalı
+void kbd_handler(void) {
+    uint8_t status = inb(KBD_STATUS_PORT);
+
+    // Bit 0: Veri var mı?
+    // Bit 5: Veri FAREYE mi ait? (1 ise fare, 0 ise klavye)
+    if (status & 0x01) {
+        uint8_t data = inb(KBD_DATA_PORT);
+        
+        if (!(status & 0x20)) {
+            // Sadece fare verisi değilse kuyruğa ekle
+            kbd_push_scan_code(data);
+        }
+    }
+
+    // PIC'e "işlem tamam" de
     outb(0x20, 0x20);
 }
+
+// kbd_poll artık gereksiz, çünkü kbd_handler zaten kesme ile çalışıyor.
+// Eğer sistemin polling gerektiriyorsa kbd_handler içindeki mantığı kullanabilirsin.

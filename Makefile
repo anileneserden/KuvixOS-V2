@@ -65,11 +65,14 @@ SRC_C = \
     kernel/fs/fs_init.c \
     kernel/ui/apps/settings_app.c \
     kernel/ui/apps/terminal_app.c \
+    kernel/ui/apps/test_game.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
+    kernel/ui/debug_screen.c \
+    kernel/ui/panic_screen.c \
     kernel/ui/power_screen.c \
     kernel/ui/select.c \
     kernel/ui/wm/hittest.c \
@@ -91,6 +94,7 @@ SRC_C = \
     lib/service/service_registry.c \
     lib/string/string.c \
     lib/ui/font/font8x8_basic.c \
+    lib/game_engine.c \
     kernel/arch/x86/gdt.c \
     kernel/arch/x86/idt.c
 
@@ -149,7 +153,7 @@ run: iso
 	@chmod 666 disk.img
 	qemu-system-i386 -cdrom KuvixOS.iso \
 		-drive file=disk.img,format=raw,index=0,media=disk \
-		-m 256M -serial stdio -no-reboot -no-shutdown -d int -D qemu.log
+		-m 256M -serial stdio -d int -D qemu.log
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)

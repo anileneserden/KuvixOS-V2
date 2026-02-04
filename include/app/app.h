@@ -15,7 +15,9 @@ typedef struct app_vtbl {
 
 struct app {
     int win_id;
-    void* user_data;    // File Manager burayı bekliyor. 'user' yerine bunu kullanacağız.
+    void* user_data;
     const app_vtbl_t* v;
     int visible; 
+    int width;   // <--- BU SATIRI EKLE
+    int height;  // <--- BU SATIRI EKLE
 };
