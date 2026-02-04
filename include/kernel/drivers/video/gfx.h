@@ -31,6 +31,7 @@ void gfx_draw_alpha_rect(int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t 
 
 // Gelişmiş Şekiller
 void gfx_fill_round_rect(int x, int y, int w, int h, int r, uint32_t color);
+void gfx_fill_polygon(int* x_coords, int* y_coords, int num_vertices, uint32_t color);
 void gfx_draw_bitmap(int x, int y, const bitmap_t* bmp);
 
 // Metin Çizimi

@@ -69,6 +69,7 @@ SRC_C = \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/cursor.c \
+    kernel/ui/debug_3d_render.c \
     kernel/ui/desktop.c \
     kernel/ui/power_screen.c \
     kernel/ui/select.c \
@@ -85,12 +86,15 @@ SRC_C = \
     kernel/ui/theme_parser.c \
     kernel/ui/theme_builtin_data.c \
     kernel/ui/ui_button.c \
+    kernel/ui/ui_manager.c \
     lib/shell/shell.c \
     lib/commands/commands.c \
     lib/service/service.c \
     lib/service/service_registry.c \
     lib/string/string.c \
     lib/ui/font/font8x8_basic.c \
+    lib/render3d.c \
+    lib/math.c \
     kernel/arch/x86/gdt.c \
     kernel/arch/x86/idt.c
 

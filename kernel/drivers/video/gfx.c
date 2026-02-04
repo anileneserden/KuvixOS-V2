@@ -134,3 +134,58 @@ void gfx_fill_round_rect(int x, int y, int w, int h, int r, uint32_t color) {
         }
     }
 }
+
+void gfx_fill_polygon(int* x_coords, int* y_coords, int num_vertices, uint32_t color) {
+    if (num_vertices < 3) return;
+
+    // 1. Poligonun dikey sınırlarını bul (Min ve Max Y)
+    int min_y = y_coords[0];
+    int max_y = y_coords[0];
+    for (int i = 1; i < num_vertices; i++) {
+        if (y_coords[i] < min_y) min_y = y_coords[i];
+        if (y_coords[i] > max_y) max_y = y_coords[i];
+    }
+
+    // 2. Ekran sınırlarını aşmasın
+    // fb_get_height() veya senin sistemindeki karşılığını kullan
+    int screen_h = 600; // Örnek değer, kendi sistemine göre güncelle
+    if (min_y < 0) min_y = 0;
+    if (max_y >= screen_h) max_y = screen_h - 1;
+
+    // 3. Her satır için tarama yap (Scanline)
+    for (int y = min_y; y <= max_y; y++) {
+        int intersections[num_vertices];
+        int count = 0;
+
+        // Kenarlarla kesişim noktalarını bul
+        for (int i = 0; i < num_vertices; i++) {
+            int next = (i + 1) % num_vertices;
+            int x1 = x_coords[i], y1 = y_coords[i];
+            int x2 = x_coords[next], y2 = y_coords[next];
+
+            if ((y1 <= y && y2 > y) || (y2 <= y && y1 > y)) {
+                // Kesişim noktasının X koordinatını hesapla
+                intersections[count++] = x1 + (y - y1) * (x2 - x1) / (y2 - y1);
+            }
+        }
+
+        // Kesişim noktalarını soldan sağa sırala (Bubble Sort)
+        for (int i = 0; i < count - 1; i++) {
+            for (int j = 0; j < count - i - 1; j++) {
+                if (intersections[j] > intersections[j + 1]) {
+                    int temp = intersections[j];
+                    intersections[j] = intersections[j + 1];
+                    intersections[j + 1] = temp;
+                }
+            }
+        }
+
+        // Çiftler halinde kesişim noktaları arasını doldur
+        for (int i = 0; i < count; i += 2) {
+            if (i + 1 < count) {
+                // gfx_draw_line ile yatay bir çizgi çizerek dolduruyoruz
+                gfx_draw_line(intersections[i], y, intersections[i+1], y, color);
+            }
+        }
+    }
+}

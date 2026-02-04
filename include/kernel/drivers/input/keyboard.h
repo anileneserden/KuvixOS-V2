@@ -19,6 +19,7 @@ uint16_t kbd_pop_event(void);
 int      kbd_get_key(void);          // 0 yoksa, aksi halde char veya 0xFF00|KBD_Fn
 void     kbd_debug_set(int enabled);
 int      kbd_debug_get(void);
+int      kbd_has_character(void);
 
 // Debug (istersen kullan)
 extern volatile uint8_t g_kbd_last_sc;

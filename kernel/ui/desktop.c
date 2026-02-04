@@ -15,6 +15,7 @@
 #include "icons/terminal/terminal.h"
 #include <app/app.h>
 #include <app/app_manager.h>
+#include <ui/ui_manager.h>
 
 // --- Harici Tanımlar ---
 extern int mouse_x, mouse_y;
@@ -23,8 +24,9 @@ extern void terminal_handle_key(char c);
 extern void appmgr_init(void);
 extern app_t* appmgr_start_app(int app_id);
 extern int kbd_has_character(void);
-extern char kbd_get_char(void);
+// extern char kbd_get_char(void);
 extern app_t* appmgr_get_app_by_window_id(int win_id);
+extern int g_current_mode;
 
 #define GRID_SIZE_W 80
 #define GRID_SIZE_H 80
@@ -99,103 +101,90 @@ void draw_debug_info(void) {
 
 // --- ANA DÖNGÜ ---
 void ui_desktop_run(void) {
-    int dx, dy;
-    uint8_t btn;
-    uint8_t last_btn = 0;
+    // Statik değişkenler fonksiyon kapansa da değerini korur
+    static uint8_t last_btn = 0; 
+    static bool initialized = false;
 
-    // Sistemleri başlat
-    wm_init();
-    appmgr_init();
-    settings_init();
+    // 1. SİSTEMLERİ BAŞLAT (Sadece bir kez)
+    if (!initialized) {
+        wm_init();
+        appmgr_init();
+        settings_init();
+        ps2_mouse_init();
+        initialized = true;
+    }
     
-    while(1) {
-        // 1. Donanımdan ham verileri oku (Kritik: Veri gelmezse kuyruk dolmaz)
-        ps2_mouse_poll();
-
-        // 2. KLAVYE KONTROLÜ
+    // g_current_mode MODE_DESKTOP (0) olduğu sürece bu döngü döner
+    while(g_current_mode == MODE_DESKTOP) { 
+        
+        
         if (kbd_has_character()) {
-            char c = kbd_get_char();
-            int active_win = wm_get_active_id();
-            if (active_win != -1) {
-                app_t* active_app = appmgr_get_app_by_window_id(active_win);
-                if (active_app && active_app->v && active_app->v->on_key) {
-                    active_app->v->on_key(active_app, (uint16_t)c); 
+            uint16_t event = kbd_pop_event();
+            uint8_t scancode = event & 0x7F;
+            bool pressed = !(event & 0x80);
+
+            if (pressed) {
+                // F2 KONTROLÜ
+                if (scancode == 0x3C) { 
+                    g_current_mode = MODE_3D_RENDER;
+                    return;
+                }
+
+                // KARAKTER ÇEVİRİMİ (Geçici ve güvenli yöntem)
+                // Eğer kbd_get_char sende yoksa, scancode'dan ASCII'ye manuel bakmalısın.
+                // Şimdilik en çok kullanılan tuşlar için basit bir kontrol:
+                char c = 0;
+                if (scancode >= 0x02 && scancode <= 0x0B) c = "1234567890"[scancode - 0x02];
+                else if (scancode >= 0x10 && scancode <= 0x19) c = "qwertyuiop"[scancode - 0x10];
+                else if (scancode == 0x1C) c = '\n'; // Enter
+                else if (scancode == 0x39) c = ' ';  // Space
+
+                if (c != 0) {
+                    int active_win = wm_get_active_id();
+                    if (active_win != -1) {
+                        app_t* active_app = appmgr_get_app_by_window_id(active_win);
+                        if (active_app && active_app->v && active_app->v->on_key) {
+                            active_app->v->on_key(active_app, (uint16_t)c);
+                        }
+                    }
                 }
             }
         }
 
-        // 3. FARE KONTROLÜ VE ETKİLEŞİM
+        // 3. FARE KONTROLÜ
+        ps2_mouse_poll();
+        int dx, dy; 
+        uint8_t btn;
         while (ps2_mouse_pop(&dx, &dy, &btn)) {
-            // Koordinat güncelleme
             mouse_x += dx; 
             mouse_y += dy;
 
             // Ekran sınırlarını koru
             if (mouse_x < 0) mouse_x = 0;
             if (mouse_y < 0) mouse_y = 0;
-            if (mouse_x > (int)fb_get_width() - 2) mouse_x = (int)fb_get_width() - 2;
-            if (mouse_y > (int)fb_get_height() - 2) mouse_y = (int)fb_get_height() - 2;
+            if (mouse_x > (int)fb_get_width() - 5) mouse_x = (int)fb_get_width() - 5;
+            if (mouse_y > (int)fb_get_height() - 5) mouse_y = (int)fb_get_height() - 5;
 
-            // Tıklama ve bırakma olaylarını hesapla
-            uint8_t pressed = btn & ~last_btn;
-            uint8_t released = ~btn & last_btn;
-
-            // --- PENCERE YÖNETİMİ (WM) ---
-            // Önce hareketi bildir (Pencere sürükleme burada gerçekleşir)
+            // Pencere yöneticisine bildir
             wm_handle_mouse_move(mouse_x, mouse_y);
-            // Sonra tıklama/bırakma olaylarını bildir
-            wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
-
-            // --- İKON KONTROLÜ (Sadece boş masaüstündeyken) ---
-            if (wm_find_window_at(mouse_x, mouse_y) == -1) { 
-                if (pressed & 1) { 
-                    // Terminal İkonu Tıklama
-                    if (mouse_x >= terminal_icon.x && mouse_x <= terminal_icon.x + 32 &&
-                        mouse_y >= terminal_icon.y && mouse_y <= terminal_icon.y + 32) {
-                        terminal_icon.dragging = true;
-                        appmgr_start_app(terminal_icon.app_id); 
-                    }
-                    // Dosya Yöneticisi İkonu Tıklama
-                    else if (mouse_x >= file_manager_icon.x && mouse_x <= file_manager_icon.x + 32 &&
-                            mouse_y >= file_manager_icon.y && mouse_y <= file_manager_icon.y + 32) {
-                        file_manager_icon.dragging = true;
-                        appmgr_start_app(file_manager_icon.app_id); 
-                    }
-                }
-            }
-
-            // İkon sürükleme ve bırakma mantığı
-            if (!(btn & 1)) { // Sol tuş bırakıldıysa
-                if (terminal_icon.dragging) snap_to_grid(&terminal_icon.x, &terminal_icon.y);
-                if (file_manager_icon.dragging) snap_to_grid(&file_manager_icon.x, &file_manager_icon.y);
-                terminal_icon.dragging = false;
-                file_manager_icon.dragging = false;
-            } else { // Sol tuş basılıyken hareket ettir
-                if (terminal_icon.dragging) { terminal_icon.x = mouse_x - 16; terminal_icon.y = mouse_y - 16; }
-                if (file_manager_icon.dragging) { file_manager_icon.x = mouse_x - 16; file_manager_icon.y = mouse_y - 16; }
-            }
-
+            wm_handle_mouse(mouse_x, mouse_y, (btn & ~last_btn), (~btn & last_btn), btn);
+            
             last_btn = btn;
         }
 
-        // 4. ÇİZİM AŞAMASI (Double Buffering)
+        // 4. ÇİZİM (Double Buffering)
         fb_clear(0x182838); 
         
-        // Katman 1: Arkaplan ve İkonlar
         draw_desktop_icon(&terminal_icon, mouse_x, mouse_y);
-        draw_desktop_icon(&file_manager_icon, mouse_x, mouse_y); 
+        // draw_desktop_icon(&file_manager_icon, mouse_x, mouse_y); // Kullanıyorsan açabilirsin
 
-        // Katman 2: Uygulama Pencereleri (İçerikleriyle birlikte)
         wm_draw(); 
-        
-        // Katman 3: Sabit UI ve Panel
         ui_topbar_draw(); 
-        draw_debug_info(); 
-        
-        // Katman 4: En Üst (Fare İmleci)
+        draw_debug_info();
         cursor_draw_arrow(mouse_x, mouse_y); 
         
-        // Çizilen tüm arka plan buffer'ını ekrana bas
-        fb_present();
+        fb_present(); // Arka buffer'ı ekrana yansıt
+
+        asm volatile("pause");
     }
 }
