@@ -129,3 +129,52 @@ void printk(const char* fmt, ...) {
     }
     va_end(args);
 }
+
+// Basit bir ksprintf uygulaması (Senin printk mantığıyla uyumlu)
+int ksprintf(char *buf, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    
+    char *ptr = buf;
+    const char *p;
+    
+    for (p = fmt; *p != '\0'; p++) {
+        if (*p != '%') {
+            *ptr++ = *p;
+            continue;
+        }
+        
+        p++;
+        switch (*p) {
+            case 's': {
+                char *s = va_arg(args, char *);
+                if (!s) s = "(null)";
+                while (*s) *ptr++ = *s++;
+                break;
+            }
+            case 'd': {
+                int val = va_arg(args, int);
+                if (val == 0) {
+                    *ptr++ = '0';
+                } else {
+                    char tmp[32];
+                    int i = 0;
+                    while (val > 0) {
+                        tmp[i++] = (val % 10) + '0';
+                        val /= 10;
+                    }
+                    while (--i >= 0) *ptr++ = tmp[i];
+                }
+                break;
+            }
+            // İhtiyacın olursa %x vb. buraya eklenebilir
+            default:
+                *ptr++ = *p;
+                break;
+        }
+    }
+    
+    *ptr = '\0'; // String'i sonlandır
+    va_end(args);
+    return (ptr - buf); // Yazılan karakter sayısı
+}

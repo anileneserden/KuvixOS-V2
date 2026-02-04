@@ -15,7 +15,22 @@ extern kbd_layout_t layout_trq;
 extern kbd_layout_t layout_us;
 static kbd_layout_t* current_layout = &layout_us;
 
+static int ctrl_pressed = 0; // 0: Basılı değil, 1: Basılı
+static int ctrl_state = 0;
+
+// Bu fonksiyonu dosyanın herhangi bir yerine (ama kbd_push_scan_code'un dışına) ekle
+int kbd_is_ctrl_pressed(void) {
+    return ctrl_state;
+}
+
 void kbd_push_scan_code(uint8_t scancode) {
+    // CTRL tuşu kontrolü (PS/2 Set 1)
+    if (scancode == 0x1D) {
+        ctrl_pressed = 1;
+    } else if (scancode == 0x9D) {
+        ctrl_pressed = 0;
+    }
+
     uint8_t next = (head + 1) % 256;
     if (next != tail) {
         kbd_buffer[head] = scancode;

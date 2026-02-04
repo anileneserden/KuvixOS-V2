@@ -10,8 +10,16 @@ enum {
     KBD_F4 = 0x04,
     KBD_F5 = 0x05,
     KBD_F6 = 0x06,
+    // Yeni eklenenler:
+    KBD_LCTRL = 0x1D,
+    KBD_RCTRL = 0x1E, // E0 1D gelince bunu 1E olarak işaretleyebiliriz ayırt etmek için
+    KBD_LSHIFT = 0x2A,
+    KBD_RSHIFT = 0x36
 };
 
+// Basılı tutulma durumunu sorgulamak için yeni bir fonksiyon prototipi
+int kbd_is_ctrl_pressed(void);
+int kbd_is_shift_pressed(void);
 void     kbd_init(void);
 void     kbd_set_layout_trq(void);   // şimdilik TRQ
 void     kbd_handle_byte(uint8_t sc);
