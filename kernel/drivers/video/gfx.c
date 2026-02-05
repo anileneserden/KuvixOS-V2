@@ -134,3 +134,17 @@ void gfx_fill_round_rect(int x, int y, int w, int h, int r, uint32_t color) {
         }
     }
 }
+
+// İçi boş dikdörtgen kenarlığı çizimi
+void gfx_draw_rect(int x, int y, int w, int h, uint32_t color) {
+    if (w <= 0 || h <= 0) return;
+
+    // Üst kenar
+    gfx_draw_line(x, y, x + w - 1, y, color);
+    // Alt kenar
+    gfx_draw_line(x, y + h - 1, x + w - 1, y + h - 1, color);
+    // Sol kenar
+    gfx_draw_line(x, y, x, y + h - 1, color);
+    // Sağ kenar
+    gfx_draw_line(x + w - 1, y, x + w - 1, y + h - 1, color);
+}

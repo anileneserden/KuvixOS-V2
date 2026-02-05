@@ -405,4 +405,18 @@ int vfs_resolve_path(const char* in, char* out, uint32_t cap)
     return 1;
 }
 
-int vfs_remove_node(const char* path) { (void)path; return -1; }
+// ⭐ GÜNCELLENEN vfs_remove fonksiyonu
+int vfs_remove(const char* path) {
+    if (!path) return 0;
+
+    char resolved[VFS_PATH_MAX];
+    if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
+
+    // RAMFS'te mi? (Masaüstü dosyaları burada tutulur)
+    if (ramfs_exists(resolved) || ramfs_is_dir(resolved)) {
+        return ramfs_remove(resolved); // Yeni eklediğimiz fonksiyonu çağırıyoruz
+    }
+
+    // ToyFS salt okunurdur, silme yapılamaz
+    return 0;
+}

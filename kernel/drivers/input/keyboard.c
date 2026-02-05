@@ -93,3 +93,11 @@ void kbd_handler(void) {
     // Eğer bunu yapmazsan ilk tuş basışından sonra klavye kilitlenir
     outb(0x20, 0x20);
 }
+
+// notepad.c ve diğer uygulamaların scancode'u ASCII'ye çevirmesi için
+char kbd_scancode_to_ascii(uint8_t scancode) {
+    if (scancode & 0x80) return 0; // Tuş bırakma kodlarını yoksay
+    if (!current_layout) return 0;
+    
+    return current_layout->normal[scancode & 0x7F];
+}

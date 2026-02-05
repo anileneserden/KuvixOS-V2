@@ -257,12 +257,31 @@ int ramfs_is_dir(const char* path) {
 
 // ramfs_mkdir: Yeni bir dizin düğümü oluştur
 int ramfs_mkdir(const char* path) {
-    if (ramfs_exists(path)) return 0; // Zaten varsa hata
-
+    if (ramfs_exists(path)) return 0; 
     int idx = alloc_node(path);
     if (idx < 0) return -1;
 
-    g_nodes[idx].type = RAMFS_T_DIR; // Tipini klasör yap
-    g_nodes[idx].size = 0;           // Klasörlerin boyutu olmaz (mantıksal olarak)
+    g_nodes[idx].type = RAMFS_T_DIR; // Burası çok önemli!
+    g_nodes[idx].size = 0;
+    return 1;
+}
+
+// ramfs_remove: Bir dosya veya dizini tamamen siler
+int ramfs_remove(const char* path) {
+    int idx = find_node(path);
+    if (idx < 0) return 0; // Dosya bulunamadı
+
+    // 1. Eğer bu bir dizinse, içindeki dosyaları kontrol etmek gerekebilir.
+    // Ancak basit ramfs yapısında sadece node'u serbest bırakıyoruz.
+    
+    // 2. Node'u serbest bırak
+    g_nodes[idx].used = 0;
+    g_nodes[idx].path[0] = '\0';
+    g_nodes[idx].size = 0;
+    g_nodes[idx].off = 0;
+    g_nodes[idx].cap = 0;
+
+    // Not: Havuzdaki (g_pool) veriyi gerçekten silmiyoruz (memory leak),
+    // ama node silindiği için artık erişilemez olur. 
     return 1;
 }

@@ -64,34 +64,41 @@ SRC_C = \
     kernel/fs/toyfs_image.c \
     kernel/fs/fs_init.c \
     kernel/ui/apps/file_manager.c \
-    kernel/ui/apps/settings_app.c \
-    kernel/ui/apps/terminal_app.c \
+    kernel/ui/apps/notepad.c \
+    kernel/ui/apps/settings.c \
+    kernel/ui/apps/terminal.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
+    kernel/ui/desktop_icons.c \
     kernel/ui/power_screen.c \
     kernel/ui/select.c \
     kernel/ui/wm/hittest.c \
     kernel/ui/wm.c \
+    kernel/ui/messagebox.c \
     kernel/ui/mouse.c \
+    kernel/ui/notification.c \
     kernel/ui/wallpaper.c \
     kernel/ui/window.c \
     kernel/ui/window_chrome.c \
     kernel/ui/app_manager.c \
+    kernel/ui/context_menu.c \
     kernel/ui/theme_builtin.c \
     kernel/ui/theme_runtime.c \
     kernel/ui/theme_bootstrap.c \
     kernel/ui/theme_parser.c \
     kernel/ui/theme_builtin_data.c \
+    kernel/ui/topbar.c \
     kernel/ui/ui_button.c \
-    lib/shell/shell.c \
     lib/commands/commands.c \
     lib/service/service.c \
     lib/service/service_registry.c \
+    lib/shell/shell.c \
     lib/string/string.c \
     lib/ui/font/font8x8_basic.c \
+    lib/math.c \
     kernel/arch/x86/gdt.c \
     kernel/arch/x86/idt.c
 
@@ -132,18 +139,32 @@ iso: $(KERNEL)
 	rm -rf $(ISO)
 	mkdir -p $(ISO)/boot/grub
 	cp $(KERNEL) $(ISO)/boot/kernel.elf
-	@echo 'set timeout=0' >  $(ISO)/boot/grub/grub.cfg
+	@echo 'set timeout=5' >  $(ISO)/boot/grub/grub.cfg
 	@echo 'set default=0' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'insmod vbe' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'insmod vga' >> $(ISO)/boot/grub/grub.cfg
-	@echo 'set gfxmode=1920x1080x32' >> $(ISO)/boot/grub/grub.cfg
-	@echo 'set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'insmod video_bochs' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'insmod video_cirrus' >> $(ISO)/boot/grub/grub.cfg
 	@echo '' >> $(ISO)/boot/grub/grub.cfg
-	@echo 'menuentry "KuvixOS V2" {' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'menuentry "KuvixOS V2 (1024x768)" {' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxmode=1024x768x32' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
 	@echo '}' >> $(ISO)/boot/grub/grub.cfg
-	grub2-mkrescue -o $(IMAGE) $(ISO) > /dev/null 2>&1
+	@echo 'menuentry "KuvixOS V2 (1920x1080)" {' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxmode=1920x1080x32' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
+	@echo '}' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'menuentry "KuvixOS V2 (Safe Mode 800x600)" {' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxmode=800x600x32' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
+	@echo '}' >> $(ISO)/boot/grub/grub.cfg
+	grub2-mkrescue -o $(IMAGE) $(ISO)
 
 run: iso
 	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10

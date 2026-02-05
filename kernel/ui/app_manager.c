@@ -7,25 +7,25 @@
 #include <lib/string.h>
 
 // --- 1. DIŞARIDAN GELEN VTABLE TANIMLARI ---
-// Bu tablolar ilgili .c dosyalarında tanımlı olmalıdır.
 extern const app_vtbl_t terminal_vtbl; 
 extern const app_vtbl_t file_manager_vtbl; 
+extern const app_vtbl_t notepad_vtbl; // 👈 Notepad eklendi
 
 // --- 2. UYGULAMA TANIMLAMA YAPISI ---
 typedef struct {
     int id;
     const char* title;
-    const app_vtbl_t* vtbl; // Uygulamanın fonksiyon tablosu
+    const app_vtbl_t* vtbl; 
     int default_x, default_y, default_w, default_h;
+    uint32_t data_size; // 👈 Uygulamanın özel verisi (buffer vb.) için gereken boyut
 } app_definition_t;
 
 // --- 3. REGISTRY (Kayıt Listesi) ---
-// Yeni bir uygulama eklemek istersen sadece bu listeye ekleme yapman yeterli.
 static app_definition_t app_registry[] = {
-    { 1, "Terminal",         &terminal_vtbl,      120, 90, 520, 320 },
-    { 2, "KuvixOS Demo",     NULL,                80, 60, 420, 260 },
-    { 3, "File Manager",     &file_manager_vtbl,  40, 60, 420, 260 },
-    { 0, NULL,               NULL,                0, 0, 0, 0 } 
+    { 1, "Terminal",         &terminal_vtbl,      120, 90,  520, 320, 1024 }, // Örn: 1KB terminal buffer
+    { 2, "File Manager",     &file_manager_vtbl,  40,  60,  420, 260, 2048 }, // Örn: 2KB file list buffer
+    { 3, "Notepad",          &notepad_vtbl,       150, 100, 450, 350, 4096 }, // 👈 4KB notepad buffer
+    { 0, NULL,               NULL,                0,   0,   0,   0,   0    } 
 };
 
 // --- 4. YÖNETİM DEĞİŞKENLERİ ---
@@ -41,23 +41,13 @@ void appmgr_init(void) {
     printk("App Manager: Sistem baslatildi.\n");
 }
 
-/**
- * Bir Window ID'ye ait uygulama nesnesini bulur.
- * desktop.c içindeki klavye/fare yönlendirmesi için kullanılır.
- */
 app_t* appmgr_get_app_by_window_id(int win_id) {
     if (win_id == -1) return NULL;
-    
-    // Yöntem A: Kendi listemizden tara (Güvenli)
     for (int i = 0; i < g_app_count; i++) {
         if (g_apps[i] != NULL && g_apps[i]->win_id == win_id) {
             return g_apps[i];
         }
     }
-    
-    // Yöntem B: WM'den doğrudan çek (Hızlı - wm_get_owner varsa)
-    // return (app_t*)wm_get_owner(win_id);
-    
     return NULL;
 }
 
@@ -73,25 +63,33 @@ app_t* appmgr_start_app(int app_id) {
         }
     }
 
-    if (!def) return NULL;
+    if (!def || !def->vtbl) return NULL;
 
+    // 1. App yapısı için yer ayır
     app_t* a = (app_t*)kmalloc(sizeof(app_t));
     if (!a) return NULL;
+
+    // 2. Uygulamanın özel verisi (Notepad buffer vb.) için yer ayır
+    if (def->data_size > 0) {
+        a->user = kmalloc(def->data_size); // app.h'taki isme göre (user veya private_data)
+        if (a->user) {
+            memset(a->user, 0, def->data_size);
+        }
+    } else {
+        a->user = NULL;
+    }
 
     a->v = def->vtbl;
     a->visible = 1;
     
-    // 6. parametre olan 'a' eklendi:
+    // Pencereyi oluştur ve 'a' nesnesini owner olarak ata
     int win_id = wm_add_window(def->default_x, def->default_y, 
                                def->default_w, def->default_h, 
                                def->title, a); 
     
     a->win_id = win_id;
 
-    // Eğer wm_add_window içinde zaten set_owner yapıyorsan 
-    // aşağıdaki satıra gerek kalmayabilir, ama garanti olsun:
-    // wm_set_owner(win_id, a); 
-
+    // Uygulama özel başlatma fonksiyonunu çağır (Notepad_on_create gibi)
     if (a->v && a->v->on_create) {
         a->v->on_create(a);
     }
@@ -100,11 +98,11 @@ app_t* appmgr_start_app(int app_id) {
         g_apps[g_app_count++] = a;
     }
 
-    // wm_set_active fonksiyonunun wm.h içinde tanımlı olduğundan emin ol
     wm_set_active(win_id);
-
     return a;
 }
 
-// Yardımcı kısayollar
-app_t* appmgr_start_terminal(void) { return appmgr_start_app(1); }
+// Kolay başlatma fonksiyonları
+app_t* appmgr_start_terminal(void)     { return appmgr_start_app(1); }
+app_t* appmgr_start_file_manager(void) { return appmgr_start_app(2); }
+app_t* appmgr_start_notepad(void)      { return appmgr_start_app(3); }

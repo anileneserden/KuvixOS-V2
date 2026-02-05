@@ -321,6 +321,23 @@ void wm_draw(void) {
     }
 }
 
+// wm.c içine uygun bir yere ekle
+void wm_invalidate_window(int win_id) {
+    // Şimdilik sadece win_id kontrolü yapıyoruz. 
+    // Gelişmiş sistemlerde sadece bu pencerenin olduğu alan "dirty" (kirli) işaretlenir.
+    if (win_id >= 0 && win_id < g_count) {
+        // Ekranın bir sonraki döngüde çizilmesi gerektiğini belirtir.
+        // fb_present() zaten ana döngünde olduğu için bu genelde otomatik olur.
+    }
+}
+
+// kernel/ui/wm.c
+int wm_is_any_window_captured(void) {
+    // Eğer bir pencere sürükleniyorsa veya sol tık basılıysa 
+    // Masaüstü'nün ikon seçme/sürükleme mantığı çalışmamalı.
+    return (g_dragging || g_mouse_down || g_resizing);
+}
+
 int wm_dbg_dc_pending(void) { return dc_pending; }
 uint32_t wm_dbg_dc_age_ms(uint32_t now_ms) { return dc_pending ? (now_ms - dc_time) : 0; }
 int wm_dbg_dc_win(void) { return dc_win; }

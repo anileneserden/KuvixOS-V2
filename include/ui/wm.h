@@ -33,6 +33,9 @@ void wm_draw(void);
 
 int wm_find_window_at(int x, int y);
 
+void wm_invalidate_window(int win_id);
+int  wm_is_any_window_captured(void);
+
 // Debug Fonksiyonları (wm.c'nin sonundaki hataları bitirir)
 int      wm_dbg_dc_pending(void);
 uint32_t wm_dbg_dc_age_ms(uint32_t now_ms);

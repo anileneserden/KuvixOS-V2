@@ -2,24 +2,10 @@
 #define DESKTOP_H
 
 #include <stdint.h>
-#include <stdbool.h>
 
-// Yapı tanımını buraya taşıyoruz
-typedef struct {
-    int x, y;
-    char label[32];    // Ekranda görünen (Uzantısız: "Editor")
-    char vfs_name[32]; // Gerçek dosya adı (Uzantılı: "Editor.klink")
-    int app_id;
-    bool is_selected;
-    bool dragging;
-} desktop_icon_t;
+// Artık burada desktop_icon_t veya ikon fonksiyonları OLMAMALI.
+// Onlar desktop_icons.h içine taşındı.
 
-// Global değişkenleri diğer dosyaların görebilmesi için 'extern' olarak tanımla
-extern desktop_icon_t desktop_icons[];
-extern int icon_count;
-
-// Fonksiyon prototipleri
 void ui_desktop_run(void);
-void draw_desktop_icon(desktop_icon_t* icon, int mx, int my, int index);
 
 #endif

@@ -1,4 +1,4 @@
-#include <ui/apps/settings/settings_app.h>
+#include <ui/apps/settings.h>
 #include <ui/window/window.h>
 #include <ui/ui_button/ui_button.h>
 #include <ui/select/select.h>
