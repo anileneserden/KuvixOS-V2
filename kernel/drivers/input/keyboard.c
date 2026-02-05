@@ -25,10 +25,11 @@ int kbd_is_ctrl_pressed(void) {
 
 void kbd_push_scan_code(uint8_t scancode) {
     // CTRL tuşu kontrolü (PS/2 Set 1)
+    // 0x1D: Press, 0x9D: Release
     if (scancode == 0x1D) {
-        ctrl_pressed = 1;
+        ctrl_state = 1;
     } else if (scancode == 0x9D) {
-        ctrl_pressed = 0;
+        ctrl_state = 0;
     }
 
     uint8_t next = (head + 1) % 256;

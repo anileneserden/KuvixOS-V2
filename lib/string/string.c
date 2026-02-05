@@ -67,3 +67,12 @@ char* strrchr(const char* s, int c) {
     } while (*s++);
     return last;
 }
+
+char* strcat(char* dest, const char* src) {
+    char* rd = dest;
+    // Önce dest dizisinin sonuna (null karakterine) kadar git
+    while (*rd) rd++;
+    // Sonra src'yi oradan itibaren kopyalamaya başla
+    while ((*rd++ = *src++));
+    return dest;
+}

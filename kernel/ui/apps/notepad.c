@@ -4,13 +4,17 @@
 #include <kernel/drivers/video/gfx.h>
 #include <lib/string.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #define NOTEPAD_MAX_TEXT 4096
 
 // notepad.data_size (4096) kadar yer ayrılacak
 typedef struct {
     char text[NOTEPAD_MAX_TEXT];
+    char file_path[128];     // Mevcut dosya yolu
+    char save_buffer[64];    // Diyalogda yazılan geçici isim
     uint32_t cursor;
+    bool is_saving;          // Diyalog açık mı?
 } notepad_data_t;
 
 // --- DIŞ FONKSİYONLAR ---

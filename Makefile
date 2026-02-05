@@ -73,6 +73,7 @@ SRC_C = \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
     kernel/ui/desktop_icons.c \
+    kernel/ui/dialogs/save_dialog.c \
     kernel/ui/power_screen.c \
     kernel/ui/select.c \
     kernel/ui/wm/hittest.c \
