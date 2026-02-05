@@ -5,12 +5,17 @@
 #include <stdbool.h>
 
 typedef struct {
-    char label[32];
-    char vfs_name[64]; // Tam VFS yolu için genişletildi
     int x, y;
-    int app_id;
+    char label[32];
+    char vfs_name[64];
     bool is_selected;
+    bool is_dir;
+    int app_id;
     bool dragging;
+    
+    // --- YENİ ALANLAR ---
+    bool is_editing;     // Şu an adı mı değiştiriliyor?
+    char edit_buffer[32]; // Yazılan yeni isim
 } desktop_icon_t;
 
 // Temel Yönetim
@@ -20,6 +25,8 @@ int  desktop_icons_get_hit(int mx, int my);
 void desktop_icons_process_click(int index);
 void desktop_icons_snap_all(void);
 void desktop_icons_set_snap(bool enable);
+int desktop_icons_get_count(void);
+const char* desktop_icons_get_name(int index);
 
 // Sürükleme Mantığı
 void desktop_icons_set_dragging(int index, bool state);

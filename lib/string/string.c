@@ -76,3 +76,18 @@ char* strcat(char* dest, const char* src) {
     while ((*rd++ = *src++));
     return dest;
 }
+
+// Bir string içinde başka bir string arar
+char* strstr(const char* haystack, const char* needle) {
+    if (!*needle) return (char*)haystack;
+    for (; *haystack; haystack++) {
+        if (*haystack == *needle) {
+            const char *h = haystack, *n = needle;
+            while (*h && *n && *h == *n) {
+                h++; n++;
+            }
+            if (!*n) return (char*)haystack;
+        }
+    }
+    return 0;
+}

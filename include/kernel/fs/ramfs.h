@@ -35,6 +35,7 @@ int      ramfs_list(const char* dir_prefix, int (*cb)(const char* path, uint32_t
 int      ramfs_is_dir(const char* path);
 int      ramfs_mkdir(const char* path);
 int      ramfs_remove(const char* path);
+int      ramfs_rename(const char* old_path, const char* new_path);
 
 // stream I/O
 int      ramfs_open(const char* path, int create, int* out_fd);

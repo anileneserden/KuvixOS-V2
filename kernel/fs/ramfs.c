@@ -285,3 +285,21 @@ int ramfs_remove(const char* path) {
     // ama node silindiği için artık erişilemez olur. 
     return 1;
 }
+
+// ramfs_rename: Dosya veya dizinin yolunu/ismini değiştirir
+int ramfs_rename(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return 0;
+
+    // 1. Eski isimle dosyayı bul
+    int idx = find_node(old_path);
+    if (idx < 0) return 0; // Dosya yoksa başarısız
+
+    // 2. Yeni isim zaten kullanımda mı?
+    if (find_node(new_path) >= 0) return 0; // Hedef isimde zaten bir dosya var
+
+    // 3. Node içindeki path alanını güncelle
+    // strlcpy0 fonksiyonun zaten yukarıda mevcut, onu kullanıyoruz.
+    strlcpy0(g_nodes[idx].path, new_path, RAMFS_PATH_MAX);
+
+    return 1;
+}

@@ -15,6 +15,7 @@ char* strcpy(char* dest, const char* src);
 // include/lib/string.h içine eklenecekler:
 char* strchr(const char* s, int c);
 char* strrchr(const char* s, int c);
+char* strstr(const char* haystack, const char* needle);
 
 // Bellek fonksiyonları
 void* memcpy(void* dest, const void* src, size_t n);

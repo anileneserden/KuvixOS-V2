@@ -37,6 +37,7 @@ int  vfs_resolve_path(const char* in, char* out, uint32_t cap);
 int  vfs_stat(const char* path, vfs_stat_t* st);
 int  vfs_mkdir(const char* path);
 int  vfs_remove(const char* path);
+int vfs_rename(const char* old_path, const char* new_path);
 
 // CWD (Current Working Directory)
 const char* vfs_get_cwd(void);

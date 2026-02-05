@@ -420,3 +420,25 @@ int vfs_remove(const char* path) {
     // ToyFS salt okunurdur, silme yapılamaz
     return 0;
 }
+
+// ⭐ GÜNCELLENEN vfs_rename fonksiyonu
+int vfs_rename(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return 0;
+
+    char res_old[VFS_PATH_MAX];
+    char res_new[VFS_PATH_MAX];
+
+    // Yolları tam yola (absolute path) çevir
+    if (!vfs_resolve_path(old_path, res_old, sizeof(res_old))) return 0;
+    if (!vfs_resolve_path(new_path, res_new, sizeof(res_new))) return 0;
+
+    // Sadece RAMFS üzerinde isim değiştirme yapılabilir (Masaüstü dosyaları)
+    if (ramfs_exists(res_old) || ramfs_is_dir(res_old)) {
+        // ramfs_rename fonksiyonun varsa onu çağırırız
+        // Eğer ramfs_rename yoksa, ramfs.h'daki ismini kontrol et (örn: ramfs_move)
+        return ramfs_rename(res_old, res_new);
+    }
+
+    // ToyFS (Backend 2) salt okunur olduğu için isim değiştirilemez
+    return 0;
+}

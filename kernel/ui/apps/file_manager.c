@@ -96,6 +96,10 @@ void file_mgr_on_key(app_t* app, uint16_t key) {
 // File Manager için callback
 static int file_mgr_list_cb(const char* path, uint32_t size, void* u) {
     app_t* app = (app_t*)u;
+    // Uyarıları susturmak için parametreleri void'e cast et
+    (void)path;
+    (void)size;
+    (void)u;
     // Burada dosyaları ekrana basacağız veya bir listeye alacağız.
     // Şimdilik çizim anında çağrıldığını varsayarsak:
     // (Ancak vfs_list'i on_draw içinde çağırmak performansı düşürür, 
