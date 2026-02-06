@@ -8,6 +8,7 @@
 #include <lib/string.h>
 #include <app/app_manager.h>
 #include <stdbool.h>
+#include <kernel/drivers/input/mouse_ps2.h>
 
 // --- DIŞ BİLDİRİMLER ---
 extern void notepad_open_file(const char* vfs_path);
@@ -73,6 +74,7 @@ static int desktop_load_callback(const char* path, uint32_t size, void* u) {
     icons[icon_count].is_selected = false;
     icons[icon_count].dragging = false;
     icons[icon_count].is_editing = false; // Başlangıçta kapalı
+    icons[icon_count].edit_buffer[0] = '\0'; // Edit buffer'ı temizle
 
     icon_count++;
     return 1;
@@ -83,6 +85,7 @@ void desktop_icons_init(void) {
     memset(icons, 0, sizeof(icons));
 
     strncpy(icons[icon_count].label, "Notepad", 31);
+    strcpy(icons[icon_count].vfs_name, "notepad");
     icons[icon_count].x = 40;
     icons[icon_count].y = 40;
     icons[icon_count].app_id = 4;
@@ -142,8 +145,10 @@ void desktop_icons_draw_all(void) {
     }
 }
 
-// Klavye Girişini İşle
+// Klavye Girişini İşle - UNUSED PARAMETER DÜZELTMESİ
 void desktop_icons_handle_key(uint16_t scancode, char ascii) {
+    (void)scancode; // scancode parametresini kullanmadığımızı belirtiyoruz
+    
     for (int i = 0; i < icon_count; i++) {
         if (icons[i].is_editing) {
             int len = strlen(icons[i].edit_buffer);
@@ -164,21 +169,27 @@ void desktop_icons_handle_key(uint16_t scancode, char ascii) {
 // Düzenleme modunu başlat
 void desktop_icons_begin_edit(int index) {
     if (index < 0 || index >= icon_count) return;
-    for (int i = 0; i < icon_count; i++) icons[i].is_editing = false; // Diğerlerini kapat
+    for (int i = 0; i < icon_count; i++) {
+        icons[i].is_editing = false; // Diğerlerini kapat
+    }
     icons[index].is_editing = true;
     strcpy(icons[index].edit_buffer, icons[index].label);
 }
 
 bool desktop_icons_is_any_editing(void) {
-    for (int i = 0; i < icon_count; i++) if (icons[i].is_editing) return true;
+    for (int i = 0; i < icon_count; i++) {
+        if (icons[i].is_editing) return true;
+    }
     return false;
 }
 
-// Diğer fonksiyonlar (get_hit, move, delete vs.) olduğu gibi kalıyor...
+// Diğer fonksiyonlar
 int desktop_icons_get_hit(int mx, int my) {
     for (int i = 0; i < icon_count; i++) {
         if (mx >= icons[i].x && mx <= icons[i].x + 32 &&
-            my >= icons[i].y && my <= icons[i].y + 32) return i;
+            my >= icons[i].y && my <= icons[i].y + 32) {
+            return i;
+        }
     }
     return -1;
 }
@@ -208,17 +219,38 @@ void desktop_icons_deselect_all(void) {
     }
 }
 
-void desktop_icons_reset_selection(void) { desktop_icons_deselect_all(); }
-void desktop_icons_select(int index) { if (index >= 0 && index < icon_count) icons[index].is_selected = true; }
-void desktop_icons_move_dragging(int mx, int my) {
-    for (int i = 0; i < icon_count; i++) {
-        if (icons[i].dragging) { icons[i].x = mx - 16; icons[i].y = my - 16; }
+void desktop_icons_reset_selection(void) { 
+    desktop_icons_deselect_all(); 
+}
+
+void desktop_icons_select(int index) { 
+    if (index >= 0 && index < icon_count) {
+        icons[index].is_selected = true; 
     }
 }
-void desktop_icons_set_dragging(int index, bool state) {
-    if (index >= 0 && index < icon_count) { icons[index].dragging = state; icons[index].is_selected = state; }
+
+void desktop_icons_move_dragging(int mx, int my) {
+    for (int i = 0; i < icon_count; i++) {
+        if (icons[i].dragging) { 
+            icons[i].x = mx - 16; 
+            icons[i].y = my - 16; 
+        }
+    }
 }
-void desktop_icons_stop_dragging_all(void) { for (int i = 0; i < icon_count; i++) icons[i].dragging = false; }
+
+void desktop_icons_set_dragging(int index, bool state) {
+    if (index >= 0 && index < icon_count) { 
+        icons[index].dragging = state; 
+        icons[index].is_selected = state; 
+    }
+}
+
+void desktop_icons_stop_dragging_all(void) { 
+    for (int i = 0; i < icon_count; i++) {
+        icons[i].dragging = false; 
+    }
+}
+
 void desktop_icons_snap_all(void) {
     if (!snap_to_grid) return;
     for (int i = 0; i < icon_count; i++) {
@@ -227,25 +259,38 @@ void desktop_icons_snap_all(void) {
         if (icons[i].y < 35) icons[i].y = 40; 
     }
 }
+
 void desktop_icons_select_in_rect(int x1, int y1, int x2, int y2) {
-    int min_x = (x1 < x2) ? x1 : x2; int max_x = (x1 > x2) ? x1 : x2;
-    int min_y = (y1 < y2) ? y1 : y2; int max_y = (y1 > y2) ? y1 : y2;
+    int min_x = (x1 < x2) ? x1 : x2; 
+    int max_x = (x1 > x2) ? x1 : x2;
+    int min_y = (y1 < y2) ? y1 : y2; 
+    int max_y = (y1 > y2) ? y1 : y2;
     for (int i = 0; i < icon_count; i++) {
-        bool overlap = !(icons[i].x + 32 < min_x || icons[i].x > max_x || icons[i].y + 32 < min_y || icons[i].y > max_y);
+        bool overlap = !(icons[i].x + 32 < min_x || icons[i].x > max_x || 
+                        icons[i].y + 32 < min_y || icons[i].y > max_y);
         if (overlap) icons[i].is_selected = true;
     }
 }
+
 void desktop_icons_delete_selected(void) {
     for (int i = icon_count - 1; i >= 0; i--) {
         if (icons[i].is_selected) {
             vfs_remove(icons[i].vfs_name);
-            for (int j = i; j < icon_count - 1; j++) icons[j] = icons[j + 1];
+            for (int j = i; j < icon_count - 1; j++) {
+                icons[j] = icons[j + 1];
+            }
             icon_count--;
         }
     }
 }
-int desktop_icons_get_count(void) { return icon_count; }
+
+int desktop_icons_get_count(void) { 
+    return icon_count; 
+}
+
 const char* desktop_icons_get_name(int index) {
-    if (index >= 0 && index < icon_count) return icons[index].label;
+    if (index >= 0 && index < icon_count) {
+        return icons[index].label;
+    }
     return "";
 }

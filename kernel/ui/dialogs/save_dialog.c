@@ -6,6 +6,7 @@
 #include <ui/notification.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <kernel/printk.h>
 
 // --- DIŞ BİLDİRİMLER (Linker hatalarını çözer) ---
 extern void desktop_icons_init(void); 
@@ -233,31 +234,86 @@ void save_dialog_draw(void) {
 }
 
 void save_dialog_show(const char* title, const char* data, uint32_t size, save_callback_t callback) {
+    printk("\n🎉🎉🎉🎉 [SaveDialog] SHOW FUNCTION ENTERED! 🎉🎉🎉🎉\n");
+    printk("   📝 title='%s'\n", title);
+    printk("   📁 data='%s' (pointer: %p)\n", data ? data : "(null)", data);
+    printk("   📏 size=%u\n", size);
+    printk("   🔗 callback=%p\n", callback);
+    
+    printk("   ⏳ BEFORE: is_active was %d\n", is_active);
+    
     memset(&current_dialog, 0, sizeof(save_dialog_t));
+    printk("   ✅ memset completed\n");
+    
     strncpy(current_dialog.title, title, 31);
+    printk("   📋 Title copied: '%s'\n", current_dialog.title);
+    
+    if (data && strlen(data) > 0) {
+        strncpy(current_dialog.buffer, data, 63);
+        printk("   💾 Buffer set to: '%s'\n", current_dialog.buffer);
+    } else {
+        current_dialog.buffer[0] = '\0';
+        printk("   🧹 Buffer cleared\n");
+    }
+    
     current_dialog.data = data;
     current_dialog.data_size = size;
     current_dialog.on_save = callback;
-
+    
+    printk("   ⚡ Setting is_active = true\n");
+    is_active = true;
+    printk("   ✅ AFTER: is_active is now %d\n", is_active);
+    
+    // Hemen test et
+    int test_result = save_dialog_is_active();
+    printk("   🧪 Immediate test: save_dialog_is_active() returns %d\n", test_result);
+    
+    if (!test_result) {
+        printk("   ❌❌❌ CRITICAL ERROR: is_active true ama is_active() false dönüyor! ❌❌❌\n");
+    }
+    
     desktop_reset_selection_state();
     desktop_icons_reset_selection();
-
-    is_active = true;
+    
+    printk("   📁 Calling save_dialog_refresh()\n");
     save_dialog_refresh();
+    
+    printk("   🏁 SHOW FUNCTION COMPLETED SUCCESSFULLY\n\n");
 }
 
 void save_dialog_handle_key(uint16_t scancode, char c) {
     if (!is_active) return;
-    if (scancode == 0x1C) perform_save_action();
-    else if (scancode == 0x01) is_active = false;
-    else if (c == '\b') {
+    
+    printk("[SaveDialog] KEY: scancode=0x%04X, char='%c'\n", scancode, c);
+    
+    if (scancode == 0x1C) { // Enter
+        printk("[SaveDialog] Enter pressed, performing save\n");
+        perform_save_action();
+    }
+    else if (scancode == 0x01) { // Escape
+        printk("[SaveDialog] Escape pressed, closing dialog\n");
+        is_active = false;
+    }
+    else if (c == '\b') { // Backspace
         int len = strlen(current_dialog.buffer);
-        if (len > 0) current_dialog.buffer[len - 1] = '\0';
-    } else if (c >= 32 && c <= 126 && strlen(current_dialog.buffer) < 63) {
+        if (len > 0) {
+            current_dialog.buffer[len - 1] = '\0';
+            printk("[SaveDialog] Backspace, new buffer: '%s'\n", current_dialog.buffer);
+        }
+    }
+    else if (c >= 32 && c <= 126 && strlen(current_dialog.buffer) < 63) {
         int len = strlen(current_dialog.buffer);
         current_dialog.buffer[len] = c;
         current_dialog.buffer[len + 1] = '\0';
+        printk("[SaveDialog] Added char '%c', new buffer: '%s'\n", c, current_dialog.buffer);
     }
 }
 
-bool save_dialog_is_active(void) { return is_active; }
+bool save_dialog_is_active(void) { 
+    static int call_count = 0;
+    call_count++;
+    if (call_count % 30 == 0) {
+        printk("[SaveDialog] IS_ACTIVE called, returning %d\n", is_active);
+    }
+    return is_active; 
+}

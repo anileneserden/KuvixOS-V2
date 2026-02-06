@@ -26,14 +26,8 @@ LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,--no-gc-sections
 
 # --- Kaynak Dosyalar ---
-
-# 1. Boot Dosyası (GAS)
 SRC_S = boot/boot.S
-
-# 2. Yeni Eklediğimiz Assembly Interrupt Dosyası (NASM)
 SRC_ASM = kernel/arch/x86/interrupt_entry.asm
-
-# 3. C Kaynak Dosyaları
 SRC_C = \
     kernel/kmain.c \
     kernel/printk.c \
@@ -71,8 +65,9 @@ SRC_C = \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/cursor.c \
-    kernel/ui/desktop.c \
     kernel/ui/desktop_icons.c \
+    kernel/ui/desktop.c \
+    kernel/ui/installer.c \
     kernel/ui/dialogs/save_dialog.c \
     kernel/ui/power_screen.c \
     kernel/ui/select.c \
@@ -103,11 +98,9 @@ SRC_C = \
     kernel/arch/x86/gdt.c \
     kernel/arch/x86/idt.c
 
-# OTOMATİK KOMUT TARAMA
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 
-# Tüm nesne dosyalarını (Object Files) birleştiriyoruz
 OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
        $(SRC_ASM:%.asm=$(BUILD)/%.o) \
        $(SRC_C:%.c=$(BUILD)/%.o)
@@ -116,22 +109,18 @@ OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
 
 all: $(KERNEL)
 
-# C dosyalarını derle
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# S dosyalarını (GAS) derle
 $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
-# ASM dosyalarını (NASM) derle
 $(BUILD)/%.o: %.asm
 	@mkdir -p $(dir $@)
 	$(AS) $(NASMFLAGS) $< -o $@
 
-# Linkleme işlemi (Burada LDFLAGS ve OBJS birleşiyor)
 $(KERNEL): $(OBJS)
 	@mkdir -p $(BUILD)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
@@ -140,27 +129,15 @@ iso: $(KERNEL)
 	rm -rf $(ISO)
 	mkdir -p $(ISO)/boot/grub
 	cp $(KERNEL) $(ISO)/boot/kernel.elf
-	@echo 'set timeout=5' >  $(ISO)/boot/grub/grub.cfg
+	@echo 'set timeout=2' >  $(ISO)/boot/grub/grub.cfg
 	@echo 'set default=0' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'insmod vbe' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'insmod vga' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'insmod video_bochs' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'insmod video_cirrus' >> $(ISO)/boot/grub/grub.cfg
 	@echo '' >> $(ISO)/boot/grub/grub.cfg
-	@echo 'menuentry "KuvixOS V2 (1024x768)" {' >> $(ISO)/boot/grub/grub.cfg
+	@echo 'menuentry "KuvixOS V2" {' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  set gfxmode=1024x768x32' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
-	@echo '}' >> $(ISO)/boot/grub/grub.cfg
-	@echo 'menuentry "KuvixOS V2 (1920x1080)" {' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  set gfxmode=1920x1080x32' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
-	@echo '}' >> $(ISO)/boot/grub/grub.cfg
-	@echo 'menuentry "KuvixOS V2 (Safe Mode 800x600)" {' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  set gfxmode=800x600x32' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
@@ -169,10 +146,12 @@ iso: $(KERNEL)
 
 run: iso
 	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
-	@chmod 666 disk.img
-	qemu-system-i386 -cdrom KuvixOS.iso \
+	@test -f disk2.img || dd if=/dev/zero of=disk2.img bs=1M count=5
+	@chmod 666 disk.img disk2.img
+	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=disk.img,format=raw,index=0,media=disk \
-		-m 256M -serial stdio -no-reboot -no-shutdown -d int -D qemu.log
+		-drive file=disk2.img,format=raw,index=1,media=disk \
+		-m 256M -serial stdio -no-reboot -no-shutdown
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)

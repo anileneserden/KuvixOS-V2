@@ -1,8 +1,12 @@
 # Build artifacts
-/build
+build/
+iso/
 *.o
 *.elf
+*.bin
 *.iso
+*.img
+*.vdi
 
 # Editors
 .vscode/

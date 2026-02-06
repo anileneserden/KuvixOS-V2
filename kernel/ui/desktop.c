@@ -6,7 +6,7 @@
 #include <app/app_manager.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
-#include <kernel/drivers/input/mouse_ps2.h>
+#include <kernel/drivers/input/mouse_ps2.h>  // mouse_x, mouse_y burada extern olarak tanımlı
 #include <kernel/drivers/input/keyboard.h>
 #include <lib/math.h>
 #include <lib/string.h>
@@ -15,6 +15,13 @@
 #include <ui/context_menu.h>
 #include <kernel/fs/vfs.h>
 #include <ui/apps/notepad.h>
+
+#include <kernel/drivers/ata_pio.h>
+#include <kernel/block/block.h>
+#include <kernel/printk.h>
+
+// desktop.c dosyasının en üstündeki include'lara şunu ekle:
+#include <ui/dialogs/save_dialog.h>  // 🚨 BU SATIRI EKLE
 
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
@@ -47,7 +54,10 @@ static void simple_itoa(int n, char* s) {
 
 static bool file_exists(const char* path) {
     vfs_file_t* f = NULL;
-    if (vfs_open(path, VFS_O_RDONLY, &f) == 1) { vfs_close(f); return true; }
+    if (vfs_open(path, VFS_O_RDONLY, &f) == 1) { 
+        vfs_close(f); 
+        return true; 
+    }
     return false;
 }
 
@@ -55,12 +65,15 @@ void get_unique_filename(const char* base_path, const char* ext, char* out_path)
     char temp_path[256];
     char num_str[16];
     int counter = 0;
-    strcpy(temp_path, base_path); strcat(temp_path, ext);
+    strcpy(temp_path, base_path); 
+    strcat(temp_path, ext);
     while (file_exists(temp_path)) {
         counter++;
         simple_itoa(counter, num_str);
-        strcpy(temp_path, base_path); strcat(temp_path, "_");
-        strcat(temp_path, num_str); strcat(temp_path, ext);
+        strcpy(temp_path, base_path); 
+        strcat(temp_path, "_");
+        strcat(temp_path, num_str); 
+        strcat(temp_path, ext);
     }
     strcpy(out_path, temp_path);
 }
@@ -111,8 +124,6 @@ void desktop_handle_create_file(void) {
     vfs_file_t* f = NULL;
     // O_CREAT | O_RDWR (Okuma/Yazma) modunda açalım
     if (vfs_open(final_path, VFS_O_CREAT | VFS_O_RDWR, &f) == 1) {
-        // İçine hiçbir şey yazmadan kapatabiliriz ya da 
-        // dosya sisteminin boş dosyayı sevmesi için 0 byte yazabiliriz.
         vfs_close(f);
         
         desktop_icons_init(); 
@@ -129,30 +140,81 @@ void desktop_handle_create_file(void) {
 // Save dialog veya diğer UI elemanları kapandığında masaüstü seçim modunu sıfırlar
 void desktop_reset_selection_state(void) {
     is_selecting = false;
-    // Eğer gerekiyorsa burada ek sıfırlamalar yapılabilir
 }
 
 void ui_desktop_run(void) {
     int dx, dy;
     uint8_t btn, last_btn = 0;
 
-    wm_init(); appmgr_init(); topbar_init();
-    vfs_mkdir("/home"); vfs_mkdir("/home/desktop");
-    desktop_icons_init(); desktop_icons_snap_all();
+    wm_init(); 
+    appmgr_init(); 
+    topbar_init();
+    vfs_mkdir("/home"); 
+    vfs_mkdir("/home/desktop");
+    desktop_icons_init(); 
+    desktop_icons_snap_all();
 
+    // Disk kontrolü mesajı (isteğe bağlı)
+    if (ata_pio_is_ready()) {
+        MessageBox.Show("Donanim Bilgisi", 
+                "Sistemde kalici depolama birimi (ATA Master) algilandi.", 
+                MB_ICON_INFO, 
+                MessageBoxButtons.OK);
+    }
+
+    // Diskten veri kurtarma
+    char disk_buffer[512];
+    memset(disk_buffer, 0, 512);
+
+    if (ata_pio_is_ready()) {
+        blockdev_t* dev = ata_pio_get_dev();
+        ata_pio_read(dev, 2000, disk_buffer, 1); // 2000. sektörü oku
+        
+        // Sektör doluysa VE dosya henüz sistemde yoksa oluştur
+        if (disk_buffer[0] != '\0' && disk_buffer[0] != (char)0xFF) {
+            if (!file_exists("/home/desktop/notum.txt")) {
+                vfs_file_t* recover_f = NULL;
+                if (vfs_open("/home/desktop/notum.txt", VFS_O_CREAT | VFS_O_WRONLY, &recover_f) == 1) {
+                    uint32_t recovery_written;
+                    vfs_write(recover_f, disk_buffer, strlen(disk_buffer), &recovery_written);
+                    vfs_close(recover_f);
+                    printk("[KuvixOS] Veri diskten notum.txt olarak yuklendi.\n");
+
+                    desktop_icons_init();
+                    desktop_icons_snap_all();
+                }
+            }
+        }
+    }
+    
     while(1) {
         ps2_mouse_poll();
         while (ps2_mouse_pop(&dx, &dy, &btn)) {
-            mouse_x += dx; mouse_y += dy;
-            if (mouse_x < 0) mouse_x = 0; if (mouse_y < 0) mouse_y = 0;
-            if (mouse_x > (int)(fb_get_width() - 1)) mouse_x = (int)fb_get_width() - 1;
-            if (mouse_y > (int)(fb_get_height() - 1)) mouse_y = (int)fb_get_height() - 1;
+            mouse_x += dx; 
+            mouse_y += dy;
+            
+            // İNDENTASYON DÜZELTMESİ: Her if için ayrı süslü parantez
+            if (mouse_x < 0) {
+                mouse_x = 0;
+            }
+            if (mouse_y < 0) {
+                mouse_y = 0;
+            }
+            if (mouse_x > (int)(fb_get_width() - 1)) {
+                mouse_x = (int)fb_get_width() - 1;
+            }
+            if (mouse_y > (int)(fb_get_height() - 1)) {
+                mouse_y = (int)fb_get_height() - 1;
+            }
             
             uint8_t pressed = btn & ~last_btn;
             uint8_t released = last_btn & ~btn;
 
             messagebox_handle_mouse(mouse_x, mouse_y, (pressed & 1));
             wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
+            
+            // 🚨 SAVE DIALOG MOUSE HANDLING EKLE 🚨
+            save_dialog_handle_mouse(mouse_x, mouse_y, (pressed & 1));
 
             if (!wm_is_any_window_captured()) {
                 if (pressed & 2) {
@@ -174,12 +236,18 @@ void ui_desktop_run(void) {
                         int hit = desktop_icons_get_hit(mouse_x, mouse_y);
                         desktop_icons_deselect_all(); // Tıklandığında edit modu kapanır
                         if (hit != -1) desktop_icons_set_dragging(hit, true);
-                        else { is_selecting = true; sel_start_x = mouse_x; sel_start_y = mouse_y; }
+                        else { 
+                            is_selecting = true; 
+                            sel_start_x = mouse_x; 
+                            sel_start_y = mouse_y; 
+                        }
                     }
                 }
                 if (btn & 1) desktop_icons_move_dragging(mouse_x, mouse_y);
                 if (released & 1) {
-                    if (is_selecting) desktop_icons_select_in_rect(sel_start_x, sel_start_y, mouse_x, mouse_y);
+                    if (is_selecting) {
+                        desktop_icons_select_in_rect(sel_start_x, sel_start_y, mouse_x, mouse_y);
+                    }
                     is_selecting = false;
                     desktop_icons_stop_dragging_all();
                     desktop_icons_snap_all();
@@ -191,8 +259,19 @@ void ui_desktop_run(void) {
         uint16_t sc;
         while ((sc = kbd_pop_event()) != 0) {
             char c = kbd_scancode_to_ascii((uint8_t)(sc & 0xFF));
+
+            // 🚨 TEST: F2 tuşuna basınca save dialog aç
+            if (sc == 0x3C) { // F2 scancode
+                printk("🎯 [DESKTOP TEST] F2 pressed, opening save dialog MANUALLY\n");
+                save_dialog_show("F2 TEST DIALOG", "test_f2.txt", 0, NULL);
+                printk("   Immediate check: save_dialog_is_active() = %d\n", save_dialog_is_active());
+                continue; // Bu event'i işle ve devam et
+            }
             
-            // ÖNCELİK: Eğer bir ikon isimlendiriliyorsa klavye ona gitsin ⭐
+            // 🚨 SAVE DIALOG KEY HANDLING EKLE 🚨
+            save_dialog_handle_key(sc, c);
+            
+            // ÖNCELİK: Eğer bir ikon isimlendiriliyorsa klavye ona gitsin
             if (desktop_icons_is_any_editing()) {
                 desktop_icons_handle_key(sc, c);
             } else {
@@ -209,12 +288,18 @@ void ui_desktop_run(void) {
         topbar_draw();
         
         if (is_selecting) {
-            gfx_draw_alpha_rect(abs(mouse_x - sel_start_x), abs(mouse_y - sel_start_y), 
+            gfx_draw_alpha_rect(abs(mouse_x - sel_start_x), 
+                               abs(mouse_y - sel_start_y), 
                                 0, 85, 170, 150, 
-                                min(sel_start_x, mouse_x), min(sel_start_y, mouse_y));
+                                min(sel_start_x, mouse_x), 
+                                min(sel_start_y, mouse_y));
         }
 
         wm_draw(); 
+        
+        // 🚨🚨🚨 BU SATIRI EKLE: SAVE DIALOG ÇİZİMİ 🚨🚨🚨
+        save_dialog_draw();
+        
         context_menu_draw();
         messagebox_draw();
         notification_draw();

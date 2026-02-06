@@ -3,47 +3,55 @@
 #include <lib/string.h>
 #include <kernel/printk.h>
 
-static uint32_t* fb_addr = 0;        // Gerçek Video Belleği (Donanım)
-static uint32_t* fb_backbuffer = 0;  // Arka Tampon (Yazılım)
+static uint32_t* fb_addr = 0;        
+static uint32_t* fb_backbuffer = 0;  
 
-uint32_t FB_WIDTH = 1920;  // Varsayılan değerler (Bootloader'dan gelenle eşleşmeli)
-uint32_t FB_HEIGHT = 1080;
+uint32_t FB_WIDTH = 0;
+uint32_t FB_HEIGHT = 0;
+uint32_t FB_PITCH = 0; 
 
-// fb.c içindeki fb_init kısmında en büyük boyutu ayır
-void fb_init(uint32_t vbe_lfb_addr) {
+void fb_init(uint32_t vbe_lfb_addr, uint32_t width, uint32_t height, uint32_t pitch) {
     fb_addr = (uint32_t*)vbe_lfb_addr;
-    
-    // En büyük çözünürlük (1920x1080) kadar yeri tek seferde ayırıyoruz
-    // Böylece kfree ihtiyacımız kalmıyor, hep bu alanı kullanıyoruz.
-    fb_backbuffer = (uint32_t*)kmalloc(1920 * 1080 * sizeof(uint32_t));
+    FB_WIDTH = width;
+    FB_HEIGHT = height;
+    FB_PITCH = pitch; 
+
+    // Tek seferlik backbuffer ayırma (1920x1080 üst sınır)
+    if (!fb_backbuffer) {
+        fb_backbuffer = (uint32_t*)kmalloc(1920 * 1080 * sizeof(uint32_t));
+    }
     
     fb_clear(0x1a1a1a);
     fb_present();
 }
 
 void fb_putpixel(int x, int y, uint32_t color) {
-    // x ve y'yi uint32_t'ye çevirerek (cast) karşılaştırma uyarısını çözüyoruz
     if (x < 0 || (uint32_t)x >= FB_WIDTH || y < 0 || (uint32_t)y >= FB_HEIGHT) return;
-    
     fb_backbuffer[y * FB_WIDTH + x] = color;
 }
 
+uint32_t fb_getpixel(int x, int y) {
+    if (x < 0 || (uint32_t)x >= FB_WIDTH || y < 0 || (uint32_t)y >= FB_HEIGHT) return 0;
+    return fb_backbuffer[y * FB_WIDTH + x];
+}
+
 void fb_clear(uint32_t color) {
-    // i değişkenini uint32_t yaparak karşılaştırma uyarısını çözüyoruz
     for (uint32_t i = 0; i < FB_WIDTH * FB_HEIGHT; i++) {
         fb_backbuffer[i] = color;
     }
 }
 
-
 void fb_present(void) {
-    if (!fb_addr || !fb_backbuffer || fb_addr == fb_backbuffer) return;
+    if (!fb_addr || !fb_backbuffer) return;
     
-    // Arka planda hazırlanan tertemiz görüntüyü ekrana tek seferde kopyala
-    memcpy(fb_addr, fb_backbuffer, FB_WIDTH * FB_HEIGHT * sizeof(uint32_t));
+    // Pitch uyumlu kopyalama (Donanımdaki kaymayı çözen kısım)
+    for (uint32_t y = 0; y < FB_HEIGHT; y++) {
+        uint8_t* dest = (uint8_t*)fb_addr + (y * FB_PITCH);
+        uint32_t* src = &fb_backbuffer[y * FB_WIDTH];
+        memcpy(dest, src, FB_WIDTH * 4);
+    }
 }
 
-// Yardımcı Fonksiyonlar
 void fb_draw_rect(int x, int y, int w, int h, uint32_t color) {
     for (int i = 0; i < h; i++) {
         for (int j = 0; j < w; j++) {
@@ -52,31 +60,17 @@ void fb_draw_rect(int x, int y, int w, int h, uint32_t color) {
     }
 }
 
-// fb_color_t yerine doğrudan uint32_t kullanarak linker'ın kafasını karıştırmayalım
 void fb_draw_rect_outline(int x, int y, int w, int h, uint32_t color) {
-    if (w <= 0 || h <= 0) return;
-
-    // Üst ve Alt kenarlar
     for (int xx = 0; xx < w; xx++) {
         fb_putpixel(x + xx, y,         color);
         fb_putpixel(x + xx, y + h - 1, color);
     }
-
-    // Sol ve Sağ kenarlar
     for (int yy = 0; yy < h; yy++) {
         fb_putpixel(x,         y + yy, color);
         fb_putpixel(x + w - 1, y + yy, color);
     }
 }
 
-uint32_t fb_get_width(void) { return FB_WIDTH; }
-uint32_t fb_get_height(void) { return FB_HEIGHT; }
-
-uint32_t fb_rgb(uint8_t r, uint8_t g, uint8_t b) {
-    return (uint32_t)((r << 16) | (g << 8) | b);
-}
-
-// Belirli bir rengi (key) şeffaf sayarak bitmap çizer
 void fb_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key) {
     for (int i = 0; i < h; i++) {
         for (int j = 0; j < w; j++) {
@@ -88,24 +82,19 @@ void fb_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t
     }
 }
 
-// Renk birleştirme fonksiyonu
-fb_color_t fb_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    // 32-bit ARGB formatı için (Alpha şimdilik kullanılmasa da formatı korur)
-    return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+uint32_t fb_get_width(void) { return FB_WIDTH; }
+uint32_t fb_get_height(void) { return FB_HEIGHT; }
+uint32_t fb_get_pitch(void) { return FB_PITCH; }
+
+fb_color_t fb_rgb(uint8_t r, uint8_t g, uint8_t b) {
+    return (fb_color_t)((r << 16) | (g << 8) | b);
 }
 
-// kernel/drivers/video/fb.c içine ekle
+fb_color_t fb_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    return (fb_color_t)((a << 24) | (r << 16) | (g << 8) | b);
+}
+
 void fb_set_resolution(uint32_t width, uint32_t height) {
     FB_WIDTH = width;
     FB_HEIGHT = height;
-    
-    // Eğer kfree yoksa, fb_init'te ayırdığın büyük buffer'ı kullanmaya devam et
-    // Sadece yeni boyutlara göre temizle
-    fb_clear(0x1A1A1A); 
-    fb_present();
-}
-
-uint32_t fb_getpixel(int x, int y) {
-    if (x < 0 || (uint32_t)x >= FB_WIDTH || y < 0 || (uint32_t)y >= FB_HEIGHT) return 0;
-    return fb_backbuffer[y * FB_WIDTH + x];
 }

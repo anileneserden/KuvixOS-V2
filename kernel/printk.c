@@ -5,18 +5,12 @@
 #include <stdbool.h>
 
 // --- MERKEZİ KARAKTER BASMA ---
-// Tüm çıktılar buradan geçer, böylece akışı tek noktadan yönetirsin.
 static void printk_putc(char c) {
-    // 1. Fiziksel VGA ekranına karakteri bas (0xB8000 adresine yazar)
     vga_putc(c);
-
-    // 2. Seri porta karakteri bas (Hata ayıklama logları için)
-    // Eğer seri portta hala çift görüyorsan, vga_putc'nin içini kontrol etmelisin; 
-    // vga_putc kendi içinde serial_putc çağırıyor olabilir.
     serial_putc(c);
 }
 
-// --- SAYI YAZDIRMA (DEBUG İÇİN) ---
+// --- SAYI YAZDIRMA (printk için yardımcı) ---
 void print_int(unsigned int value, int base) {
     char buf[32];
     int i = 0;
@@ -37,7 +31,28 @@ void print_int(unsigned int value, int base) {
     }
 }
 
-// --- ANA PRINTK ---
+// --- KSPRINTF YARDIMCI (Sayıyı buffer'a yazar) ---
+static void ksprintf_itoa(unsigned int value, int base, char **buf) {
+    char temp[32];
+    int i = 0;
+    char *digits = "0123456789ABCDEF";
+
+    if (value == 0) {
+        *((*buf)++) = '0';
+        return;
+    }
+
+    while (value > 0) {
+        temp[i++] = digits[value % base];
+        value /= base;
+    }
+
+    while (--i >= 0) {
+        *((*buf)++) = temp[i];
+    }
+}
+
+// --- ANA PRINTK (Türkçe Karakter Destekli) ---
 void printk(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -47,7 +62,6 @@ void printk(const char* fmt, ...) {
             unsigned char c = (unsigned char)*p;
 
             // --- TÜRKÇE KARAKTER / UTF-8 DESTEĞİ ---
-            // Bu kısım VGA fontundaki (CP437 veya özel) indislerle eşleşir.
             if (c == 0xC3) { 
                 unsigned char next = (unsigned char)*(++p);
                 if (next == 0xBC) c = 6;      // ü
@@ -111,4 +125,49 @@ void printk(const char* fmt, ...) {
         }
     }
     va_end(args);
+}
+
+// --- KSPRINTF GÖVDESİ ---
+int ksprintf(char *buf, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    char *ptr = buf;
+
+    for (const char *p = fmt; *p != '\0'; p++) {
+        if (*p != '%') {
+            *ptr++ = *p;
+            continue;
+        }
+
+        p++; // '%' atla
+        switch (*p) {
+            case 's': {
+                char *s = va_arg(args, char *);
+                if (!s) s = "(null)";
+                while (*s) *ptr++ = *s++;
+                break;
+            }
+            case 'd': {
+                int val = va_arg(args, int);
+                if (val < 0) {
+                    *ptr++ = '-';
+                    val = -val;
+                }
+                ksprintf_itoa((unsigned int)val, 10, &ptr);
+                break;
+            }
+            case 'x':
+                ksprintf_itoa(va_arg(args, unsigned int), 16, &ptr);
+                break;
+            case 'c':
+                *ptr++ = (char)va_arg(args, int);
+                break;
+            default:
+                *ptr++ = *p;
+                break;
+        }
+    }
+    *ptr = '\0'; // String sonlandırıcı
+    va_end(args);
+    return (int)(ptr - buf);
 }
