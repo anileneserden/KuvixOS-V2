@@ -45,6 +45,7 @@ SRC_C = \
     kernel/block/block.c \
     kernel/block/blockdev.c \
     kernel/drivers/video/fb.c \
+    kernel/drivers/video/fb_console.c \
     kernel/drivers/video/gfx.c \
     kernel/drivers/ata_pio.c \
     kernel/drivers/virtio_blk.c \

@@ -71,10 +71,16 @@ void kbd_poll(void) {
 
 // Assembly'deki "call kbd_handler" burayı çalıştıracak
 void kbd_handler(void) {
-    // Mevcut polling mantığını kesme geldiğinde de kullanalım
-    kbd_poll();
+    uint8_t status = inb(KBD_STATUS_PORT);
 
-    // Kesmenin bittiğini PIC'e bildir (Master PIC için)
-    // Eğer bunu yapmazsan ilk tuş basışından sonra klavye kilitlenir
+    if (status & 0x01) {
+        uint8_t data = inb(KBD_DATA_PORT);
+
+        // Bit 5 set ise mouse verisi, klavyeye push etme
+        if (!(status & 0x20)) {
+            kbd_push_scan_code(data);
+        }
+    }
+
     outb(0x20, 0x20);
 }
