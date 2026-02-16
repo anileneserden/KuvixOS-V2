@@ -51,4 +51,4 @@ void cmd_uptime(int argc, char** argv) {
     fake_uptime_seconds += 5;
 }
 
-REGISTER_COMMAND(uptime, cmd_uptime, "Sistemin ne kadar suredir acik oldugunu gosterir");
+REGISTER_COMMAND(uptime, cmd_uptime, "Sistemin ne kadar süredir açik olduğunu gösterir");

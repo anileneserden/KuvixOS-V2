@@ -5,7 +5,7 @@
 
 void cmd_layout(int argc, char** argv) {
     if (argc < 2) {
-        printk("Kullanim: layout <trq|us>\n");
+        printk("Kullanım: layout <trq|us>\n");
         return;
     }
 

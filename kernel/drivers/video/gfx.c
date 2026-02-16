@@ -1,6 +1,6 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
-#include <ui/font8x8_basic.h>
+#include <ui/font/font8x8_basic.h>
 
 void gfx_init(void) {
     // Ekranı başlangıç için siyahla temizle

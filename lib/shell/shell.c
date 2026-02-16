@@ -1,14 +1,16 @@
+// lib/shell.c
 #include <lib/shell.h>
 #include <kernel/printk.h>
 #include <kernel/kbd.h>
 #include <lib/commands.h>
 #include <kernel/drivers/video/fb_console.h>
 
-// ✅ BUNU EKLE
+// polling kullanıyorsan lazım
 #include <kernel/drivers/input/keyboard.h>  // kbd_poll()
 
-static inline void echo_char(char c) {
-    printk("%c", c);
+static inline void echo_char(uint8_t c) {
+    // ✅ 127+ karakterlerde signed char bozulmasın
+    printk("%c", (unsigned char)c);
     fb_console_flush();
 }
 
@@ -41,13 +43,15 @@ void shell_readline(char* buffer, int max_len) {
             continue;
         }
 
+        // ENTER
         if (c == '\n' || c == '\r') {
             buffer[i] = '\0';
             echo_newline();
             return;
         }
 
-        if (c == '\b' || c == 8 || c == 127) {
+        // BACKSPACE
+        if (c == '\b' || (uint8_t)c == 8 || (uint8_t)c == 127) {
             if (i > 0) {
                 i--;
                 echo_backspace();
@@ -55,9 +59,11 @@ void shell_readline(char* buffer, int max_len) {
             continue;
         }
 
-        if ((uint8_t)c >= 32 && (uint8_t)c <= 255) {
-            buffer[i++] = c;
-            echo_char(c);
+        // ✅ Latin-1/CP1252 tarzı 0..255 kabul (kontrol karakterleri hariç)
+        uint8_t uc = (uint8_t)c;
+        if (uc >= 32) {
+            buffer[i++] = (char)uc;
+            echo_char(uc);
         }
     }
 
@@ -69,7 +75,11 @@ void shell_init(void) {
     kbd_init();
 
     printk("KuvixOS Shell V2 Hazir!\n");
-    printk("Komutlar icin 'help' yazabilirsiniz.\n\n");
+    printk("Komutlar icin 'help' yazabilirsiniz.\n");
+
+    printk("FONT TEST: \xFD \xF0 \xFC \xFE \xF6 \xE7\n");
+
+    printk("\n");
     fb_console_flush();
 
     char line[128];

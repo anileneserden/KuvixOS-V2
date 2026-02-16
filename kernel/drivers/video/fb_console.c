@@ -3,8 +3,8 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
 
-#include <ui/font8x16_basic.h>
-#include <ui/font8x8_basic.h>   // sadece "glyph boş mu?" kontrolü için
+#include <ui/font/font8x16_basic.h>
+#include <ui/font/font8x8_basic.h>   // sadece "glyph boş mu?" kontrolü için
 
 #include <stdint.h>
 
@@ -146,4 +146,59 @@ void fb_console_clear(void) {
 
 void fb_console_flush(void) {
     fb_present();
+}
+
+// UTF-8'den bir codepoint oku, ptr'yi ilerlet
+static uint32_t utf8_next(const char** ps) {
+    const unsigned char* s = (const unsigned char*)(*ps);
+    if (!*s) return 0;
+
+    uint32_t cp = 0;
+    if (s[0] < 0x80) { cp = s[0]; *ps += 1; return cp; }
+
+    if ((s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+        cp = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
+        *ps += 2; return cp;
+    }
+
+    if ((s[0] & 0xF0) == 0xE0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+        cp = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+        *ps += 3; return cp;
+    }
+
+    // kötü/unsupported -> 1 byte geç
+    *ps += 1;
+    return '?';
+}
+
+// Unicode codepoint'i senin 0..255 karakter setine çevir
+static uint8_t unicode_to_kvx_byte(uint32_t cp) {
+    if (cp < 0x80) return (uint8_t)cp;
+
+    switch (cp) {
+        case 0x00FC: return 0xFC; // ü
+        case 0x00DC: return 0xDC; // Ü
+        case 0x00F6: return 0xF6; // ö
+        case 0x00D6: return 0xD6; // Ö
+        case 0x00E7: return 0xE7; // ç
+        case 0x00C7: return 0xC7; // Ç
+        case 0x011F: return 0xF0; // ğ
+        case 0x011E: return 0xD0; // Ğ
+        case 0x015F: return 0xFE; // ş
+        case 0x015E: return 0xDE; // Ş
+        case 0x0131: return 0xFD; // ı
+        case 0x0130: return 0xDD; // İ
+        case 0x00E9: return 0xE9; // é (ekledin)
+        default:     return '?';
+    }
+}
+
+// Bunu dışarı aç: UTF-8 string yazdır
+void fb_console_write_utf8(const char* s) {
+    while (s && *s) {
+        uint32_t cp = utf8_next(&s);
+        if (!cp) break;
+        uint8_t ch = unicode_to_kvx_byte(cp);
+        fb_console_putc((char)ch);
+    }
 }
