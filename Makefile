@@ -46,7 +46,6 @@ SRC_C = \
     kernel/debug/debug_kbd.c \
     kernel/block/block.c \
     kernel/block/blockdev.c \
-    kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/gfx.c \
