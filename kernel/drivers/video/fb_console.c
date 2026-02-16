@@ -148,6 +148,11 @@ void fb_console_flush(void) {
     fb_present();
 }
 
+void fb_console_set_color(uint32_t fg, uint32_t bg) {
+    g_fg = fg;
+    g_bg = bg;
+}
+
 // UTF-8'den bir codepoint oku, ptr'yi ilerlet
 static uint32_t utf8_next(const char** ps) {
     const unsigned char* s = (const unsigned char*)(*ps);
