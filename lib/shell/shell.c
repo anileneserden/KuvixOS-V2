@@ -1,12 +1,17 @@
+// lib/shell.c
 #include <lib/shell.h>
 #include <kernel/printk.h>
 #include <kernel/kbd.h>
 #include <lib/commands.h>
 #include <kernel/drivers/video/fb_console.h>
 
-static inline void echo_char(char c) {
-    printk("%c", c);
-    fb_console_flush();   // <-- anında görünsün
+// polling kullanıyorsan lazım
+#include <kernel/drivers/input/keyboard.h>  // kbd_poll()
+
+static inline void echo_char(uint8_t c) {
+    // ✅ 127+ karakterlerde signed char bozulmasın
+    printk("%c", (unsigned char)c);
+    fb_console_flush();
 }
 
 static inline void echo_newline(void) {
@@ -24,9 +29,11 @@ void shell_readline(char* buffer, int max_len) {
     buffer[0] = '\0';
 
     while (i < max_len - 1) {
+        // ✅ IRQ yoksa buffer'ı besle (polling)
+        kbd_poll();
+
         char c = 0;
 
-        // IRQ handler buffer'ı dolduracak.
         if (kbd_has_character()) {
             c = kbd_get_char();
         }
@@ -44,7 +51,7 @@ void shell_readline(char* buffer, int max_len) {
         }
 
         // BACKSPACE
-        if (c == '\b' || c == 8 || c == 127) {
+        if (c == '\b' || (uint8_t)c == 8 || (uint8_t)c == 127) {
             if (i > 0) {
                 i--;
                 echo_backspace();
@@ -52,10 +59,11 @@ void shell_readline(char* buffer, int max_len) {
             continue;
         }
 
-        // Yazılabilir ASCII
-        if (c >= 32 && c <= 126) {
-            buffer[i++] = c;
-            echo_char(c);
+        // ✅ Latin-1/CP1252 tarzı 0..255 kabul (kontrol karakterleri hariç)
+        uint8_t uc = (uint8_t)c;
+        if (uc >= 32) {
+            buffer[i++] = (char)uc;
+            echo_char(uc);
         }
     }
 
@@ -67,14 +75,18 @@ void shell_init(void) {
     kbd_init();
 
     printk("KuvixOS Shell V2 Hazir!\n");
-    printk("Komutlar icin 'help' yazabilirsiniz.\n\n");
+    printk("Komutlar icin 'help' yazabilirsiniz.\n");
+
+    printk("FONT TEST: \xFD \xF0 \xFC \xFE \xF6 \xE7\n");
+
+    printk("\n");
     fb_console_flush();
 
     char line[128];
 
     while (1) {
         printk("KuvixOS> ");
-        fb_console_flush();   // prompt hemen görünsün
+        fb_console_flush();
 
         shell_readline(line, (int)sizeof(line));
 

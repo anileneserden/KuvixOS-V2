@@ -16,7 +16,8 @@ IMAGE  = KuvixOS.iso
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
-          -Iinclude -DTIMEZONE_OFFSET=3
+          -Iinclude -DTIMEZONE_OFFSET=3 \
+          -DKBD_SERIAL_DEBUG
 
 ASFLAGS = -m32
 NASMFLAGS = -f elf32
@@ -42,10 +43,12 @@ SRC_C = \
     kernel/serial.c \
     kernel/time.c \
     kernel/memory/kmalloc.c \
+    kernel/debug/debug_kbd.c \
     kernel/block/block.c \
     kernel/block/blockdev.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
+    kernel/drivers/video/fb_console.c \
     kernel/drivers/video/gfx.c \
     kernel/drivers/ata_pio.c \
     kernel/drivers/virtio_blk.c \
@@ -69,6 +72,8 @@ SRC_C = \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
+    kernel/ui/font/font8x8_basic.c \
+    kernel/ui/font/font8x16_basic.c \
     kernel/ui/cursor.c \
     kernel/ui/desktop.c \
     kernel/ui/power_screen.c \
@@ -91,7 +96,6 @@ SRC_C = \
     lib/service/service.c \
     lib/service/service_registry.c \
     lib/string/string.c \
-    lib/ui/font/font8x8_basic.c \
     kernel/arch/x86/gdt.c \
     kernel/arch/x86/idt.c
 

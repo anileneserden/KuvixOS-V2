@@ -7,7 +7,7 @@ void cmd_disks(int argc, char** argv) {
 
     printk("KuvixOS Disk Listesi:\n");
     printk("------------------------------------\n");
-    printk("No  Tip    Baglanti         Boyut\n");
+    printk("No  Tip    Bağlantı         Boyut\n");
     
     // ATA sürücüsünden bilgileri çek
     ata_pio_print_info();

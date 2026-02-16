@@ -9,4 +9,4 @@ void cmd_echo(int argc, char** argv) {
     printk("\n");
 }
 
-REGISTER_COMMAND(echo, cmd_echo, "Metni ekrana yazdirir");
+REGISTER_COMMAND(echo, cmd_echo, "Metni ekrana yazdırır");

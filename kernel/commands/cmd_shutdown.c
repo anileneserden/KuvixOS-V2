@@ -7,4 +7,4 @@ void cmd_shutdown(int argc, char** argv)
     ui_power_screen_shutdown(3);
 }
 
-REGISTER_COMMAND(shutdown, cmd_shutdown, "Sistemi guvenli bir sekilde kapatir");
+REGISTER_COMMAND(shutdown, cmd_shutdown, "Sistemi güvenli bir şekilde kapatır");

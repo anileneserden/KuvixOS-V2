@@ -5,10 +5,10 @@
 
 void cmd_install(int argc, char** argv) {
     (void)argc; (void)argv;
-    printk("KuvixOS Kurulumu Baslatiliyor...\n");
+    printk("KuvixOS Kurulumu Başlatılıyor...\n");
 
     // 1. Gerekli klasörleri oluştur
-    printk("Sistem dizinleri olusturuluyor...\n");
+    printk("Sistem dizinleri oluşturuluyor...\n");
     kvxfs_mkdir("/persist/system");
     kvxfs_mkdir("/persist/boot");
 
@@ -16,9 +16,9 @@ void cmd_install(int argc, char** argv) {
     // Test amaçlı bir sistem dosyası yazalım
     const char* config_data = "KuvixOS V2 - Installed\nBootMode=ATA_PIO\n";
     if (kvxfs_write_all("/persist/system/os.conf", (uint8_t*)config_data, 42)) {
-        printk("Kurulum Tamamlandi! /persist/system/os.conf olusturuldu.\n");
+        printk("Kurulum Tamamlandı! /persist/system/os.conf oluşturuldu.\n");
     } else {
-        printk("HATA: Dosya yazilamadi.\n");
+        printk("HATA: Dosya yazılamadı.\n");
     }
 }
 

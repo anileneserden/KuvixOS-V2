@@ -66,4 +66,4 @@ void cmd_sysinfo(int argc, char** argv) {
     printk("Kernel Ticks: %u ms\n", g_ticks_ms);
 }
 
-REGISTER_COMMAND(sysinfo, cmd_sysinfo, "Sistem ve donanim bilgilerini gosterir");
+REGISTER_COMMAND(sysinfo, cmd_sysinfo, "Sistem ve donanım bilgilerini gösterir");

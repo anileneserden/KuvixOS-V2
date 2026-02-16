@@ -7,7 +7,7 @@ void cmd_help(int argc, char** argv) {
     extern command_t _cmd_start;
     extern command_t _cmd_end;
 
-    printk("KuvixOS V2 Yardim Menusu:\n");
+    printk("KuvixOS V2 Yardım Menüsü:\n");
     printk("--------------------------\n");
 
     for (command_t* cmd = &_cmd_start; cmd < &_cmd_end; cmd++) {
@@ -21,4 +21,4 @@ void cmd_help(int argc, char** argv) {
 }
 
 // OTOMATİK KAYIT: Hiçbir yere include etmene gerek yok!
-REGISTER_COMMAND(help, cmd_help, "Tum komutlari ve aciklamalarini listeler");
+REGISTER_COMMAND(help, cmd_help, "Tüm komutları ve açıklamalarını listeler");
