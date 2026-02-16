@@ -44,6 +44,7 @@ SRC_C = \
     kernel/memory/kmalloc.c \
     kernel/block/block.c \
     kernel/block/blockdev.c \
+    kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/gfx.c \
     kernel/drivers/ata_pio.c \
@@ -149,6 +150,8 @@ run: iso
 	@chmod 666 disk.img
 	qemu-system-i386 -cdrom KuvixOS.iso \
 		-drive file=disk.img,format=raw,index=0,media=disk \
+		-fsdev local,id=fsdev0,path=/home/anil/KuvixOS-shared,security_model=none \
+		-device virtio-9p-pci,fsdev=fsdev0,mount_tag=hostshare \
 		-m 256M -serial stdio -no-reboot -no-shutdown -d int -D qemu.log
 
 clean:
