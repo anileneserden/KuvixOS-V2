@@ -16,7 +16,8 @@ IMAGE  = KuvixOS.iso
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
-          -Iinclude -DTIMEZONE_OFFSET=3
+          -Iinclude -DTIMEZONE_OFFSET=3 \
+          -DKBD_SERIAL_DEBUG
 
 ASFLAGS = -m32
 NASMFLAGS = -f elf32
@@ -42,6 +43,7 @@ SRC_C = \
     kernel/serial.c \
     kernel/time.c \
     kernel/memory/kmalloc.c \
+    kernel/debug/debug_kbd.c \
     kernel/block/block.c \
     kernel/block/blockdev.c \
     kernel/drivers/video/fb.c \

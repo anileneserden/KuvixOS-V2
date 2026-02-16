@@ -4,9 +4,12 @@
 #include <lib/commands.h>
 #include <kernel/drivers/video/fb_console.h>
 
+// ✅ BUNU EKLE
+#include <kernel/drivers/input/keyboard.h>  // kbd_poll()
+
 static inline void echo_char(char c) {
     printk("%c", c);
-    fb_console_flush();   // <-- anında görünsün
+    fb_console_flush();
 }
 
 static inline void echo_newline(void) {
@@ -24,9 +27,11 @@ void shell_readline(char* buffer, int max_len) {
     buffer[0] = '\0';
 
     while (i < max_len - 1) {
+        // ✅ IRQ yoksa buffer'ı besle (polling)
+        kbd_poll();
+
         char c = 0;
 
-        // IRQ handler buffer'ı dolduracak.
         if (kbd_has_character()) {
             c = kbd_get_char();
         }
@@ -36,14 +41,12 @@ void shell_readline(char* buffer, int max_len) {
             continue;
         }
 
-        // ENTER
         if (c == '\n' || c == '\r') {
             buffer[i] = '\0';
             echo_newline();
             return;
         }
 
-        // BACKSPACE
         if (c == '\b' || c == 8 || c == 127) {
             if (i > 0) {
                 i--;
@@ -52,8 +55,7 @@ void shell_readline(char* buffer, int max_len) {
             continue;
         }
 
-        // Yazılabilir ASCII
-        if (c >= 32 && c <= 126) {
+        if ((uint8_t)c >= 32 && (uint8_t)c <= 255) {
             buffer[i++] = c;
             echo_char(c);
         }
@@ -74,7 +76,7 @@ void shell_init(void) {
 
     while (1) {
         printk("KuvixOS> ");
-        fb_console_flush();   // prompt hemen görünsün
+        fb_console_flush();
 
         shell_readline(line, (int)sizeof(line));
 
