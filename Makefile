@@ -17,7 +17,6 @@ CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
           -Iinclude -DTIMEZONE_OFFSET=3 \
-          -DKBD_SERIAL_DEBUG
 
 ASFLAGS = -m32
 NASMFLAGS = -f elf32
@@ -26,7 +25,11 @@ LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments \
           -Wl,--no-gc-sections
 
-# --- Kaynak Dosyalar ---
+DEBUG_KBD ?= 0
+
+ifeq ($(DEBUG_KBD),1)
+CFLAGS += -DKBD_SERIAL_DEBUG
+endif
 
 # 1. Boot Dosyası (GAS)
 SRC_S = boot/boot.S
@@ -66,6 +69,7 @@ SRC_C = \
     kernel/fs/toyfs.c \
     kernel/fs/toyfs_image.c \
     kernel/fs/fs_init.c \
+    kernel/fs/fat32.c \
     kernel/ui/apps/settings_app.c \
     kernel/ui/apps/terminal_app.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
@@ -149,13 +153,15 @@ iso: $(KERNEL)
 	grub2-mkrescue -o $(IMAGE) $(ISO) > /dev/null 2>&1
 
 run: iso
-	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
+	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=128
 	@chmod 666 disk.img
-	qemu-system-i386 -cdrom KuvixOS.iso \
-		-drive file=disk.img,format=raw,index=0,media=disk \
-		-fsdev local,id=fsdev0,path=/home/anil/KuvixOS-shared,security_model=none \
-		-device virtio-9p-pci,fsdev=fsdev0,mount_tag=hostshare \
-		-m 256M -serial stdio -no-reboot -no-shutdown -d int -D qemu.log
+	qemu-system-i386 \
+		-boot d \
+		-m 256M \
+		-serial stdio \
+		-cdrom KuvixOS.iso \
+		-drive file=disk.img,format=raw,if=ide,index=0,media=disk \
+		-no-reboot -no-shutdown
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)

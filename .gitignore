@@ -16,3 +16,7 @@ diff.txt
 status.txt
 tree.txt
 qemu.log
+# QEMU test disk
+/disk.img
+
+/disk.img

@@ -19,6 +19,8 @@
 
 #include <lib/shell.h>
 
+#include <kernel/drivers/ata_pio.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -39,21 +41,15 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     init_framebuffer(magic, mbi);
     gfx_init();
-
     fb_console_init(0x00FFFFFF, 0x00000000);
 
-    kbd_init();
-
-#ifdef KUVIX_KBD_DEBUG
-    debug_kbd_run();
-#else
-    fb_console_write("KuvixOS shell starting...\n");
+    // ✅ ATA init
+    ata_pio_init();
+    ata_pio_print_info();
     fb_console_flush();
 
+    kbd_init();
     shell_init();
-#endif
 
-    while (1) {
-        asm volatile("hlt");
-    }
+    while (1) asm volatile("hlt");
 }
