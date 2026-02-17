@@ -1,7 +1,10 @@
+// kernel/ui/desktop_icons.c
+
 #include <ui/desktop_icons.h>
 #include <ui/desktop_icons/text_file.h>
 #include <ui/desktop_icons/generic_file.h>
 #include <ui/desktop_icons/folder_icon.h>
+
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/fs/vfs.h>
@@ -9,20 +12,22 @@
 #include <app/app_manager.h>
 #include <stdbool.h>
 #include <kernel/drivers/input/mouse_ps2.h>
+#include <kernel/printk.h>
 
 // --- DIŞ BİLDİRİMLER ---
-extern void notepad_open_file(const char* vfs_path);
 extern int mouse_x;
 extern int mouse_y;
 extern void desktop_handle_rename_confirm(const char* new_name);
 
 #define MAX_DESKTOP_ICONS 32
+
 static desktop_icon_t icons[MAX_DESKTOP_ICONS];
 static int icon_count = 0;
 static bool snap_to_grid = true;
 
-// --- YARDIMCI FONKSİYONLAR ---
-
+// ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
 static bool ends_with(const char* str, const char* suffix) {
     int str_len = strlen(str);
     int suffix_len = strlen(suffix);
@@ -30,69 +35,107 @@ static bool ends_with(const char* str, const char* suffix) {
     return strcmp(str + str_len - suffix_len, suffix) == 0;
 }
 
-static int desktop_load_callback(const char* path, uint32_t size, void* u) {
-    (void)size; (void)u;
-    if (icon_count >= MAX_DESKTOP_ICONS) return 0;
+static const char* base_name(const char* path) {
+    const char* p = strrchr(path, '/');
+    return p ? (p + 1) : path;
+}
 
-    if (strcmp(path, "/home") == 0 || strcmp(path, "/home/desktop") == 0 || 
-        strcmp(path, "/home/desktop/") == 0 || strcmp(path, "/") == 0) {
-        return 1; 
-    }
+static void icons_clear(void) {
+    icon_count = 0;
+    memset(icons, 0, sizeof(icons));
+}
 
-    const char* filename = strrchr(path, '/');
-    if (filename) filename++; else filename = path;
+// icon ekle (internal)
+static void icons_add(const char* full_path, const char* label, bool is_dir) {
+    if (!full_path || !label) return;
+    if (icon_count >= MAX_DESKTOP_ICONS) return;
 
-    if (filename[0] == '\0' || filename[0] == '.') return 1;
+    desktop_icon_t* ic = &icons[icon_count];
+    memset(ic, 0, sizeof(*ic));
 
-    strncpy(icons[icon_count].vfs_name, path, 63); 
-    strncpy(icons[icon_count].label, filename, 31); 
+    // full path
+    strncpy(ic->vfs_name, full_path, 63);
+    ic->vfs_name[63] = '\0';
 
-    vfs_stat_t st;
-    bool stat_ok = (vfs_stat(path, &st) == 0);
-    bool is_txt_ext = ends_with(filename, ".txt");
+    // label
+    strncpy(ic->label, label, 31);
+    ic->label[31] = '\0';
 
-    if (is_txt_ext) {
-        icons[icon_count].is_dir = false;
-        icons[icon_count].app_id = 4;
-    } 
-    else if (stat_ok) {
-        icons[icon_count].is_dir = (st.type == VFS_T_DIR);
-        icons[icon_count].app_id = 0;
-    }
-    else if (strchr(filename, '.') != NULL) {
-        icons[icon_count].is_dir = false;
-        icons[icon_count].app_id = 0;
-    }
-    else {
-        icons[icon_count].is_dir = true;
-        icons[icon_count].app_id = 0;
-    }
+    ic->is_dir = is_dir;
 
-    icons[icon_count].x = 40 + (icon_count / 5 * 100);
-    icons[icon_count].y = 40 + (icon_count % 5 * 90);
-    
-    icons[icon_count].is_selected = false;
-    icons[icon_count].dragging = false;
-    icons[icon_count].is_editing = false; // Başlangıçta kapalı
-    icons[icon_count].edit_buffer[0] = '\0'; // Edit buffer'ı temizle
+    // basit dizilim
+    ic->x = 40 + (icon_count / 5 * 100);
+    ic->y = 40 + (icon_count % 5 * 90);
+
+    ic->is_selected = false;
+    ic->dragging = false;
+    ic->is_editing = false;
+    ic->edit_buffer[0] = '\0';
 
     icon_count++;
+}
+
+// ------------------------------------------------------------
+// vfs_list callback -> ikon üret
+// ------------------------------------------------------------
+static int desktop_load_callback(const char* path, uint32_t size, void* u) {
+    (void)size; (void)u;
+
+    if (icon_count >= MAX_DESKTOP_ICONS) return 0;
+
+    // Bazı root entry'leri atla (güvenlik)
+    if (!path || path[0] == '\0') return 1;
+    if (strcmp(path, "/home") == 0 ||
+        strcmp(path, "/home/desktop") == 0 ||
+        strcmp(path, "/home/desktop/") == 0 ||
+        strcmp(path, "/") == 0) {
+        return 1;
+    }
+
+    const char* filename = base_name(path);
+
+    // gizli dosyalar / boş isim atla
+    if (filename[0] == '\0' || filename[0] == '.') return 1;
+
+    // dir mi?
+    vfs_stat_t st;
+    bool stat_ok = (vfs_stat(path, &st) == 1);
+    bool is_dir = false;
+
+    if (stat_ok) is_dir = (st.type == VFS_T_DIR);
+
+    // klasör
+    if (is_dir) {
+        icons_add(path, filename, true);
+        return 1;
+    }
+
+    // .ksf -> kısayol dosyası (parse AppManager tarafında)
+    if (ends_with(filename, ".ksf")) {
+        icons_add(path, filename, false);
+        return 1;
+    }
+
+    // .txt -> text dosyası
+    if (ends_with(filename, ".txt")) {
+        icons_add(path, filename, false);
+        return 1;
+    }
+
+    // diğer dosyalar
+    icons_add(path, filename, false);
     return 1;
 }
 
+// ------------------------------------------------------------
+// Public API
+// ------------------------------------------------------------
 void desktop_icons_init(void) {
-    icon_count = 0;
-    memset(icons, 0, sizeof(icons));
+    icons_clear();
 
-    strncpy(icons[icon_count].label, "Notepad", 31);
-    strcpy(icons[icon_count].vfs_name, "notepad");
-    icons[icon_count].x = 40;
-    icons[icon_count].y = 40;
-    icons[icon_count].app_id = 4;
-    icons[icon_count].is_dir = false;
-    icon_count++;
-
+    // Masaüstünü tara
     vfs_list("/home/desktop", desktop_load_callback, 0);
+
     desktop_icons_snap_all();
 }
 
@@ -102,7 +145,7 @@ void desktop_icons_draw_all(void) {
 
     for (int i = 0; i < icon_count; i++) {
         desktop_icon_t* icon = &icons[i];
-        
+
         bool is_hover = (mx >= icon->x && mx <= icon->x + 32 &&
                          my >= icon->y && my <= icon->y + 32);
 
@@ -113,13 +156,15 @@ void desktop_icons_draw_all(void) {
         }
 
         bool is_txt = ends_with(icon->label, ".txt");
-        bool actually_draw_dir = icon->is_dir && !is_txt;
+        bool is_ksf = ends_with(icon->label, ".ksf");
+        bool actually_draw_dir = icon->is_dir;
 
+        // ikon çizimi
         for (int r = 0; r < 20; r++) {
             for (int c = 0; c < 20; c++) {
                 uint8_t p = 0;
                 if (actually_draw_dir) p = folder_icon[r][c];
-                else if (icon->app_id == 4 || is_txt) p = text_file_icon[r][c];
+                else if (is_txt || is_ksf) p = text_file_icon[r][c]; // şimdilik ksf'yi text ikonla
                 else p = generic_file_icon[r][c];
 
                 uint32_t color = 0;
@@ -127,15 +172,14 @@ void desktop_icons_draw_all(void) {
                 else if (p == 2) color = (actually_draw_dir) ? 0xFFCC00 : 0xFFFFFF;
                 else if (p == 3) color = 0xCC9900;
                 else if (p == 4) color = 0xFFFFFF;
-                
+
                 if (p != 0) fb_putpixel(icon->x + c + 6, icon->y + r + 6, color);
             }
         }
 
-        // --- YENİ MANTIK: DÜZENLEME MODU ÇİZİMİ ---
+        // düzenleme mod çizimi
         if (icon->is_editing) {
-            // Mavi Arka Plan (Seçili Metin Efekti)
-            int text_w = strlen(icon->edit_buffer) * 8 + 4;
+            int text_w = (int)strlen(icon->edit_buffer) * 8 + 4;
             gfx_fill_rect(icon->x - 4, icon->y + 30, text_w, 12, 0x0078D7);
             gfx_draw_text(icon->x - 2, icon->y + 32, 0xFFFFFF, icon->edit_buffer);
         } else {
@@ -145,33 +189,31 @@ void desktop_icons_draw_all(void) {
     }
 }
 
-// Klavye Girişini İşle - UNUSED PARAMETER DÜZELTMESİ
+// Klavye girişini işle (rename edit buffer)
 void desktop_icons_handle_key(uint16_t scancode, char ascii) {
-    (void)scancode; // scancode parametresini kullanmadığımızı belirtiyoruz
-    
+    (void)scancode;
+
     for (int i = 0; i < icon_count; i++) {
         if (icons[i].is_editing) {
-            int len = strlen(icons[i].edit_buffer);
+            int len = (int)strlen(icons[i].edit_buffer);
+
             if (ascii == '\n' || ascii == '\r') {
                 icons[i].is_editing = false;
                 desktop_handle_rename_confirm(icons[i].edit_buffer);
-            } else if (ascii == 8) { // Backspace
-                if (len > 0) icons[i].edit_buffer[len-1] = '\0';
+            } else if (ascii == 8) {
+                if (len > 0) icons[i].edit_buffer[len - 1] = '\0';
             } else if (ascii >= 32 && len < 31) {
                 icons[i].edit_buffer[len] = ascii;
-                icons[i].edit_buffer[len+1] = '\0';
+                icons[i].edit_buffer[len + 1] = '\0';
             }
             return;
         }
     }
 }
 
-// Düzenleme modunu başlat
 void desktop_icons_begin_edit(int index) {
     if (index < 0 || index >= icon_count) return;
-    for (int i = 0; i < icon_count; i++) {
-        icons[i].is_editing = false; // Diğerlerini kapat
-    }
+    for (int i = 0; i < icon_count; i++) icons[i].is_editing = false;
     icons[index].is_editing = true;
     strcpy(icons[index].edit_buffer, icons[index].label);
 }
@@ -183,11 +225,16 @@ bool desktop_icons_is_any_editing(void) {
     return false;
 }
 
-// Diğer fonksiyonlar
 int desktop_icons_get_hit(int mx, int my) {
     for (int i = 0; i < icon_count; i++) {
-        if (mx >= icons[i].x && mx <= icons[i].x + 32 &&
-            my >= icons[i].y && my <= icons[i].y + 32) {
+        // ikon 32x32 + label alanı (~50px)
+        int w = 40;
+        int h = 52;
+        int x = icons[i].x - 4;
+        int y = icons[i].y - 4;
+
+        if (mx >= x && mx <= x + w &&
+            my >= y && my <= y + h) {
             return i;
         }
     }
@@ -198,56 +245,48 @@ void desktop_icons_process_click(int index) {
     if (index < 0 || index >= icon_count) return;
     desktop_icon_t* icon = &icons[index];
 
-    // Eğer bir klasörse şimdilik işlem yapma
-    if (icon->is_dir) return;
+    printk("[Desktop] open: label=%s path=%s\n", icon->label, icon->vfs_name);
 
-    // Eğer .txt dosyasıysa veya Notepad ID'sine sahipse Notepad ile aç
-    if (strstr(icon->label, ".txt") != NULL || icon->app_id == 4) {
-        notepad_open_file(icon->vfs_name);
-    }
-    
-    // Uygulama ID'si varsa başlat
-    if (icon->app_id > 0) {
-        appmgr_start_app(icon->app_id);
-    }
+    // açma mantığı AppManager'da
+    appmgr_open_path(icon->vfs_name);
 }
 
 void desktop_icons_deselect_all(void) {
     for (int i = 0; i < icon_count; i++) {
         icons[i].is_selected = false;
-        icons[i].is_editing = false; // Seçim değişince düzenlemeyi kapat
+        icons[i].is_editing = false;
     }
 }
 
-void desktop_icons_reset_selection(void) { 
-    desktop_icons_deselect_all(); 
+void desktop_icons_reset_selection(void) {
+    desktop_icons_deselect_all();
 }
 
-void desktop_icons_select(int index) { 
+void desktop_icons_select(int index) {
     if (index >= 0 && index < icon_count) {
-        icons[index].is_selected = true; 
+        icons[index].is_selected = true;
     }
 }
 
 void desktop_icons_move_dragging(int mx, int my) {
     for (int i = 0; i < icon_count; i++) {
-        if (icons[i].dragging) { 
-            icons[i].x = mx - 16; 
-            icons[i].y = my - 16; 
+        if (icons[i].dragging) {
+            icons[i].x = mx - 16;
+            icons[i].y = my - 16;
         }
     }
 }
 
 void desktop_icons_set_dragging(int index, bool state) {
-    if (index >= 0 && index < icon_count) { 
-        icons[index].dragging = state; 
-        icons[index].is_selected = state; 
+    if (index >= 0 && index < icon_count) {
+        icons[index].dragging = state;
+        icons[index].is_selected = state;
     }
 }
 
-void desktop_icons_stop_dragging_all(void) { 
+void desktop_icons_stop_dragging_all(void) {
     for (int i = 0; i < icon_count; i++) {
-        icons[i].dragging = false; 
+        icons[i].dragging = false;
     }
 }
 
@@ -256,18 +295,19 @@ void desktop_icons_snap_all(void) {
     for (int i = 0; i < icon_count; i++) {
         icons[i].x = (icons[i].x / 80) * 80 + 10;
         icons[i].y = (icons[i].y / 80) * 80 + 10;
-        if (icons[i].y < 35) icons[i].y = 40; 
+        if (icons[i].y < 35) icons[i].y = 40;
     }
 }
 
 void desktop_icons_select_in_rect(int x1, int y1, int x2, int y2) {
-    int min_x = (x1 < x2) ? x1 : x2; 
+    int min_x = (x1 < x2) ? x1 : x2;
     int max_x = (x1 > x2) ? x1 : x2;
-    int min_y = (y1 < y2) ? y1 : y2; 
+    int min_y = (y1 < y2) ? y1 : y2;
     int max_y = (y1 > y2) ? y1 : y2;
+
     for (int i = 0; i < icon_count; i++) {
-        bool overlap = !(icons[i].x + 32 < min_x || icons[i].x > max_x || 
-                        icons[i].y + 32 < min_y || icons[i].y > max_y);
+        bool overlap = !(icons[i].x + 32 < min_x || icons[i].x > max_x ||
+                         icons[i].y + 32 < min_y || icons[i].y > max_y);
         if (overlap) icons[i].is_selected = true;
     }
 }
@@ -284,8 +324,8 @@ void desktop_icons_delete_selected(void) {
     }
 }
 
-int desktop_icons_get_count(void) { 
-    return icon_count; 
+int desktop_icons_get_count(void) {
+    return icon_count;
 }
 
 const char* desktop_icons_get_name(int index) {

@@ -1,75 +1,147 @@
+// lib/shell.c
 #include <lib/shell.h>
 #include <kernel/printk.h>
 #include <kernel/kbd.h>
-#include <kernel/serial.h>  // <--- BU EKSİK OLABİLİR (serial_received ve serial_getc için)
 #include <lib/commands.h>
-#include <kernel/vga_font.h>
-#include <kernel/vga.h>
+#include <kernel/drivers/video/fb_console.h>
 
-void shell_readline(char* buffer, int max_len) {
-    int i = 0;
-    while (i < max_len - 1) {
-        char c = 0;
+// polling kullanıyorsan lazım
+#include <kernel/drivers/input/keyboard.h>  // kbd_poll()
 
-        kbd_poll(); 
+#include <stdint.h>
+#include <lib/string.h>
 
-        if (kbd_has_character()) { 
-            c = kbd_get_char();
-        } else if (serial_received()) {
-            c = serial_getc();
-        }
+// ------------------------------------------------------------
+// Basit "identity" + cwd (ileride FS/VFS ile güncellenecek)
+// ------------------------------------------------------------
+static char g_username[32] = "root";
+static char g_hostname[32] = "kuvix";
+static char g_cwd[128]     = "/home";
 
-        if (c == 0) continue;
-
-        // 1. ENTER: Satırı bitir
-        if (c == '\n' || c == '\r') {
-            buffer[i] = '\0';
-            vga_putc('\n');
-            serial_putc('\r'); // Seri portta yeni satır için \r\n gerekebilir
-            serial_putc('\n');
-            break;
-        } 
-        // 2. BACKSPACE: Karakteri sil
-        else if (c == '\b' || c == 8 || c == 127) { 
-            if (i > 0) {
-                i--;
-                // VGA ekranından sil
-                vga_putc('\b');
-                vga_putc(' ');
-                vga_putc('\b');
-                // Seri porttan (Terminal) sil
-                serial_putc('\b');
-                serial_putc(' ');
-                serial_putc('\b');
-            }
-        } 
-        // 3. YAZILABİLİR KARAKTERLER: Ekrana bas ve kaydet
-        else if (c >= 32 && c <= 126) {
-            buffer[i++] = c;
-            vga_putc(c);
-            serial_putc(c);
-        }
-    }
+// İstersen dışarıdan değiştirmek için (opsiyonel)
+void shell_set_username(const char* u) {
+    if (!u) return;
+    strncpy(g_username, u, sizeof(g_username) - 1);
+    g_username[sizeof(g_username) - 1] = 0;
 }
 
+void shell_set_hostname(const char* h) {
+    if (!h) return;
+    strncpy(g_hostname, h, sizeof(g_hostname) - 1);
+    g_hostname[sizeof(g_hostname) - 1] = 0;
+}
+
+void shell_set_cwd(const char* p) {
+    if (!p) return;
+    strncpy(g_cwd, p, sizeof(g_cwd) - 1);
+    g_cwd[sizeof(g_cwd) - 1] = 0;
+}
+
+static void shell_print_prompt(void) {
+    // user: yeşil
+    fb_console_set_color(0x0000FF00, 0x00000000);
+    printk("%s", g_username);
+    printk("@%s", g_hostname);
+    printk(":%s", g_cwd);
+
+    // $: beyaz
+    fb_console_set_color(0x00FFFFFF, 0x00000000);
+    printk("$ ");
+
+    fb_console_flush();
+}
+
+// ------------------------------------------------------------
+// Echo helpers
+// ------------------------------------------------------------
+static inline void echo_char(uint8_t c) {
+    // 127+ karakterlerde signed char bozulmasın
+    printk("%c", (unsigned char)c);
+    fb_console_flush();
+}
+
+static inline void echo_newline(void) {
+    printk("\n");
+    fb_console_flush();
+}
+
+static inline void echo_backspace(void) {
+    printk("\b \b");
+    fb_console_flush();
+}
+
+// ------------------------------------------------------------
+// Readline
+// ------------------------------------------------------------
+void shell_readline(char* buffer, int max_len) {
+    int i = 0;
+    if (max_len <= 0) return;
+    buffer[0] = '\0';
+
+    while (i < max_len - 1) {
+        // IRQ yoksa buffer'ı besle (polling)
+        kbd_poll();
+
+        char c = 0;
+
+        if (kbd_has_character()) {
+            c = kbd_get_char();
+        }
+
+        if (c == 0) {
+            asm volatile("pause");
+            continue;
+        }
+
+        // ENTER
+        if (c == '\n' || c == '\r') {
+            buffer[i] = '\0';
+            echo_newline();
+            return;
+        }
+
+        // BACKSPACE
+        if (c == '\b' || (uint8_t)c == 8 || (uint8_t)c == 127) {
+            if (i > 0) {
+                i--;
+                echo_backspace();
+            }
+            continue;
+        }
+
+        // Latin-1/CP1252 tarzı 0..255 kabul (kontrol karakterleri hariç)
+        uint8_t uc = (uint8_t)c;
+        if (uc >= 32) {
+            buffer[i++] = (char)uc;
+            echo_char(uc);
+        }
+    }
+
+    buffer[i] = '\0';
+    echo_newline();
+}
+
+// ------------------------------------------------------------
+// Shell main
+// ------------------------------------------------------------
 void shell_init(void) {
-    vga_load_tr_font();
     kbd_init();
+
     printk("KuvixOS Shell V2 Hazir!\n");
-    printk("Komutlar icin 'help' yazabilirsiniz.\n\n");
+    printk("Komutlar icin 'help' yazabilirsiniz.\n");
+    printk("FONT TEST: \xFD \xF0 \xFC \xFE \xF6 \xE7\n\n");
+    fb_console_flush();
 
     char line[128];
+
     while (1) {
-        // \n\n karakterlerini sildik, böylece imleç promptun hemen yanında bekler.
-        printk("KuvixOS> "); 
-        
-        shell_readline(line, sizeof(line));
-        
+        shell_print_prompt();
+
+        shell_readline(line, (int)sizeof(line));
+
         if (line[0] != '\0') {
             commands_execute(line);
-            // Komut bittikten sonra yeni satıra geçmek iyidir ama 
-            // commands_execute zaten bir çıktı veriyorsa buna gerek kalmayabilir.
-            // printk("\n"); 
+            fb_console_flush();
         }
     }
 }

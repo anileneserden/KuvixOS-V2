@@ -22,4 +22,4 @@ void cmd_cat(int argc, char** argv) {
     }
 }
 
-REGISTER_COMMAND(cat, cmd_cat, "Dosya icerigini okur ve ekrana basar");
+REGISTER_COMMAND(cat, cmd_cat, "Dosya içeriğini okur ve ekrana basar");

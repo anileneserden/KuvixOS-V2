@@ -233,7 +233,7 @@ void save_dialog_draw(void) {
     gfx_draw_text(btn_x + 15, input_y + 34, 0x000000, "Iptal");
 }
 
-void save_dialog_show(const char* title, const char* data, uint32_t size, save_callback_t callback) {
+void save_dialog_show(const char* title, const char* data, uint32_t size, int owner_win_id, save_callback_t callback) {
     printk("\n🎉🎉🎉🎉 [SaveDialog] SHOW FUNCTION ENTERED! 🎉🎉🎉🎉\n");
     printk("   📝 title='%s'\n", title);
     printk("   📁 data='%s' (pointer: %p)\n", data ? data : "(null)", data);
@@ -259,6 +259,7 @@ void save_dialog_show(const char* title, const char* data, uint32_t size, save_c
     current_dialog.data = data;
     current_dialog.data_size = size;
     current_dialog.on_save = callback;
+    current_dialog.owner_win_id = owner_win_id;  // ✅ EKLE
     
     printk("   ⚡ Setting is_active = true\n");
     is_active = true;
@@ -316,4 +317,9 @@ bool save_dialog_is_active(void) {
         printk("[SaveDialog] IS_ACTIVE called, returning %d\n", is_active);
     }
     return is_active; 
+}
+
+// save_dialog.c en alta/uygun yere ekle:
+int save_dialog_get_owner_win_id(void) {
+    return current_dialog.owner_win_id;
 }

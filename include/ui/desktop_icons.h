@@ -6,17 +6,16 @@
 
 typedef struct {
     int x, y;
-    char label[32];
-    char vfs_name[64];
+    char label[32];        // ekranda görünen isim
+    char vfs_name[64];     // dosya adı (desktop içindeki)
     bool is_selected;
     bool is_dir;
-    int app_id;
     bool dragging;
-    
-    // --- YENİ ALANLAR ---
-    bool is_editing;     // Şu an adı mı değiştiriliyor?
-    char edit_buffer[32]; // Yazılan yeni isim
+
+    bool is_editing;
+    char edit_buffer[32];
 } desktop_icon_t;
+
 
 // Temel Yönetim
 void desktop_icons_init(void);

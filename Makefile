@@ -38,6 +38,7 @@ SRC_C = \
     kernel/memory/kmalloc.c \
     kernel/block/block.c \
     kernel/block/blockdev.c \
+    kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/gfx.c \
     kernel/drivers/ata_pio.c \
@@ -60,6 +61,7 @@ SRC_C = \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/notepad.c \
     kernel/ui/apps/settings.c \
+    kernel/ui/apps/setup_wizard.c \
     kernel/ui/apps/terminal.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
@@ -67,7 +69,7 @@ SRC_C = \
     kernel/ui/cursor.c \
     kernel/ui/desktop_icons.c \
     kernel/ui/desktop.c \
-    kernel/ui/installer.c \
+    kernel/ui/dialogs/open_dialog.c \
     kernel/ui/dialogs/save_dialog.c \
     kernel/ui/power_screen.c \
     kernel/ui/select.c \
@@ -88,12 +90,13 @@ SRC_C = \
     kernel/ui/theme_builtin_data.c \
     kernel/ui/topbar.c \
     kernel/ui/ui_button.c \
+    kernel/ui/font/font8x8_basic.c \
+    kernel/ui/font/font8x16_basic.c \
     lib/commands/commands.c \
     lib/service/service.c \
     lib/service/service_registry.c \
     lib/shell/shell.c \
     lib/string/string.c \
-    lib/ui/font/font8x8_basic.c \
     lib/math.c \
     kernel/arch/x86/gdt.c \
     kernel/arch/x86/idt.c

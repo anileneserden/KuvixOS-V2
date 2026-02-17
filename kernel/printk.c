@@ -3,22 +3,38 @@
 #include <kernel/serial.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <kernel/drivers/video/fb_console.h>
 
-// --- MERKEZİ KARAKTER BASMA ---
-static void printk_putc(char c) {
-    vga_putc(c);
-    serial_putc(c);
+static bool gui_mode_enabled = true;
+
+void printk_set_gui_mode(bool enable) {
+    gui_mode_enabled = enable;
 }
 
-// --- SAYI YAZDIRMA (printk için yardımcı) ---
-void print_int(unsigned int value, int base) {
+static inline void outc(char c) {
+    vga_putc(c);
+    serial_putc(c);
+
+    if (gui_mode_enabled) {
+        fb_console_putc(c);
+        if (c == '\n')
+            fb_console_flush();
+    }
+}
+
+static void print_int(int value, int base) {
     char buf[32];
     int i = 0;
     char *digits = "0123456789ABCDEF";
 
     if (value == 0) {
-        printk_putc('0');
+        outc('0');
         return;
+    }
+
+    if (value < 0 && base == 10) {
+        outc('-');
+        value = -value;
     }
 
     while (value > 0) {
@@ -26,148 +42,101 @@ void print_int(unsigned int value, int base) {
         value /= base;
     }
 
-    while (--i >= 0) {
-        printk_putc(buf[i]);
-    }
+    while (--i >= 0)
+        outc(buf[i]);
 }
 
-// --- KSPRINTF YARDIMCI (Sayıyı buffer'a yazar) ---
-static void ksprintf_itoa(unsigned int value, int base, char **buf) {
-    char temp[32];
-    int i = 0;
-    char *digits = "0123456789ABCDEF";
-
-    if (value == 0) {
-        *((*buf)++) = '0';
-        return;
-    }
-
-    while (value > 0) {
-        temp[i++] = digits[value % base];
-        value /= base;
-    }
-
-    while (--i >= 0) {
-        *((*buf)++) = temp[i];
-    }
-}
-
-// --- ANA PRINTK (Türkçe Karakter Destekli) ---
 void printk(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
 
-    for (const char* p = fmt; *p != '\0'; p++) {
+    for (const char* p = fmt; *p; p++) {
+
         if (*p != '%') {
+
             unsigned char c = (unsigned char)*p;
 
-            // --- TÜRKÇE KARAKTER / UTF-8 DESTEĞİ ---
-            if (c == 0xC3) { 
+            // ---- UTF-8 Türkçe dönüştürme ----
+            if (c == 0xC3) {
                 unsigned char next = (unsigned char)*(++p);
-                if (next == 0xBC) c = 6;      // ü
-                else if (next == 0xB6) c = 4; // ö
-                else if (next == 0xA7) c = 5; // ç
-                else if (next == 0x87) c = 11;// Ç
-                else if (next == 0x9C) c = 12;// Ü
-                else if (next == 0x96) c = 10;// Ö
-                else { printk_putc(0xC3); printk_putc(next); continue; }
-            } 
+
+                if (next == 0xBC) c = 0xFC;      // ü
+                else if (next == 0x9C) c = 0xDC; // Ü
+                else if (next == 0xB6) c = 0xF6; // ö
+                else if (next == 0x96) c = 0xD6; // Ö
+                else if (next == 0xA7) c = 0xE7; // ç
+                else if (next == 0x87) c = 0xC7; // Ç
+                else if (next == 0xA9) c = 0xE9; // é
+                else {
+                    outc(0xC3);
+                    outc(next);
+                    continue;
+                }
+            }
             else if (c == 0xC4) {
                 unsigned char next = (unsigned char)*(++p);
-                if (next == 0x9F) c = 1;      // ğ
-                else if (next == 0x9E) c = 7; // Ğ
-                else if (next == 0xB1) c = 3; // ı
-                else if (next == 0xB0) c = 9; // İ
-                else { printk_putc(0xC4); printk_putc(next); continue; }
-            } 
+
+                if (next == 0x9F) c = 0xF0;      // ğ
+                else if (next == 0x9E) c = 0xD0; // Ğ
+                else if (next == 0xB1) c = 0xFD; // ı
+                else if (next == 0xB0) c = 0xDD; // İ
+                else {
+                    outc(0xC4);
+                    outc(next);
+                    continue;
+                }
+            }
             else if (c == 0xC5) {
                 unsigned char next = (unsigned char)*(++p);
-                if (next == 0x9F) c = 2;      // ş
-                else if (next == 0x9E) c = 8; // Ş
-                else { printk_putc(0xC5); printk_putc(next); continue; }
+
+                if (next == 0x9F) c = 0xFE;      // ş
+                else if (next == 0x9E) c = 0xDE; // Ş
+                else {
+                    outc(0xC5);
+                    outc(next);
+                    continue;
+                }
             }
 
-            printk_putc(c);
+            outc((char)c);
             continue;
         }
 
-        p++; // '%' karakterini atla
+        // ---- FORMAT ----
+        p++;
+
         switch (*p) {
             case 's': {
                 char* s = va_arg(args, char*);
                 if (!s) s = "(null)";
-                while (*s) printk_putc(*s++);
+                while (*s)
+                    printk("%c", *s++);
                 break;
             }
-            case 'd': {
-                int val = va_arg(args, int);
-                if (val < 0) {
-                    printk_putc('-');
-                    val = -val;
-                }
-                print_int((unsigned int)val, 10);
-                break;
-            }
-            case 'x': 
-                printk_putc('0'); printk_putc('x');
-                print_int(va_arg(args, unsigned int), 16); 
-                break;
-            case 'c': 
-                printk_putc((char)va_arg(args, int));
-                break;
-            case '%': 
-                printk_putc('%');
-                break;
-            default:
-                printk_putc('%');
-                printk_putc(*p);
-                break;
-        }
-    }
-    va_end(args);
-}
 
-// --- KSPRINTF GÖVDESİ ---
-int ksprintf(char *buf, const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    char *ptr = buf;
-
-    for (const char *p = fmt; *p != '\0'; p++) {
-        if (*p != '%') {
-            *ptr++ = *p;
-            continue;
-        }
-
-        p++; // '%' atla
-        switch (*p) {
-            case 's': {
-                char *s = va_arg(args, char *);
-                if (!s) s = "(null)";
-                while (*s) *ptr++ = *s++;
+            case 'd':
+                print_int(va_arg(args, int), 10);
                 break;
-            }
-            case 'd': {
-                int val = va_arg(args, int);
-                if (val < 0) {
-                    *ptr++ = '-';
-                    val = -val;
-                }
-                ksprintf_itoa((unsigned int)val, 10, &ptr);
-                break;
-            }
+
             case 'x':
-                ksprintf_itoa(va_arg(args, unsigned int), 16, &ptr);
+                outc('0'); outc('x');
+                print_int(va_arg(args, int), 16);
                 break;
+
             case 'c':
-                *ptr++ = (char)va_arg(args, int);
+                outc((char)va_arg(args, int));
                 break;
+
+            case '%':
+                outc('%');
+                break;
+
             default:
-                *ptr++ = *p;
+                outc('%');
+                outc(*p);
                 break;
         }
     }
-    *ptr = '\0'; // String sonlandırıcı
+
     va_end(args);
-    return (int)(ptr - buf);
 }

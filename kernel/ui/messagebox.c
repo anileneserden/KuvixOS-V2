@@ -7,6 +7,7 @@ static char _title[64];
 static char _text[256];
 static bool _visible = false;
 static MB_BTNS_T _active_btns;
+static MB_RES_T _result = MB_RES_NONE;
 
 // Pencere Boyut ve Konum (1024x768'e göre ortalanmış)
 static int _win_w = 320, _win_h = 150;
@@ -15,12 +16,13 @@ static int _win_x, _win_y;
 // --- Fonksiyon Gövdeleri ---
 
 static void _show(const char* title, const char* text, MB_ICON_T icon, MB_BTNS_T buttons) {
+    (void)icon; // şimdilik kullanılmıyor
     strncpy(_title, title, 63);
     strncpy(_text, text, 255);
     _active_btns = buttons;
     _visible = true;
+    _result = MB_RES_NONE;
 
-    // Koordinatları hesapla
     _win_x = (1024 - _win_w) / 2;
     _win_y = (768 - _win_h) / 2;
 }
@@ -83,21 +85,38 @@ void messagebox_handle_mouse(int mx, int my, bool pressed) {
 
         // Fare butonun sınırları içinde mi?
         if (mx >= bx && mx <= bx + bw && my >= by && my <= by + bh) {
-            _visible = false; // Kapat!
+            _result = MB_RES_OK;   // ✅
+            _visible = false;
         }
     } 
     else if (_active_btns == MB_BTNS_YESNO) {
         // Evet Butonu (Çizimdeki koordinatlarla aynı: _win_x + 40)
-        if (mx >= _win_x + 40 && mx <= _win_x + 120 && 
+        if (mx >= _win_x + 40 && mx <= _win_x + 120 &&
             my >= _win_y + _win_h - 40 && my <= _win_y + _win_h - 15) {
+            _result = MB_RES_YES;   // ✅
             _visible = false;
+            return;
         }
         // Hayır Butonu (Çizimdeki koordinatlarla aynı: _win_x + _win_w - 120)
-        if (mx >= _win_x + _win_w - 120 && mx <= _win_x + _win_w - 40 && 
+        if (mx >= _win_x + _win_w - 120 && mx <= _win_x + _win_w - 40 &&
             my >= _win_y + _win_h - 40 && my <= _win_y + _win_h - 15) {
+            _result = MB_RES_NO;    // ✅
             _visible = false;
+            return;
         }
     }
+}
+
+bool messagebox_is_visible(void) {
+    return _visible;
+}
+
+MB_RES_T messagebox_get_result(void) {
+    return _result;
+}
+
+void messagebox_reset_result(void) {
+    _result = MB_RES_NONE;
 }
 
 // --- Global Nesne Tanımları (En Altta Olmalı) ---

@@ -4,7 +4,7 @@
 
 void cmd_rm(int argc, char** argv) {
     if (argc < 2) {
-        printk("Kullanim: rm <dosya/dizin>\n");
+        printk("Kullanım: rm <dosya/dizin>\n");
         return;
     }
 

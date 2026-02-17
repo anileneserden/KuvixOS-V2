@@ -77,6 +77,23 @@ char* strcat(char* dest, const char* src) {
     return dest;
 }
 
+char* strncat(char* dest, const char* src, size_t n) {
+    char* d = dest;
+
+    // dest'in sonuna git
+    while (*d) d++;
+
+    // src'den en fazla n karakter ekle
+    while (*src && n--) {
+        *d++ = *src++;
+    }
+
+    // null terminator koy
+    *d = '\0';
+
+    return dest;
+}
+
 // Bir string içinde başka bir string arar
 char* strstr(const char* haystack, const char* needle) {
     if (!*needle) return (char*)haystack;

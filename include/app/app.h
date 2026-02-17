@@ -10,6 +10,7 @@ typedef struct app_vtbl {
     void (*on_key)(app_t* a, uint16_t keyev);
     void (*on_update)(app_t* a);
     void (*on_draw)(app_t* a);
+    int (*on_close_request)(app_t* self);
 } app_vtbl_t;
 
 struct app {
@@ -17,4 +18,5 @@ struct app {
     void* user;      // <--- HATA BURADAYDI, İSMİN BU OLDUĞUNDAN EMİN OLALIM
     const app_vtbl_t* v;
     int visible;
+    int id;
 };
