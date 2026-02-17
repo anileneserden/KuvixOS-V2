@@ -77,6 +77,7 @@ SRC_C = \
     kernel/ui/desktop.c \
     kernel/ui/power_screen.c \
     kernel/ui/select.c \
+    kernel/ui/session.c \
     kernel/ui/wm/hittest.c \
     kernel/ui/wm.c \
     kernel/ui/mouse.c \
