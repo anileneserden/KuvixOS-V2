@@ -6,4 +6,4 @@ void cmd_cd(int argc, char** argv) {
     printk("CD komutu yakinda VFS'ye uyarlanacak...\n");
 }
 
-REGISTER_COMMAND(cd, cmd_cd, "Calisma dizinini degistirir");
+REGISTER_COMMAND(cd, cmd_cd, "Çalışma dizinini değiştirir");

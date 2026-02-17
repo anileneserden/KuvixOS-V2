@@ -20,4 +20,4 @@ void cmd_edit(int argc, char** argv) {
     // ui_enter_editor_mode(filename);
 }
 
-REGISTER_COMMAND(edit, cmd_edit, "Metin editorunu acar: edit <dosya>");
+REGISTER_COMMAND(edit, cmd_edit, "Metin editörünü açar: edit <dosya>");

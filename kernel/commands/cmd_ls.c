@@ -15,4 +15,4 @@ void cmd_ls(int argc, char** argv) {
     }
 }
 
-REGISTER_COMMAND(ls, cmd_ls, "Dizin icerigini listeler");
+REGISTER_COMMAND(ls, cmd_ls, "Dizin içeriğini listeler");

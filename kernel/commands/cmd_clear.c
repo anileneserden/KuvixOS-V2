@@ -6,4 +6,4 @@ void cmd_clear(int argc, char** argv) {
     fb_console_clear();
 }
 
-REGISTER_COMMAND(clear, cmd_clear, "Ekrani temizler");
+REGISTER_COMMAND(clear, cmd_clear, "Ekranı temizler");
