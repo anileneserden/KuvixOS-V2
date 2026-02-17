@@ -1,10 +1,11 @@
-#ifndef SERIAL_H
-#define SERIAL_H
+#pragma once
+#include <stdint.h>
 
 void serial_init(void);
 void serial_putc(char c);
 void serial_write(const char* str);
-int  serial_received(void);  // Eklendi
-char serial_getc(void);      // Eklendi
+int  serial_received(void);
+char serial_getc(void);
 
-#endif
+void serial_write_hex8(uint8_t x);
+void serial_write_u16_hex(uint16_t x);

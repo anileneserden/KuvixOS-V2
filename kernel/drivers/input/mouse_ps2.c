@@ -2,6 +2,7 @@
 #include <arch/x86/io.h>
 #include <stdint.h>
 #include <ui/wm.h>
+#include <kernel/printk.h>
 
 // Eğer yoksa, dosyanın en üstüne (include'lardan sonra) ekle:
 int mouse_x = 400; // Ekran genişliğine göre (örn: 1024 / 2)
@@ -69,6 +70,7 @@ void ps2_mouse_update(void) {
 }
 
 void ps2_mouse_init(void) {
+    printk("MOUSE INIT OK\n");
     // A. Önce her şeyi bir temizle (Flush)
     for(int i = 0; i < 10; i++) {
         if(inb(0x64) & 0x01) inb(0x60);

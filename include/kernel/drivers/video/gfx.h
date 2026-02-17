@@ -42,5 +42,9 @@ void gfx_draw_bitmap(int x, int y, const bitmap_t* bmp);
 
 // --- Metin Çizimi ---
 void gfx_draw_text(int x, int y, uint32_t color, const char* s);
+void gfx_draw_text_utf8(int x, int y, uint32_t color, const char* s);
+
+void gfx_set_origin(int x, int y);
+void gfx_reset_origin(void);
 
 #endif

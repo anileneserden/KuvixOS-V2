@@ -335,8 +335,23 @@ void wm_draw(void) {
         // Senin sistemde app->visible kontrolü vardı.
         // İstersen burada tamamen WM state’e geçip visible'ı kaldırırız.
         if (app && app->visible) {
+
             ui_window_draw(win, (id == g_active), g_mouse_x, g_mouse_y);
-            if (app->v && app->v->on_draw) app->v->on_draw(app);
+
+            if (app->v && app->v->on_draw) {
+
+                ui_rect_t client = wm_get_client_rect(id);
+
+                // 🔥 origin set
+                gfx_set_origin(client.x, client.y);
+
+                // 🔥 burada clip sistemi yoksa şimdilik atlayabiliriz
+
+                app->v->on_draw(app);
+
+                // 🔥 origin reset
+                gfx_reset_origin();
+            }
         }
     }
 }

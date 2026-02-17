@@ -1,6 +1,10 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
-#include <ui/font8x8_basic.h>
+#include <ui/font/font8x8_basic.h>
+#include <ui/font/font8x16_basic.h>
+
+static int g_origin_x = 0;
+static int g_origin_y = 0;
 
 void gfx_init(void) {
     // Ekranı başlangıç için siyahla temizle
@@ -16,7 +20,7 @@ void gfx_clear(uint32_t color) {
 
 // Temel piksel çizimi
 void gfx_putpixel(int x, int y, uint32_t color) {
-    fb_putpixel(x, y, color);
+    fb_putpixel(x + g_origin_x, y + g_origin_y, color);
 }
 
 // r, g, b: Yeni rengin bileşenleri
@@ -54,7 +58,7 @@ void gfx_draw_alpha_rect(int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t 
 
 // Kare/Dikdörtgen çizimi
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color) {
-    fb_draw_rect(x, y, w, h, color);
+    fb_draw_rect(x + g_origin_x, y + g_origin_y, w, h, color);
 }
 
 #define abs(x) ((x) < 0 ? -(x) : (x))
@@ -73,25 +77,106 @@ void gfx_draw_line(int x0, int y0, int x1, int y1, uint32_t color) {
     }
 }
 
-// Metin çizimi (8x8 font kullanarak)
-void gfx_draw_text(int x, int y, uint32_t color, const char* s) {    
+void gfx_draw_text(int x, int y, uint32_t color, const char* s) {
     if (!s) return;
-    
+
     while (*s) {
         uint8_t c = (uint8_t)*s++;
-        const uint8_t* glyph = font8x8_basic[c];
 
-        for (int row = 0; row < 8; row++) {
-            uint8_t line = glyph[row];
+        for (int row = 0; row < 16; row++) {
+            uint8_t line = font8x16_basic_row(c, row);
+
             for (int col = 0; col < 8; col++) {
-                // Bit 1 ise pikseli bas
                 if (line & (1u << (7 - col))) {
-                    fb_putpixel(x + col, y + row, color);
+                    gfx_putpixel(x + col, y + row, color);
                 }
             }
         }
-        x += 8; // Bir sonraki karakter için 8 piksel sağa kay
+
+        x += 8;
     }
+}
+
+/* --- UTF-8 decode --- */
+static uint32_t utf8_next(const char** ps) {
+    const unsigned char* s = (const unsigned char*)(*ps);
+    if (!*s) return 0;
+
+    uint32_t cp = 0;
+    if (s[0] < 0x80) { cp = s[0]; *ps += 1; return cp; }
+
+    if ((s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+        cp = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
+        *ps += 2; return cp;
+    }
+
+    if ((s[0] & 0xF0) == 0xE0 &&
+        (s[1] & 0xC0) == 0x80 &&
+        (s[2] & 0xC0) == 0x80) {
+        cp = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+        *ps += 3; return cp;
+    }
+
+    /* unsupported/bad seq -> skip 1 byte */
+    *ps += 1;
+    return '?';
+}
+
+/* unicode -> senin KVX 0..255 charset */
+static uint8_t unicode_to_kvx_byte(uint32_t cp) {
+    if (cp < 0x80) return (uint8_t)cp;
+
+    switch (cp) {
+        case 0x00FC: return 0xFC; // ü
+        case 0x00DC: return 0xDC; // Ü
+        case 0x00F6: return 0xF6; // ö
+        case 0x00D6: return 0xD6; // Ö
+        case 0x00E7: return 0xE7; // ç
+        case 0x00C7: return 0xC7; // Ç
+        case 0x011F: return 0xF0; // ğ
+        case 0x011E: return 0xD0; // Ğ
+        case 0x015F: return 0xFE; // ş
+        case 0x015E: return 0xDE; // Ş
+        case 0x0131: return 0xFD; // ı
+        case 0x0130: return 0xDD; // İ
+        default:     return '?';
+    }
+}
+
+void gfx_draw_text_utf8(int x, int y, uint32_t color, const char* s) {
+    if (!s) return;
+
+    /* küçük buffer: satır satır çizmek için yeterli */
+    char out[256];
+    int oi = 0;
+
+    while (*s) {
+        uint32_t cp = utf8_next(&s);
+        if (!cp) break;
+
+        uint8_t ch = unicode_to_kvx_byte(cp);
+
+        /* newline gelirse flush et */
+        if (ch == '\n' || ch == '\r') {
+            out[oi] = '\0';
+            if (oi) gfx_draw_text(x, y, color, out);
+            oi = 0;
+            y += 16; /* font yüksekliğin 16 ise */
+            continue;
+        }
+
+        out[oi++] = (char)ch;
+
+        if (oi >= (int)sizeof(out) - 1) {
+            out[oi] = '\0';
+            gfx_draw_text(x, y, color, out);
+            oi = 0;
+            /* aynı satırda devam edebilir, ama gerek yoksa bırak */
+        }
+    }
+
+    out[oi] = '\0';
+    if (oi) gfx_draw_text(x, y, color, out);
 }
 
 // Karekök fonksiyonu (Yuvarlak köşeler için yardımcı)
@@ -130,7 +215,7 @@ void gfx_fill_round_rect(int x, int y, int w, int h, int r, uint32_t color) {
         int x0 = x + inset;
         int x1 = x + w - inset - 1;
         for (int xx = x0; xx <= x1; xx++) {
-            fb_putpixel(xx, y + yy, color);
+            gfx_putpixel(xx - g_origin_x, y + yy, color);
         }
     }
 }
@@ -147,4 +232,14 @@ void gfx_draw_rect(int x, int y, int w, int h, uint32_t color) {
     gfx_draw_line(x, y, x, y + h - 1, color);
     // Sağ kenar
     gfx_draw_line(x + w - 1, y, x + w - 1, y + h - 1, color);
+}
+
+void gfx_set_origin(int x, int y) {
+    g_origin_x = x;
+    g_origin_y = y;
+}
+
+void gfx_reset_origin(void) {
+    g_origin_x = 0;
+    g_origin_y = 0;
 }

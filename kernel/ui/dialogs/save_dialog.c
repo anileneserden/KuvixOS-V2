@@ -314,7 +314,7 @@ bool save_dialog_is_active(void) {
     static int call_count = 0;
     call_count++;
     if (call_count % 30 == 0) {
-        printk("[SaveDialog] IS_ACTIVE called, returning %d\n", is_active);
+        // printk("[SaveDialog] IS_ACTIVE called, returning %d\n", is_active);
     }
     return is_active; 
 }

@@ -1,9 +1,11 @@
 // kernel/ui/desktop_icons.c
 
 #include <ui/desktop_icons.h>
+#include <ui/desktop.h>
 #include <ui/desktop_icons/text_file.h>
 #include <ui/desktop_icons/generic_file.h>
 #include <ui/desktop_icons/folder_icon.h>
+#include <ui/desktop.h>
 
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
@@ -13,11 +15,11 @@
 #include <stdbool.h>
 #include <kernel/drivers/input/mouse_ps2.h>
 #include <kernel/printk.h>
+#include <kernel/user.h>
 
 // --- DIŞ BİLDİRİMLER ---
 extern int mouse_x;
 extern int mouse_y;
-extern void desktop_handle_rename_confirm(const char* new_name);
 
 #define MAX_DESKTOP_ICONS 32
 
@@ -134,7 +136,7 @@ void desktop_icons_init(void) {
     icons_clear();
 
     // Masaüstünü tara
-    vfs_list("/home/desktop", desktop_load_callback, 0);
+    vfs_list(USER_DESKTOP_PATH, desktop_load_callback, 0);
 
     desktop_icons_snap_all();
 }
@@ -184,7 +186,7 @@ void desktop_icons_draw_all(void) {
             gfx_draw_text(icon->x - 2, icon->y + 32, 0xFFFFFF, icon->edit_buffer);
         } else {
             uint32_t text_color = (icon->is_selected || is_hover) ? 0xFFFFFF : 0xEEEEEE;
-            gfx_draw_text(icon->x - 4, icon->y + 30, text_color, icon->label);
+            gfx_draw_text(icon->x - 4, icon->y + 34, text_color, icon->label);
         }
     }
 }

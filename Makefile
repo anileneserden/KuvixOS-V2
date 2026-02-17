@@ -16,7 +16,8 @@ IMAGE  = KuvixOS.iso
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
-          -Iinclude -DTIMEZONE_OFFSET=3
+          -Iinclude -DTIMEZONE_OFFSET=3 \
+          -DKBD_SERIAL_DEBUG
 
 ASFLAGS = -m32
 NASMFLAGS = -f elf32
@@ -30,34 +31,38 @@ SRC_S = boot/boot.S
 SRC_ASM = kernel/arch/x86/interrupt_entry.asm
 SRC_C = \
     kernel/kmain.c \
-    kernel/printk.c \
     kernel/panic.c \
-    kernel/vga.c \
+    kernel/printk.c \
     kernel/serial.c \
     kernel/time.c \
-    kernel/memory/kmalloc.c \
+    kernel/vga.c \
+    kernel/arch/x86/gdt.c \
+    kernel/arch/x86/idt.c \
     kernel/block/block.c \
     kernel/block/blockdev.c \
+    kernel/debug/debug_kbd.c \
+    kernel/drivers/input/keymaps/layout.c \
+    kernel/drivers/input/keymaps/us.c \
+    kernel/drivers/input/keymaps/trq.c \
+    kernel/drivers/input/keyboard.c \
+    kernel/drivers/input/mouse_ps2.c \
+    kernel/drivers/rtc/rtc.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/gfx.c \
     kernel/drivers/ata_pio.c \
-    kernel/drivers/virtio_blk.c \
+    kernel/drivers/power.c \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
-    kernel/drivers/input/keyboard.c \
-    kernel/drivers/input/mouse_ps2.c \
-    kernel/drivers/rtc/rtc.c \
-    kernel/drivers/power.c \
-    kernel/drivers/input/keymaps/layout.c \
-    kernel/drivers/input/keymaps/us.c \
-    kernel/drivers/input/keymaps/trq.c \
-    kernel/fs/vfs.c \
-    kernel/fs/ramfs.c \
-    kernel/fs/kvxfs.c \
-    kernel/fs/toyfs.c \
-    kernel/fs/toyfs_image.c \
+    kernel/drivers/virtio_blk.c \
     kernel/fs/fs_init.c \
+    kernel/fs/kvxfs.c \
+    kernel/fs/ramfs.c \
+    kernel/fs/toyfs_image.c \
+    kernel/fs/toyfs.c \
+    kernel/fs/vfs.c \
+    kernel/memory/kmalloc.c \
+    kernel/ui/apps/demo.c \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/notepad.c \
     kernel/ui/apps/settings.c \
@@ -66,40 +71,39 @@ SRC_C = \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
+    kernel/ui/dialogs/open_dialog.c \
+    kernel/ui/dialogs/save_dialog.c \
+    kernel/ui/font/font8x8_basic.c \
+    kernel/ui/font/font8x16_basic.c \
+    kernel/ui/wm/hittest.c \
+    kernel/ui/app_manager.c \
+    kernel/ui/context_menu.c \
     kernel/ui/cursor.c \
     kernel/ui/desktop_icons.c \
     kernel/ui/desktop.c \
-    kernel/ui/dialogs/open_dialog.c \
-    kernel/ui/dialogs/save_dialog.c \
-    kernel/ui/power_screen.c \
-    kernel/ui/select.c \
-    kernel/ui/wm/hittest.c \
-    kernel/ui/wm.c \
     kernel/ui/messagebox.c \
     kernel/ui/mouse.c \
     kernel/ui/notification.c \
-    kernel/ui/wallpaper.c \
-    kernel/ui/window.c \
-    kernel/ui/window_chrome.c \
-    kernel/ui/app_manager.c \
-    kernel/ui/context_menu.c \
-    kernel/ui/theme_builtin.c \
-    kernel/ui/theme_runtime.c \
+    kernel/ui/power_screen.c \
+    kernel/ui/select.c \
+    kernel/ui/session.c \
     kernel/ui/theme_bootstrap.c \
-    kernel/ui/theme_parser.c \
     kernel/ui/theme_builtin_data.c \
+    kernel/ui/theme_parser.c \
+    kernel/ui/theme_runtime.c \
     kernel/ui/topbar.c \
     kernel/ui/ui_button.c \
-    kernel/ui/font/font8x8_basic.c \
-    kernel/ui/font/font8x16_basic.c \
+    kernel/ui/ui_label.c \
+    kernel/ui/wallpaper.c \
+    kernel/ui/window_chrome.c \
+    kernel/ui/window.c \
+    kernel/ui/wm.c \
+    kernel/ui/theme_builtin.c \
     lib/commands/commands.c \
-    lib/service/service.c \
     lib/service/service_registry.c \
+    lib/service/service.c \
     lib/shell/shell.c \
     lib/string/string.c \
-    lib/math.c \
-    kernel/arch/x86/gdt.c \
-    kernel/arch/x86/idt.c
 
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
