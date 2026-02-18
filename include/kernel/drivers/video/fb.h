@@ -1,40 +1,26 @@
-#ifndef FB_H
-#define FB_H
-
+#pragma once
 #include <stdint.h>
 
-// 1. Tip Tanımlaması
 typedef uint32_t fb_color_t;
 
-// Standart 800x600 32bpp ayarları
-extern uint32_t FB_WIDTH;
-extern uint32_t FB_HEIGHT;
-#define FB_BPP    32
+void fb_init(uint32_t lfb_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes);
 
-// 2. Fonksiyon Prototipleri
-void fb_init(uint32_t vbe_lfb_addr);
-void fb_putpixel(int x, int y, fb_color_t color);
-fb_color_t fb_getpixel(int x, int y);
-void fb_draw_rect(int x, int y, int w, int h, fb_color_t color);
-void fb_draw_rect_outline(int x, int y, int w, int h, uint32_t color);
-void fb_clear(fb_color_t color);
+void fb_putpixel(int x, int y, uint32_t color);
+uint32_t fb_getpixel(int x, int y);
+
+void fb_clear(uint32_t color);
 void fb_present(void);
+void fb_present_rect(int x, int y, int w, int h);
+
+void fb_draw_rect(int x, int y, int w, int h, uint32_t color);
+void fb_draw_rect_outline(int x, int y, int w, int h, uint32_t color);
 
 uint32_t fb_get_width(void);
 uint32_t fb_get_height(void);
+uint32_t fb_get_pitch_bytes(void);
+uint32_t fb_get_pitch_pixels(void);
 
-// --- EKSİK OLAN VE HATAYA SEBEP OLAN FONKSİYON BURADA ---
-// Bu fonksiyonu ekleyerek window.c'nin derlenmesini sağlıyoruz
+uint32_t fb_rgb(uint8_t r, uint8_t g, uint8_t b);
+fb_color_t fb_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
 void fb_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key);
-
-// Renk yardımcıları
-fb_color_t fb_rgb(uint8_t r, uint8_t g, uint8_t b);
-fb_color_t fb_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a); 
-
-// Renk için color_t kalsın (bu mantıklı)
-typedef uint32_t fb_color_t;
-
-// Ama çözünürlük için doğrudan uint32_t kullanalım
-void fb_set_resolution(uint32_t width, uint32_t height);
-
-#endif
