@@ -24,3 +24,5 @@ uint32_t fb_rgb(uint8_t r, uint8_t g, uint8_t b);
 fb_color_t fb_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
 void fb_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key);
+
+void fb_set_resolution(uint32_t width, uint32_t height);

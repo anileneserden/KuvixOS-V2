@@ -139,3 +139,19 @@ void fb_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t
         }
     }
 }
+
+void fb_set_resolution(uint32_t width, uint32_t height) {
+    // Şimdilik sadece FB_WIDTH/FB_HEIGHT'i güncelle.
+    // Gerçek mod değişimi GRUB/VBE tarafında olur; kernel burada sadece
+    // mevcut framebuffer parametreleriyle çalışır.
+    if (width == 0 || height == 0) return;
+
+    FB_WIDTH = width;
+    FB_HEIGHT = height;
+
+    // Güvenlik: pitch 0 ise düzelt
+    if (FB_PITCH_PIXELS == 0) FB_PITCH_PIXELS = FB_WIDTH;
+
+    fb_clear(0x1A1A1A);
+    fb_present();
+}

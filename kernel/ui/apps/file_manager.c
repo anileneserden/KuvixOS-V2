@@ -240,7 +240,7 @@ static void file_mgr_on_draw(app_t* app) {
     gfx_draw_text_utf8(hx, 10, 0xFF777777, "Dosya Adı");
     gfx_draw_text_utf8(hx + 200, 10, 0xFF777777, "Boyut");
     gfx_fill_rect(hx, 28, c.w - hx - 8, 1, 0xFFEEEEEE);
-    gfx_fill_rect(200, 100, 25, 25, 0xFF999999);
+    // gfx_fill_rect(200, 100, 25, 25, 0xFF999999);
 
     // --- CWD göster ---
     gfx_draw_text_utf8(hx, 35, 0xFF999999, st->cwd);

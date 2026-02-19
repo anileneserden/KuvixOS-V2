@@ -65,7 +65,6 @@ SRC_C = \
     kernel/ui/apps/demo.c \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/notepad.c \
-    kernel/ui/apps/settings.c \
     kernel/ui/apps/setup_wizard.c \
     kernel/ui/apps/terminal.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
