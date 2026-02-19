@@ -12,7 +12,8 @@ extern const app_vtbl_t terminal_vtbl;
 extern const app_vtbl_t file_manager_vtbl;
 extern const app_vtbl_t notepad_vtbl;
 extern const app_vtbl_t setup_wizard_vtbl;
-extern const app_vtbl_t demo_vtbl;
+extern const app_vtbl_t demo_app_vtbl;
+extern const app_vtbl_t calculator_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -31,7 +32,8 @@ static app_definition_t app_registry[] = {
     { 2, "File Manager", &file_manager_vtbl,   40,  60, 420, 260, 2048 },
     { 3, "Notepad",      &notepad_vtbl,       150, 100, 450, 350, 1024 },
     { 4, "Setup Wizard", &setup_wizard_vtbl,  140,  90, 520, 320, 1024 },
-    { 5, "Demo",         &demo_vtbl,          160, 120, 520, 240,    0 },
+    { 5, "Demo",         &demo_app_vtbl,      160, 120, 520, 240,    0 },
+    { 6, "Calculator",   &calculator_vtbl,    160, 120, 520, 240,    0 },
     { 0, NULL,           NULL,                  0,   0,   0,   0,    0 }
 };
 

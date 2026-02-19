@@ -27,6 +27,9 @@
 
 #include <kernel/user.h>
 
+#include <stdbool.h>
+#include <stdint.h>
+
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -44,7 +47,29 @@ extern uint32_t g_ticks_ms;
 #endif
 
 // ============================================================
-// Desktop State (DOSYA SCOPE STATIC)  ✅
+// Present helpers (dirty rect)
+// ============================================================
+
+static inline void present_rect_safe(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) return;
+
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+
+    int W = (int)fb_get_width();
+    int H = (int)fb_get_height();
+
+    if (x >= W || y >= H) return;
+    if (x + w > W) w = W - x;
+    if (y + h > H) h = H - y;
+
+    if (w <= 0 || h <= 0) return;
+
+    fb_present_rect(x, y, w, h);
+}
+
+// ============================================================
+// Desktop State (DOSYA SCOPE STATIC)
 // ============================================================
 
 static uint32_t desktop_bg_color = 0x182838;
@@ -129,11 +154,12 @@ void desktop_handle_rename_confirm(const char* new_name) {
     char old_full_path[256];
     char new_full_path[256];
 
-    // TODO: ileride USER_HOME_PATH/desktop kullanacağız
-    strcpy(old_full_path, "/home/desktop/");
+    strcpy(old_full_path, USER_DESKTOP_PATH);
+    strcat(old_full_path, "/");
     strcat(old_full_path, old_name);
 
-    strcpy(new_full_path, "/home/desktop/");
+    strcpy(new_full_path, USER_DESKTOP_PATH);
+    strcat(new_full_path, "/");
     strcat(new_full_path, new_name);
     if (strstr(new_name, ".txt") == 0) strcat(new_full_path, ".txt");
 
@@ -161,11 +187,20 @@ static void desktop_handle_open(void) {
 }
 
 static void desktop_handle_create_file(void) {
+    char base[256];
     char final_path[256];
-    get_unique_filename("/home/desktop/yeni_not", ".txt", final_path);
+
+    strcpy(base, USER_DESKTOP_PATH);
+    strcat(base, "/yeni_not");
+
+    get_unique_filename(base, ".txt", final_path);
 
     vfs_file_t* f = 0;
     if (vfs_open(final_path, VFS_O_CREAT | VFS_O_RDWR, &f) == 1) {
+        const char* hello = "Merhaba KuvixOS!\n";
+        uint32_t w = 0;
+        vfs_write(f, hello, (uint32_t)strlen(hello), &w);
+
         vfs_close(f);
 
         desktop_icons_init();
@@ -179,12 +214,38 @@ static void desktop_handle_create_file(void) {
     }
 }
 
+static void desktop_handle_create_folder(void) {
+    char base[256];
+    strcpy(base, USER_DESKTOP_PATH);
+    strcat(base, "/Yeni_Klasor");
+
+    char final_path[256];
+    strcpy(final_path, base);
+
+    int counter = 0;
+    vfs_stat_t st;
+    while (vfs_stat(final_path, &st)) {
+        counter++;
+        char num[16];
+        simple_itoa(counter, num);
+        strcpy(final_path, base);
+        strcat(final_path, "_");
+        strcat(final_path, num);
+    }
+
+    vfs_mkdir(final_path);
+
+    desktop_icons_init();
+    desktop_icons_snap_all();
+    notification_show("Klasor olusturuldu", 600);
+}
+
 void desktop_reset_selection_state(void) {
     is_selecting = false;
 }
 
 // ============================================================
-// NEW Desktop API (init + tick + handle_scancode) ✅
+// NEW Desktop API (init + tick + handle_scancode)
 // ============================================================
 
 void ui_desktop_init(void) {
@@ -192,14 +253,11 @@ void ui_desktop_init(void) {
     appmgr_init();
     topbar_init();
 
-    // App'ler
-    appmgr_start_app(2); // File manager
-    // appmgr_start_app(5); // Demo
-
     desktop_icons_init();
     desktop_icons_snap_all();
 
-    // state reset
+    appmgr_start_app(6);
+
     g_last_btn = 0;
     g_lmb_down = 0;
     g_dragging = 0;
@@ -217,11 +275,14 @@ void ui_desktop_init(void) {
         ata_pio_read(dev, 2000, disk_buffer, 1);
 
         if (disk_buffer[0] != '\0' && disk_buffer[0] != (char)0xFF) {
-            if (!file_exists("/home/desktop/notum.txt")) {
+            char rec_path[256];
+            strcpy(rec_path, USER_DESKTOP_PATH);
+            strcat(rec_path, "/notum.txt");
+            if (!file_exists(rec_path)) {
                 vfs_file_t* recover_f = 0;
-                if (vfs_open("/home/desktop/notum.txt", VFS_O_CREAT | VFS_O_WRONLY, &recover_f) == 1) {
+                if (vfs_open(rec_path, VFS_O_CREAT | VFS_O_WRONLY, &recover_f) == 1) {
                     uint32_t written = 0;
-                    vfs_write(recover_f, disk_buffer, strlen(disk_buffer), &written);
+                    vfs_write(recover_f, disk_buffer, (uint32_t)strlen(disk_buffer), &written);
                     vfs_close(recover_f);
                     printk("[KuvixOS] Veri diskten notum.txt olarak yuklendi.\n");
 
@@ -256,9 +317,28 @@ void ui_desktop_tick(void) {
     int dx, dy;
     uint8_t btn;
 
+    // --- Dirty-rect tracking (cursor + selection) ---
+    static int prev_mouse_x = -1;
+    static int prev_mouse_y = -1;
+    static bool prev_selecting = false;
+    static int prev_sel_start_x = 0, prev_sel_start_y = 0;
+    static int prev_sel_end_x = 0, prev_sel_end_y = 0;
+
+    bool need_full_present = false;
+
+    // Bu tick'te mouse event geldi mi?
+    bool had_mouse_event = false;
+
     // ---------- Mouse ----------
     ps2_mouse_poll();
+
+    // Eğer hiç event yoksa bile btn state'ini bilmek bazen lazım olabilir.
+    // Ama ps2_mouse_pop() event üretmiyorsa btn güncellenmez; o yüzden btn'u varsayılanla başlat.
+    btn = g_last_btn;
+
     while (ps2_mouse_pop(&dx, &dy, &btn)) {
+        had_mouse_event = true;
+
         mouse_x += dx;
         mouse_y += dy;
 
@@ -271,16 +351,25 @@ void ui_desktop_tick(void) {
             wm_handle_mouse_move(mouse_x, mouse_y);
         }
 
+        if (dx != 0 || dy != 0) {
+        // Mouse bir pencerenin üstündeyse hover değişebilir -> full present gerekli
+        int over = wm_find_window_at(mouse_x, mouse_y);
+        if (over != -1) need_full_present = true;
+    }
+
+
         uint8_t pressed  = btn & ~g_last_btn;
         uint8_t released = g_last_btn & ~btn;
 
         // 0) Modal dialoglar
         if (save_dialog_is_active()) {
+            need_full_present = true;
             save_dialog_handle_mouse(mouse_x, mouse_y, (pressed & 1));
             g_last_btn = btn;
             continue;
         }
         if (open_dialog_is_active()) {
+            need_full_present = true;
             open_dialog_handle_mouse(mouse_x, mouse_y, (pressed & 1));
             g_last_btn = btn;
             continue;
@@ -288,6 +377,7 @@ void ui_desktop_tick(void) {
 
         // 1) Topbar
         if ((pressed & 1) && mouse_y < 28) {
+            need_full_present = true;
             topbar_handle_mouse(mouse_x, mouse_y);
             g_last_btn = btn;
             continue;
@@ -296,6 +386,7 @@ void ui_desktop_tick(void) {
         // 2) Messagebox
         messagebox_handle_mouse(mouse_x, mouse_y, (pressed & 1));
         if (messagebox_is_visible()) {
+            need_full_present = true;
             g_last_btn = btn;
             continue;
         }
@@ -303,6 +394,7 @@ void ui_desktop_tick(void) {
         // 3) WM
         wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
         if (wm_did_consume_mouse()) {
+            need_full_present = true;
             is_selecting = false;
             g_lmb_down = 0;
             g_dragging = 0;
@@ -316,6 +408,8 @@ void ui_desktop_tick(void) {
 
             // Sağ tık: context menu
             if (pressed & 2) {
+                need_full_present = true;
+
                 g_lmb_down = 0;
                 g_dragging = 0;
                 g_down_hit = -1;
@@ -328,12 +422,15 @@ void ui_desktop_tick(void) {
                     context_menu_add_item("Sil", desktop_icons_delete_selected);
                 } else {
                     context_menu_add_item("Yeni Metin Belgesi", desktop_handle_create_file);
+                    context_menu_add_item("Yeni Klasör", desktop_handle_create_folder);
                 }
                 context_menu_show(mouse_x, mouse_y);
             }
 
             // Sol tık pressed
             if (pressed & 1) {
+                need_full_present = true;
+
                 if (context_menu_is_visible()) {
                     context_menu_handle_mouse(mouse_x, mouse_y, true);
                     g_last_btn = btn;
@@ -355,7 +452,6 @@ void ui_desktop_tick(void) {
 
                     uint32_t now = g_ticks_ms;
                     if (g_last_click_hit == hit && (now - g_last_click_ms) < DBLCLICK_MS) {
-                        // çift tık
                         desktop_icons_process_click(hit);
 
                         g_last_click_hit = -1;
@@ -371,7 +467,6 @@ void ui_desktop_tick(void) {
                         g_last_click_ms = now;
                     }
                 } else {
-                    // boş alan -> selection rect
                     is_selecting = true;
                     sel_start_x = mouse_x;
                     sel_start_y = mouse_y;
@@ -387,18 +482,21 @@ void ui_desktop_tick(void) {
                     int ddx = mouse_x - g_down_x;
                     int ddy = mouse_y - g_down_y;
                     if ((ddx * ddx + ddy * ddy) >= (DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX)) {
+                        need_full_present = true;
                         g_dragging = 1;
                         desktop_icons_set_dragging(g_down_hit, true);
                         is_selecting = false;
                     }
                 }
                 if (g_dragging) {
+                    need_full_present = true;
                     desktop_icons_move_dragging(mouse_x, mouse_y);
                 }
             }
 
             // Sol tık release
             if (released & 1) {
+                need_full_present = true;
                 g_lmb_down = 0;
 
                 if (g_dragging) {
@@ -426,7 +524,13 @@ void ui_desktop_tick(void) {
         g_last_btn = btn;
     }
 
+    // Mouse event gelmediyse bile: hover state düzgün olsun diye WM'e move geçmek istersen:
+    // (Bazı WM'ler hover için her tick ister. İstersen aç.)
+    // if (!had_mouse_event) wm_handle_mouse_move(mouse_x, mouse_y);
+
     // ---------- Render ----------
+    if (wm_is_dragging_window()) need_full_present = true;
+
     fb_clear(desktop_bg_color);
     desktop_icons_draw_all();
     topbar_draw();
@@ -448,19 +552,61 @@ void ui_desktop_tick(void) {
     messagebox_draw();
     notification_draw();
     cursor_draw_arrow(mouse_x, mouse_y);
-    fb_present();
+
+    // ---------- Present ----------
+    // Cursor rect'i “gerçek çizim” boyutundan biraz büyük bas: iz kalmasın.
+    const int CW = 32;
+    const int CH = 32;
+    const int CPAD = 10; // 🔥 6 yerine 10 daha güvenli (antialias yok ama cursor şekli taşabilir)
+
+    if (need_full_present || prev_mouse_x < 0) {
+        fb_present();
+    } else {
+        // Cursor old+new (union mantığı)
+        present_rect_safe(prev_mouse_x - CPAD, prev_mouse_y - CPAD, CW + CPAD * 2, CH + CPAD * 2);
+        present_rect_safe(mouse_x      - CPAD, mouse_y      - CPAD, CW + CPAD * 2, CH + CPAD * 2);
+
+        // Selection old+new
+        if (prev_selecting || is_selecting) {
+            int ax0 = prev_sel_start_x, ay0 = prev_sel_start_y;
+            int ax1 = prev_sel_end_x,   ay1 = prev_sel_end_y;
+
+            int bx0 = sel_start_x,      by0 = sel_start_y;
+            int bx1 = mouse_x,          by1 = mouse_y;
+
+            int a_x = (ax0 < ax1) ? ax0 : ax1;
+            int a_y = (ay0 < ay1) ? ay0 : ay1;
+            int a_w = (ax0 < ax1) ? (ax1 - ax0) : (ax0 - ax1);
+            int a_h = (ay0 < ay1) ? (ay1 - ay0) : (ay0 - ay1);
+
+            int b_x = (bx0 < bx1) ? bx0 : bx1;
+            int b_y = (by0 < by1) ? by0 : by1;
+            int b_w = (bx0 < bx1) ? (bx1 - bx0) : (bx0 - bx1);
+            int b_h = (by0 < by1) ? (by1 - by0) : (by0 - by1);
+
+            const int PAD = 6; // 4 -> 6 biraz daha güvenli
+            present_rect_safe(a_x - PAD, a_y - PAD, a_w + PAD * 2, a_h + PAD * 2);
+            present_rect_safe(b_x - PAD, b_y - PAD, b_w + PAD * 2, b_h + PAD * 2);
+        }
+    }
+
+    // Save prev state
+    prev_mouse_x = mouse_x;
+    prev_mouse_y = mouse_y;
+    prev_selecting = is_selecting;
+    prev_sel_start_x = sel_start_x;
+    prev_sel_start_y = sel_start_y;
+    prev_sel_end_x = mouse_x;
+    prev_sel_end_y = mouse_y;
 }
 
 // ============================================================
-// Legacy blocking API (kalsın ama kullanma) ❌
+// Legacy blocking API (kalsın ama kullanma)
 // ============================================================
 void ui_desktop_run(void) {
     ui_desktop_init();
     while (1) {
         ui_desktop_tick();
-
-        // klavye eventlerini session artık dispatch edecek.
-        // Burayı boş bırakıyoruz.
         asm volatile("hlt");
     }
 }

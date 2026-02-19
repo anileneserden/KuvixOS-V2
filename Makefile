@@ -62,6 +62,7 @@ SRC_C = \
     kernel/fs/toyfs.c \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
+    kernel/ui/apps/calculator.c \
     kernel/ui/apps/demo.c \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/notepad.c \
@@ -70,6 +71,11 @@ SRC_C = \
     kernel/ui/bitmaps/icons/icon_close_16.c \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
+    kernel/ui/controls/button2.c \
+    kernel/ui/controls/control.c \
+    kernel/ui/controls/label2.c \
+    kernel/ui/controls/panel2.c \
+    kernel/ui/controls/ui_context.c \
     kernel/ui/dialogs/open_dialog.c \
     kernel/ui/dialogs/save_dialog.c \
     kernel/ui/font/font8x8_basic.c \

@@ -58,6 +58,7 @@ const ui_window_t* wm_get_window_ptr(int idx);
 int wm_get_z(int z_index);
 // mouse event bu frame’de pencereye gitti mi?
 int wm_did_consume_mouse(void);
+int wm_is_dragging_window(void);
 
 int wm_get_mouse_x(void);
 int wm_get_mouse_y(void);

@@ -139,6 +139,8 @@ static uint8_t unicode_to_kvx_byte(uint32_t cp) {
         case 0x015E: return 0xDE; // Ş
         case 0x0131: return 0xFD; // ı
         case 0x0130: return 0xDD; // İ
+        case 0x00D7: return 0xF7; // ×
+        case 0x00F7: return 0xF8; // ÷
         default:     return '?';
     }
 }

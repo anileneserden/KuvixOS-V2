@@ -7,6 +7,7 @@
 #include <kernel/drivers/video/gfx.h>
 #include <app/app.h>
 #include <ui/dialogs/save_dialog.h>
+#include <ui/desktop.h>
 
 #define WM_MAX_WINDOWS 20
 
@@ -29,6 +30,7 @@ static int g_mouse_x = 0;
 static int g_mouse_y = 0;
 static int g_mouse_consumed = 0;
 
+static uint8_t g_buttons_state = 0;
 
 extern uint32_t g_ticks_ms;
 
@@ -238,56 +240,73 @@ void wm_toggle_maximize(int idx) {
 void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t buttons) {
     g_mouse_x = mx;
     g_mouse_y = my;
+    g_buttons_state = buttons;
     g_mouse_consumed = 0;
 
     // 1) Modal save dialog
     if (save_dialog_is_active()) {
         save_dialog_handle_mouse(mx, my, (pressed & 0x01));
-        if (pressed & 0x01) g_mouse_consumed = 1;  // ✅ modal click desktop’a gitmesin
+        if (pressed & 0x01) g_mouse_consumed = 1;
         return;
     }
 
-    // 2) Normal window handling
+    // Hangi pencere üstte?
+    int idx = pick_top(mx, my);
+
+    // Pencere yoksa: sadece drag reset vb.
+    if (idx == -1) {
+        if (released & 0x01) {
+            g_mouse_down = 0;
+            g_dragging = 0;
+            g_drag_idx = -1;
+        }
+        return;
+    }
+
+    // Pencere var -> consume
+    g_mouse_consumed = 1;
+
+    // Pressed ise öne al + chrome hittest + drag başlat
     if (pressed & 0x01) {
-        int idx = pick_top(mx, my);
-        if (idx != -1) {
-            g_mouse_consumed = 1;
-            bring_to_front(idx);
+        bring_to_front(idx);
 
-            ui_window_t* w = &g_wins[idx].win;
-            wm_hittest_t hit = ui_chrome_hittest(w, mx, my);
+        ui_window_t* w = &g_wins[idx].win;
+        wm_hittest_t hit = ui_chrome_hittest(w, mx, my);
 
-            if (hit == HT_BTN_CLOSE) {
-                app_t* app = g_wins[idx].owner;
-
-                if (app && app->v && app->v->on_close_request) {
-                    int allow = app->v->on_close_request(app);
-                    if (!allow) return; // ✅ app engelledi (dirty dialog açtı vs.)
-                }
-
-                wm_close_window(idx);
-                return;
-            }
-            if (hit == HT_BTN_MAX)   { wm_toggle_maximize(idx); return; }
-            if (hit == HT_BTN_MIN)   { wm_minimize(idx); return; }
-
-            if (hit == HT_TITLE) {
-                g_mouse_down = 1;
-                g_drag_idx = idx;
-                g_down_x = mx;
-                g_down_y = my;
-                g_dragging = 0;
-                return;
-            }
-
-            // App mouse event
+        if (hit == HT_BTN_CLOSE) {
             app_t* app = g_wins[idx].owner;
-            if (app && app->v && app->v->on_mouse) {
-                app->v->on_mouse(app, mx, my, buttons, 0, 0);
+            if (app && app->v && app->v->on_close_request) {
+                int allow = app->v->on_close_request(app);
+                if (!allow) return;
             }
+            wm_close_window(idx);
+            return;
+        }
+
+        if (hit == HT_BTN_MAX) { wm_toggle_maximize(idx); return; }
+        if (hit == HT_BTN_MIN) { wm_minimize(idx); return; }
+
+        if (hit == HT_TITLE) {
+            g_mouse_down = 1;
+            g_drag_idx = idx;
+            g_down_x = mx;
+            g_down_y = my;
+            g_dragging = 0;
+            return;
+        }
+        // HT_CLIENT ise aşağıda app'e event gidecek
+    }
+
+    // ✅ App mouse event: pressed/released olmasa bile GİTSİN
+    // (hover + release için şart)
+    {
+        app_t* app = g_wins[idx].owner;
+        if (app && app->v && app->v->on_mouse) {
+            app->v->on_mouse(app, mx, my, buttons, pressed, released);
         }
     }
 
+    // Release -> drag reset
     if (released & 0x01) {
         g_mouse_down = 0;
         g_dragging = 0;
@@ -318,7 +337,7 @@ void wm_handle_mouse_move(int mx, int my) {
     if (top != -1) {
         app_t* app = g_wins[top].owner;
         if (app && app->v && app->v->on_mouse) {
-            app->v->on_mouse(app, mx, my, 0, 0, 0);
+            app->v->on_mouse(app, mx, my, g_buttons_state, 0, 0);
         }
     }
 }
@@ -403,4 +422,8 @@ int wm_get_z(int z_index) {
 
 int wm_did_consume_mouse(void) {
     return g_mouse_consumed;
+}
+
+int wm_is_dragging_window(void) {
+    return g_dragging;
 }
