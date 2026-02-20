@@ -3,6 +3,8 @@
 #include <kernel/drivers/video/gfx.h>
 #include <lib/string.h>
 #include <stdint.h>
+#include <kernel/printk.h>
+#include <kernel/serial.h>
 
 // 1. Fonksiyon Ön Bildirimleri (Parametreler vtable ile tam uyumlu hale getirildi)
 void terminal_on_create(app_t* app);
@@ -44,5 +46,8 @@ void terminal_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_t rele
 }
 
 void terminal_on_key(app_t* app, uint16_t key) {
-    (void)app; (void)key;
+    (void)app;
+
+    uint8_t sc = (uint8_t)(key & 0xFF);
+    printk("[TERM] key sc=0x%x\n" + sc);
 }

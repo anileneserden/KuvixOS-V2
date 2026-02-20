@@ -50,7 +50,7 @@ static void draw_btn(int x, int y, int w, int h, const char* t, bool hov, bool e
     uint32_t bg = enabled ? 0xAAAAAA : 0x888888;
     gfx_fill_rect(x, y, w, h, bg);
     gfx_draw_rect(x, y, w, h, hov ? 0xFFFFFF : 0x444444);
-    gfx_draw_text(x + 6, y + 4, 0x000000, t);
+    gfx_draw_text_utf8(x + 6, y + 4, 0x000000, t);
 }
 
 static bool selected_is_dir(void) {
@@ -297,20 +297,20 @@ void open_dialog_draw(void) {
     gfx_draw_rect(dx, dy, dw, dh, 0x000000);
 
     gfx_fill_rect(dx + 2, dy + 2, dw - 4, 20, 0x000080);
-    gfx_draw_text(dx + 8, dy + 5, 0xFFFFFF, g_dlg.title);
+    gfx_draw_text_utf8(dx + 8, dy + 5, 0xFFFFFF, g_dlg.title);
 
     // X
     gfx_fill_rect(dx + dw - 22, dy + 4, 18, 16, 0xFF0000);
-    gfx_draw_text(dx + dw - 16, dy + 6, 0xFFFFFF, "X");
+    gfx_draw_text_utf8(dx + dw - 16, dy + 6, 0xFFFFFF, "X");
 
     // path
     int nav_y = dy + 30;
     gfx_fill_rect(dx + 15, nav_y, 22, 22, 0xAAAAAA);
-    gfx_draw_text(dx + 22, nav_y + 4, 0x000000, "<");
+    gfx_draw_text_utf8(dx + 22, nav_y + 4, 0x000000, "<");
 
     gfx_fill_rect(dx + 42, nav_y, dw - 95, 22, 0xFFFFFF);
     gfx_draw_rect(dx + 42, nav_y, dw - 95, 22, 0x808080);
-    gfx_draw_text(dx + 47, nav_y + 4, 0x000000, g_path);
+    gfx_draw_text_utf8(dx + 47, nav_y + 4, 0x000000, g_path);
 
     // list
     int list_y = dy + 60;
@@ -323,24 +323,24 @@ void open_dialog_draw(void) {
         if (g_selected == i) gfx_fill_rect(dx + 16, iy, dw - 32, 17, 0xCCE8FF);
 
         uint32_t color = g_items[i].is_dir ? 0x0000AA : 0x000000;
-        gfx_draw_text(dx + 20, iy + 2, color, g_items[i].is_dir ? ">" : "-");
-        gfx_draw_text(dx + 35, iy + 2, color, g_items[i].name);
+        gfx_draw_text_utf8(dx + 20, iy + 2, color, g_items[i].is_dir ? ">" : "-");
+        gfx_draw_text_utf8(dx + 35, iy + 2, color, g_items[i].name);
     }
 
     // input yeri (klasör modunda da dursun ama pasif)
     int input_y = list_y + list_h + 15;
-    gfx_draw_text(dx + 15, input_y + 3, 0x000000, g_pick_dir_mode ? "Secim:" : "Dosya:");
+    gfx_draw_text_utf8(dx + 15, input_y + 3, 0x000000, g_pick_dir_mode ? "Secim:" : "Dosya:");
 
     gfx_fill_rect(dx + 90, input_y, dw - 190, 20, g_pick_dir_mode ? 0xEEEEEE : 0xFFFFFF);
     gfx_draw_rect(dx + 90, input_y, dw - 190, 20, 0x808080);
 
     if (!g_pick_dir_mode) {
-        gfx_draw_text(dx + 95, input_y + 3, 0x000000, g_dlg.buffer);
+        gfx_draw_text_utf8(dx + 95, input_y + 3, 0x000000, g_dlg.buffer);
     } else {
         if (g_selected >= 0 && g_selected < g_item_count) {
-            gfx_draw_text(dx + 95, input_y + 3, 0x000000, g_items[g_selected].name);
+            gfx_draw_text_utf8(dx + 95, input_y + 3, 0x000000, g_items[g_selected].name);
         } else {
-            gfx_draw_text(dx + 95, input_y + 3, 0x000000, "(mevcut klasor)");
+            gfx_draw_text_utf8(dx + 95, input_y + 3, 0x000000, "(mevcut klasor)");
         }
     }
 

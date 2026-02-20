@@ -1,5 +1,4 @@
 // kernel/ui/desktop.c
-
 #include <ui/desktop.h>
 #include <ui/desktop_icons.h>
 #include <ui/messagebox.h>
@@ -29,6 +28,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
+#include <kernel/serial.h>
 
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
@@ -95,6 +96,13 @@ static int      g_last_click_hit = -1;
 
 static const int      DRAG_THRESHOLD_PX = 6;
 static const uint32_t DBLCLICK_MS = 350;
+
+// ✅ Klavye/hotkey ile UI değişince bir kere full present zorla
+static bool g_force_full_present = false;
+
+void desktop_invalidate_full(void) {
+    g_force_full_present = true;
+}
 
 // ============================================================
 // Helpers
@@ -255,8 +263,7 @@ void ui_desktop_init(void) {
 
     desktop_icons_init();
     desktop_icons_snap_all();
-
-    appmgr_start_app(6);
+    appmgr_start_app(9);
 
     g_last_btn = 0;
     g_lmb_down = 0;
@@ -265,6 +272,9 @@ void ui_desktop_init(void) {
     g_last_click_ms = 0;
     g_last_click_hit = -1;
     is_selecting = false;
+
+    // ✅ ilk frame kesin ekrana basılsın
+    g_force_full_present = true;
 
     // (opsiyonel) diskten kurtarma - burada 1 kere çalışsın
     char disk_buffer[512];
@@ -295,26 +305,47 @@ void ui_desktop_init(void) {
 }
 
 void ui_desktop_handle_scancode(uint16_t sc) {
-    char c = kbd_scancode_to_ascii((uint8_t)(sc & 0xFF));
+    uint8_t sc8 = (uint8_t)(sc & 0xFF);
+    char c = kbd_scancode_to_ascii(sc8);
 
-    if (save_dialog_is_active()) { save_dialog_handle_key(sc, c); return; }
-    if (open_dialog_is_active()) { open_dialog_handle_key(sc, c); return; }
-    if (messagebox_is_visible()) return;
+    // ✅ GLOBAL HOTKEY: SUPER+R -> Run (app id=7)
+    // Set1: R make = 0x13, break = 0x93
+    // Not: kbd_is_super_pressed() senin keyboard driver'da olmalı.
+    if (kbd_is_super_pressed() && sc8 == 0x13 && ((sc8 & 0x80) == 0)) {
+        app_t* a = appmgr_start_app(7);
+        if (a) wm_set_active_id(a->win_id);
+        desktop_invalidate_full();
+        return;
+    }
+
+    printk("[DESKTOP] sc=0x%x\n", sc8);
+
+    // Modal'lar önce yesin
+    if (save_dialog_is_active()) { save_dialog_handle_key(sc, c); desktop_invalidate_full(); return; }
+    if (open_dialog_is_active()) { open_dialog_handle_key(sc, c); desktop_invalidate_full(); return; }
+    if (messagebox_is_visible()) { return; }
 
     if (desktop_icons_is_any_editing()) {
         desktop_icons_handle_key(sc, c);
+        desktop_invalidate_full();
         return;
     }
 
     int active_id = wm_get_active_id();
+    printk("[DESKTOP] active_win=%d\n", active_id);
+
     app_t* active_app = appmgr_get_app_by_window_id(active_id);
+    printk("[DESKTOP] active_app=%p\n", (void*)active_app);
+
     if (active_app && active_app->v && active_app->v->on_key) {
         active_app->v->on_key(active_app, sc);
+        desktop_invalidate_full();
     }
 }
 
 void ui_desktop_tick(void) {
     int dx, dy;
+    int wheel = 0;
     uint8_t btn;
 
     // --- Dirty-rect tracking (cursor + selection) ---
@@ -333,10 +364,9 @@ void ui_desktop_tick(void) {
     ps2_mouse_poll();
 
     // Eğer hiç event yoksa bile btn state'ini bilmek bazen lazım olabilir.
-    // Ama ps2_mouse_pop() event üretmiyorsa btn güncellenmez; o yüzden btn'u varsayılanla başlat.
     btn = g_last_btn;
 
-    while (ps2_mouse_pop(&dx, &dy, &btn)) {
+    while (ps2_mouse_pop(&dx, &dy, &wheel, &btn)) {
         had_mouse_event = true;
 
         mouse_x += dx;
@@ -349,14 +379,12 @@ void ui_desktop_tick(void) {
 
         if (dx != 0 || dy != 0) {
             wm_handle_mouse_move(mouse_x, mouse_y);
+
+            // Mouse bir pencerenin üstündeyse hover değişebilir -> full present gerekli
+            if (wm_find_window_at(mouse_x, mouse_y) != -1) {
+                need_full_present = true;
+            }
         }
-
-        if (dx != 0 || dy != 0) {
-        // Mouse bir pencerenin üstündeyse hover değişebilir -> full present gerekli
-        int over = wm_find_window_at(mouse_x, mouse_y);
-        if (over != -1) need_full_present = true;
-    }
-
 
         uint8_t pressed  = btn & ~g_last_btn;
         uint8_t released = g_last_btn & ~btn;
@@ -524,11 +552,13 @@ void ui_desktop_tick(void) {
         g_last_btn = btn;
     }
 
-    // Mouse event gelmediyse bile: hover state düzgün olsun diye WM'e move geçmek istersen:
-    // (Bazı WM'ler hover için her tick ister. İstersen aç.)
-    // if (!had_mouse_event) wm_handle_mouse_move(mouse_x, mouse_y);
-
     // ---------- Render ----------
+    // ✅ Klavye/hotkey ile UI değiştiyse bu frame full present zorla
+    if (g_force_full_present) {
+        need_full_present = true;
+        g_force_full_present = false;
+    }
+
     if (wm_is_dragging_window()) need_full_present = true;
 
     fb_clear(desktop_bg_color);
@@ -554,15 +584,14 @@ void ui_desktop_tick(void) {
     cursor_draw_arrow(mouse_x, mouse_y);
 
     // ---------- Present ----------
-    // Cursor rect'i “gerçek çizim” boyutundan biraz büyük bas: iz kalmasın.
     const int CW = 32;
     const int CH = 32;
-    const int CPAD = 10; // 🔥 6 yerine 10 daha güvenli (antialias yok ama cursor şekli taşabilir)
+    const int CPAD = 10;
 
     if (need_full_present || prev_mouse_x < 0) {
         fb_present();
     } else {
-        // Cursor old+new (union mantığı)
+        // Cursor old+new
         present_rect_safe(prev_mouse_x - CPAD, prev_mouse_y - CPAD, CW + CPAD * 2, CH + CPAD * 2);
         present_rect_safe(mouse_x      - CPAD, mouse_y      - CPAD, CW + CPAD * 2, CH + CPAD * 2);
 
@@ -584,7 +613,7 @@ void ui_desktop_tick(void) {
             int b_w = (bx0 < bx1) ? (bx1 - bx0) : (bx0 - bx1);
             int b_h = (by0 < by1) ? (by1 - by0) : (by0 - by1);
 
-            const int PAD = 6; // 4 -> 6 biraz daha güvenli
+            const int PAD = 6;
             present_rect_safe(a_x - PAD, a_y - PAD, a_w + PAD * 2, a_h + PAD * 2);
             present_rect_safe(b_x - PAD, b_y - PAD, b_w + PAD * 2, b_h + PAD * 2);
         }

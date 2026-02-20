@@ -50,7 +50,7 @@ static inline notepad_tab_t* ntab(notepad_t* n) {
 }
 
 // ------------------------------------------------------------
-// YARDIMCI: Direkt Kaydet (aktif tab file_path dolu olmalı)
+// YARDIMCI: Direkt Kaydet
 // ------------------------------------------------------------
 static void notepad_direct_save(notepad_t* data) {
     notepad_tab_t* tab = ntab(data);
@@ -61,7 +61,6 @@ static void notepad_direct_save(notepad_t* data) {
         return;
     }
 
-    // VFS dosyasını güncelle
     vfs_remove(tab->file_path);
 
     vfs_file_t* f = NULL;
@@ -70,19 +69,16 @@ static void notepad_direct_save(notepad_t* data) {
         vfs_write(f, tab->text, tab->cursor, &written);
         vfs_close(f);
 
-        // --- ATA DİSKE FİZİKSEL YAZMA (SYNC) ---
         if (ata_pio_is_ready()) {
             blockdev_t* dev = ata_pio_get_dev();
             if (dev && dev->write) {
-                int ok = dev->write(dev, 2000, 1, tab->text); // örnek 1 sektör
+                int ok = dev->write(dev, 2000, 1, tab->text);
                 printk("[Notepad] ATA write %s\n", ok ? "SUCCESS" : "FAILED");
             }
         }
-        // --------------------------------------
 
         tab->is_dirty = false;
 
-        // Kaydedildi mesajında nereye kaydettiğini göster
         char msg[160];
         memset(msg, 0, sizeof(msg));
         strcpy(msg, "Kaydedildi: ");
@@ -94,7 +90,7 @@ static void notepad_direct_save(notepad_t* data) {
 }
 
 // ------------------------------------------------------------
-// SAVE DIALOG CALLBACK: Kaydet onayı (owner_win_id ile)
+// SAVE DIALOG CALLBACK
 // ------------------------------------------------------------
 static void notepad_on_save_confirm(const char* filename) {
     int owner = save_dialog_get_owner_win_id();
@@ -106,7 +102,6 @@ static void notepad_on_save_confirm(const char* filename) {
         return;
     }
 
-    // /home/desktop/<filename>.txt
     strcpy(tab->file_path, "/home/desktop/");
     strcat(tab->file_path, (filename && filename[0]) ? filename : "adsiz");
     if (strstr(tab->file_path, ".txt") == NULL) strcat(tab->file_path, ".txt");
@@ -114,7 +109,6 @@ static void notepad_on_save_confirm(const char* filename) {
     notepad_direct_save(data);
     data->menu_open = false;
 
-    // Eğer "save sonrası kapat" modundaysak burada kapat
     if (data->close_after_save) {
         int wid = data->window_id;
         data->close_after_save = false;
@@ -125,8 +119,7 @@ static void notepad_on_save_confirm(const char* filename) {
 }
 
 // ------------------------------------------------------------
-// OPEN DIALOG CALLBACK: Dosya aç (aynı pencereye yükle)
-// Not: open_dialog.c FULL PATH gönderiyor.
+// OPEN DIALOG CALLBACK
 // ------------------------------------------------------------
 static void notepad_on_open_confirm(const char* full_path) {
     int owner = open_dialog_get_owner_win_id();
@@ -169,8 +162,6 @@ static void notepad_process_close_prompt(app_t* app) {
     if (!data || !tab) return;
 
     if (!data->close_pending) return;
-
-    // messagebox hala açıkken bekle
     if (messagebox_is_visible()) return;
 
     MB_RES_T r = messagebox_get_result();
@@ -208,7 +199,6 @@ static void notepad_on_create(app_t* self) {
     data->close_after_save = false;
     data->pending_close_win_id = -1;
 
-    // Tek tab ile başlat
     data->tab_count = 1;
     data->active_tab = 0;
 
@@ -239,64 +229,69 @@ static void notepad_on_draw(app_t* self) {
     if (save_dialog_is_active() && data->menu_open) data->menu_open = false;
     if (open_dialog_is_active() && data->menu_open) data->menu_open = false;
 
+    // WM origin client’a set edildiği için çizimler 0,0'dan!
     ui_rect_t client = wm_get_client_rect(self->win_id);
+
+    // Mouse ekran coords -> client-relative
     int mx = wm_get_mouse_x();
     int my = wm_get_mouse_y();
+    int lx = mx - client.x;
+    int ly = my - client.y;
 
-    // Menü bar
-    gfx_fill_rect(client.x, client.y, client.w, 20, 0xCCCCCC);
+    // --- Menü bar (client-relative) ---
+    gfx_fill_rect(0, 0, client.w, 20, 0xCCCCCC);
 
     char header_text[160];
     const char* display_name = (strlen(tab->file_path) > 0) ? tab->file_path : "Adsiz";
     strcpy(header_text, "Dosya: ");
-    strncat(header_text, display_name, sizeof(header_text) - strlen(header_text) - 1);
-    if (tab->is_dirty) strncat(header_text, "*", sizeof(header_text) - strlen(header_text) - 1);
-    gfx_draw_text(client.x + 120, client.y + 5, 0x444444, header_text);
+    strncat(header_text, display_name, sizeof(header_text) - (int)strlen(header_text) - 1);
+    if (tab->is_dirty) strncat(header_text, "*", sizeof(header_text) - (int)strlen(header_text) - 1);
+    gfx_draw_text_utf8(120, 5, 0x444444, header_text);
 
-    int btn_x = client.x + 5, btn_y = client.y + 2, btn_w = 55, btn_h = 16;
-    bool is_hover = (mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h);
+    int btn_x = 5, btn_y = 2, btn_w = 55, btn_h = 16;
+    bool is_hover = (lx >= btn_x && lx <= btn_x + btn_w && ly >= btn_y && ly <= btn_y + btn_h);
 
     if (data->menu_open) {
         gfx_fill_rect(btn_x, btn_y, btn_w, btn_h, 0xAAAAAA);
     } else if (is_hover) {
         gfx_draw_rect(btn_x, btn_y, btn_w, btn_h, 0xFFFFFF);
     }
-    gfx_draw_text(btn_x + 8, btn_y + 3, 0x000000, "Dosya");
+    gfx_draw_text_utf8(btn_x + 8, btn_y + 3, 0x000000, "Dosya");
 
-    // Yazı alanı
-    int text_y = client.y + 20;
-    gfx_fill_rect(client.x, text_y, client.w, client.h - 20, 0xFFFFFF);
-    gfx_draw_line(client.x, text_y, client.x + client.w, text_y, 0x808080);
+    // --- Yazı alanı ---
+    int text_y = 20;
+    gfx_fill_rect(0, text_y, client.w, client.h - 20, 0xFFFFFF);
+    gfx_draw_line(0, text_y, client.w, text_y, 0x808080);
 
-    int cx = client.x + 5, cy = text_y + 5;
+    int cx = 5, cy = text_y + 5;
     char buf[2] = {0, 0};
 
     for (uint32_t i = 0; i < tab->cursor; i++) {
         buf[0] = tab->text[i];
         if (buf[0] == '\n') {
             cy += 14;
-            cx = client.x + 5;
+            cx = 5;
         } else {
             gfx_draw_text(cx, cy, 0x000000, buf);
             cx += 8;
         }
-        if (cy > client.y + client.h - 14) break;
+        if (cy > client.h - 14) break;
     }
     gfx_draw_text(cx, cy, 0x000000, "_");
 
-    // Dropdown
+    // --- Dropdown (client-relative) ---
     if (data->menu_open) {
-        int m_x = btn_x, m_y = client.y + 20;
+        int m_x = btn_x, m_y = 20;
         gfx_fill_rect(m_x, m_y, 110, 72, 0xFFFFFF);
         gfx_draw_rect(m_x, m_y, 110, 72, 0x000000);
 
         for (int i = 0; i < 4; i++) {
             int item_y = m_y + 5 + (i * 16);
-            if (mx >= m_x && mx <= m_x + 110 && my >= item_y && my <= item_y + 16) {
+            if (lx >= m_x && lx <= m_x + 110 && ly >= item_y && ly <= item_y + 16) {
                 gfx_fill_rect(m_x + 1, item_y, 108, 16, 0x000080);
-                gfx_draw_text(m_x + 10, item_y + 2, 0xFFFFFF, notepad_menu_items[i]);
+                gfx_draw_text_utf8(m_x + 10, item_y + 2, 0xFFFFFF, notepad_menu_items[i]);
             } else {
-                gfx_draw_text(m_x + 10, item_y + 2, 0x000000, notepad_menu_items[i]);
+                gfx_draw_text_utf8(m_x + 10, item_y + 2, 0x000000, notepad_menu_items[i]);
             }
         }
     }
@@ -313,12 +308,22 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
     if (messagebox_is_visible()) return;
     if (wm_is_any_window_captured()) return;
 
-    if (!(buttons & 1)) return;
-
+    // client rect
     ui_rect_t client = wm_get_client_rect(self->win_id);
+    int lx = mx - client.x;
+    int ly = my - client.y;
 
-    bool file_btn_hit = (mx >= client.x && mx <= client.x + 60 &&
-                         my >= client.y && my <= client.y + 20);
+    // Bu sürümde WM sadece buttons veriyorsa, "basılıyken sürekli toggle" olur.
+    // Şimdilik sadece basılıyken bir kere toggle yapmamak için
+    // "button latch" kullanacağız.
+    static uint8_t prev_buttons = 0;
+    uint8_t pressed = (uint8_t)(buttons & ~prev_buttons);
+    prev_buttons = buttons;
+
+    if (!(pressed & 1)) return; // sadece click anında
+
+    bool file_btn_hit = (lx >= 0 && lx <= 60 &&
+                         ly >= 0 && ly <= 20);
 
     if (file_btn_hit) {
         data->menu_open = !data->menu_open;
@@ -326,22 +331,22 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
     }
 
     if (data->menu_open) {
-        int m_x = client.x + 5, m_y = client.y + 20;
+        int m_x = 5, m_y = 20;
         int m_w = 110, m_h = 72;
 
-        bool menu_area_hit = (mx >= m_x && mx <= m_x + m_w &&
-                              my >= m_y && my <= m_y + m_h);
+        bool menu_area_hit = (lx >= m_x && lx <= m_x + m_w &&
+                              ly >= m_y && ly <= m_y + m_h);
 
         if (menu_area_hit) {
-            int item = (my - m_y - 5) / 16;
+            int item = (ly - m_y - 5) / 16;
             data->menu_open = false;
 
-            if (item == 0) { // Aç
+            if (item == 0) {
                 open_dialog_show("Dosya Ac", "", self->win_id, notepad_on_open_confirm);
                 return;
             }
 
-            if (item == 1) { // Kaydet
+            if (item == 1) {
                 notepad_tab_t* tab = ntab(data);
                 if (!tab) return;
 
@@ -353,12 +358,12 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
                 return;
             }
 
-            if (item == 2) { // Farklı Kaydet
+            if (item == 2) {
                 save_dialog_show("Farkli Kaydet", "adsiz.txt", 0, self->win_id, notepad_on_save_confirm);
                 return;
             }
 
-            if (item == 3) { // Kapat
+            if (item == 3) {
                 if (self->v && self->v->on_close_request) self->v->on_close_request(self);
                 else wm_close_window(self->win_id);
                 return;
@@ -408,7 +413,7 @@ static void notepad_on_destroy(app_t* self) {
 }
 
 // ------------------------------------------------------------
-// Masaüstünden dosya açma: NOTEPAD singleton ise aynı pencereye yükler
+// Masaüstünden dosya açma
 // ------------------------------------------------------------
 void notepad_open_file(const char* path) {
     app_t* self = appmgr_start_app(3);

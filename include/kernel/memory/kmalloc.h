@@ -1,10 +1,12 @@
-#ifndef KMALLOC_H
-#define KMALLOC_H
-
+// include/kernel/memory/kmalloc.h
+#pragma once
 #include <stddef.h>
 #include <stdint.h>
 
-void* kmalloc(size_t sz);
-void* kmalloc_a(size_t sz); // Hizalanmış
+void  kmalloc_init(void* heap_start, size_t heap_size);
 
-#endif
+void* kmalloc(size_t size);
+void  kfree(void* ptr);
+
+// debug istersen
+size_t kmalloc_bytes_free(void);

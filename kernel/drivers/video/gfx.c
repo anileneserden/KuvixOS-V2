@@ -245,3 +245,44 @@ void gfx_reset_origin(void) {
     g_origin_x = 0;
     g_origin_y = 0;
 }
+
+// UTF-8 -> CP1254 (Türkçe subset) tek byte çevirir.
+// Dönen: 0..255 tek byte, '?' fallback
+static uint8_t utf8_to_cp1254_1(const char** ps) {
+    const unsigned char* s = (const unsigned char*)(*ps);
+
+    if (s[0] < 0x80) { // ASCII
+        (*ps)++;
+        return (uint8_t)s[0];
+    }
+
+    // 2-byte sequences (Türkçe)
+    if ((s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+        unsigned char b0 = s[0], b1 = s[1];
+        (*ps) += 2;
+
+        // UTF-8 -> Unicode codepoint
+        uint16_t cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F);
+
+        // Türkçe harfleri CP1254'e map et
+        switch (cp) {
+            case 0x00E7: return 0xE7; // ç
+            case 0x00C7: return 0xC7; // Ç
+            case 0x011F: return 0xF0; // ğ  (sen 0xF0 kullanıyorsun)
+            case 0x011E: return 0xD0; // Ğ  (fontta yoksa ekle)
+            case 0x0131: return 0xFD; // ı
+            case 0x0130: return 0xDD; // İ
+            case 0x00F6: return 0xF6; // ö
+            case 0x00D6: return 0xD6; // Ö
+            case 0x00FC: return 0xFC; // ü
+            case 0x00DC: return 0xDC; // Ü
+            case 0x015F: return 0xFE; // ş
+            case 0x015E: return 0xDE; // Ş
+            default: return '?';
+        }
+    }
+
+    // diğer UTF-8 uzunlukları: skip 1 byte fallback
+    (*ps)++;
+    return '?';
+}

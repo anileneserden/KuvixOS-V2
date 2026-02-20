@@ -75,6 +75,6 @@ void context_menu_draw(void) {
     gfx_draw_rect(menu_x, menu_y, w, h, 0x000000);
 
     for (int i = 0; i < menu_item_count; i++) {
-        gfx_draw_text(menu_x + 5, menu_y + (i * 20) + 5, 0x000000, menu_items[i].text);
+        gfx_draw_text_utf8(menu_x + 5, menu_y + (i * 20) + 5, 0x000000, menu_items[i].text);
     }
 }

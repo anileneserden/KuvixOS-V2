@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <ui/wm.h>
 
+#include <ui/apps/pixel_draw_app.h>
+
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
 extern const app_vtbl_t file_manager_vtbl;
@@ -14,6 +16,9 @@ extern const app_vtbl_t notepad_vtbl;
 extern const app_vtbl_t setup_wizard_vtbl;
 extern const app_vtbl_t demo_app_vtbl;
 extern const app_vtbl_t calculator_vtbl;
+extern const app_vtbl_t run_vtbl;
+extern const app_vtbl_t grid_demo_app_vtbl;
+extern const app_vtbl_t pixel_draw_app_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -28,18 +33,20 @@ typedef struct {
 } app_definition_t;
 
 static app_definition_t app_registry[] = {
-    { 1, "Terminal",     &terminal_vtbl,      120,  90, 520, 320, 1024 },
-    { 2, "File Manager", &file_manager_vtbl,   40,  60, 420, 260, 2048 },
-    { 3, "Notepad",      &notepad_vtbl,       150, 100, 450, 350, 1024 },
-    { 4, "Setup Wizard", &setup_wizard_vtbl,  140,  90, 520, 320, 1024 },
-    { 5, "Demo",         &demo_app_vtbl,      160, 120, 520, 240,    0 },
-    { 6, "Calculator",   &calculator_vtbl,    160, 120, 520, 240,    0 },
+    { 1, "Terminal",     &terminal_vtbl,       120,  90, 520, 320, 1024 },
+    { 2, "File Manager", &file_manager_vtbl,    40,  60, 420, 260, 2048 },
+    { 3, "Notepad",      &notepad_vtbl,        150, 100, 450, 350, 1024 },
+    { 4, "Setup Wizard", &setup_wizard_vtbl,   140,  90, 520, 320, 1024 },
+    { 5, "Demo",         &demo_app_vtbl,       160, 120, 520, 240,    0 },
+    { 6, "Calculator",   &calculator_vtbl,     160, 120, 300, 380,    0 },
+    { 7, "Run",          &run_vtbl,            200, 140, 420, 140,  256 },
+    { 8, "Grid Demo",    &grid_demo_app_vtbl,  120,  80, 720, 540,   16 },
+    { 9, "Pixel Draw",   &pixel_draw_app_vtbl, 120,  80, 900, 650, sizeof(pixel_draw_app_t) },
     { 0, NULL,           NULL,                  0,   0,   0,   0,    0 }
 };
 
 #define APP_MAX 16
 static app_t* g_apps[APP_MAX];
-static int g_app_count = 0;
 
 // ------------------------------------------------------------
 // INTERNAL HELPERS
@@ -54,11 +61,42 @@ static app_definition_t* appmgr_get_def(int app_id) {
 }
 
 static app_t* appmgr_get_running_by_id(int app_id) {
-    for (int i = 0; i < g_app_count; i++) {
+    for (int i = 0; i < APP_MAX; i++) {
         if (g_apps[i] && g_apps[i]->id == app_id && g_apps[i]->visible)
             return g_apps[i];
     }
     return NULL;
+}
+
+static int appmgr_find_free_slot(void) {
+    for (int i = 0; i < APP_MAX; i++) {
+        if (g_apps[i] == NULL) return i;
+    }
+    return -1;    
+}
+
+void appmgr_on_window_closed(int win_id) {
+    for (int i = 0; i < APP_MAX; i++) {
+        app_t* a = g_apps[i];
+        if (!a) continue;
+        if (a->win_id != win_id) continue;
+
+        // app destroy callback
+        if (a->v && a->v->on_destroy)
+            a->v->on_destroy(a);
+
+        // user data free
+        if (a->user) kfree(a->user);
+
+        // app free
+        kfree(a);
+        g_apps[i] = NULL;
+
+        // aktif pencere kapandıysa WM aktifliği temizlemek isteyebilirsin
+        // (WM tarafında zaten handle yapıyorsan sorun yok)
+        return;
+    }
+    
 }
 
 // ------------------------------------------------------------
@@ -66,7 +104,6 @@ static app_t* appmgr_get_running_by_id(int app_id) {
 // ------------------------------------------------------------
 
 void appmgr_init(void) {
-    g_app_count = 0;
     for (int i = 0; i < APP_MAX; i++)
         g_apps[i] = NULL;
 
@@ -74,11 +111,21 @@ void appmgr_init(void) {
 }
 
 app_t* appmgr_get_app_by_window_id(int win_id) {
-    for (int i = 0; i < g_app_count; i++) {
+    for (int i = 0; i < APP_MAX; i++) {
         if (g_apps[i] && g_apps[i]->win_id == win_id)
             return g_apps[i];
     }
     return NULL;
+}
+
+int appmgr_find_window_by_app_id(int app_id) {
+    for (int i = 0; i < APP_MAX; i++) {
+        if (g_apps[i] && g_apps[i]->id == app_id && g_apps[i]->visible) {
+            if (wm_is_window_alive(g_apps[i]->win_id))
+                return g_apps[i]->win_id;
+        }
+    }
+    return -1;
 }
 
 // ------------------------------------------------------------
@@ -90,7 +137,7 @@ app_t* appmgr_start_app(int app_id) {
     app_definition_t* def = appmgr_get_def(app_id);
     if (!def || !def->vtbl) return NULL;
 
-    // örnek: Notepad singleton yapmak istersen
+    // örnek Notepad singleton yapmak istersen
     if (app_id == 3) {
         app_t* existing = appmgr_get_running_by_id(app_id);
         if (existing && wm_is_window_alive(existing->win_id)) {
@@ -99,8 +146,18 @@ app_t* appmgr_start_app(int app_id) {
         }
     }
 
-    if (g_app_count >= APP_MAX) {
-        printk("AppManager: limit dolu!\n");
+    // Run'ı da singleton yap (Win+R spam yemesin)
+    if (app_id == 7) {
+        int w = appmgr_find_window_by_app_id(7);
+        if (w != -1) {
+            wm_set_active(w);
+            return appmgr_get_app_by_window_id(w);
+        }
+    }
+    
+    int slot = appmgr_find_free_slot();
+    if (slot < 0) {
+        printk("AppManager: limit dolu\n");
         return NULL;
     }
 
@@ -127,7 +184,7 @@ app_t* appmgr_start_app(int app_id) {
     if (a->v && a->v->on_create)
         a->v->on_create(a);
 
-    g_apps[g_app_count++] = a;
+    g_apps[slot] = a;
 
     wm_set_active(win_id);
 

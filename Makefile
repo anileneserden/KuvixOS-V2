@@ -16,8 +16,8 @@ IMAGE  = KuvixOS.iso
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
-          -Iinclude -DTIMEZONE_OFFSET=3 \
-          -DKBD_SERIAL_DEBUG
+          -Iinclude -DTIMEZONE_OFFSET=3
+#          -DKBD_SERIAL_DEBUG
 
 ASFLAGS = -m32
 NASMFLAGS = -f elf32
@@ -65,7 +65,10 @@ SRC_C = \
     kernel/ui/apps/calculator.c \
     kernel/ui/apps/demo.c \
     kernel/ui/apps/file_manager.c \
+    kernel/ui/apps/grid_demo.c \
     kernel/ui/apps/notepad.c \
+    kernel/ui/apps/pixel_draw_app.c \
+    kernel/ui/apps/run.c \
     kernel/ui/apps/setup_wizard.c \
     kernel/ui/apps/terminal.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
@@ -102,6 +105,7 @@ SRC_C = \
     kernel/ui/wallpaper.c \
     kernel/ui/window_chrome.c \
     kernel/ui/window.c \
+    kernel/ui/widgets/textbox.c \
     kernel/ui/wm.c \
     kernel/ui/theme_builtin.c \
     lib/commands/commands.c \

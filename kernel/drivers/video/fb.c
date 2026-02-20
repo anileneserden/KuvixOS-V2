@@ -34,7 +34,7 @@ void fb_init(uint32_t lfb_addr, uint32_t width, uint32_t height, uint32_t pitch_
     fb_clear(0x1a1a1a);
     fb_present();
 
-    printk("FB INIT: addr=0x%x w=%d h=%d pitchB=%d pitchP=%d\n",
+    printk("FB INIT: addr=%x w=%d h=%d pitchB=%d pitchP=%d\n",
            (uint32_t)fb_addr, FB_WIDTH, FB_HEIGHT, FB_PITCH_BYTES, FB_PITCH_PIXELS);
 }
 

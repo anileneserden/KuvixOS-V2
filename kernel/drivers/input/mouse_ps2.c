@@ -1,14 +1,16 @@
+// kernel/drivers/input/mouse_ps2.c
 #include <kernel/drivers/input/mouse_ps2.h>
 #include <arch/x86/io.h>
 #include <stdint.h>
 #include <ui/wm.h>
 
-// Telemetri için (debug_screen'den okunacak)
+// Telemetri (debug_screen'den okunacak)
 volatile int32_t g_mouse_last_dx = 0;
 volatile int32_t g_mouse_last_dy = 0;
+volatile int32_t g_mouse_last_wheel = 0;
 volatile uint32_t g_mouse_irq_count = 0;
 
-// Eski global koordinatlar (varmış, bıraktım)
+// Eski global koordinatlar
 int mouse_x = 400;
 int mouse_y = 300;
 
@@ -40,6 +42,77 @@ static void ps2_mouse_write(uint8_t data) {
     outb(0x60, data);
 }
 
+static uint8_t ps2_mouse_read_byte(void) {
+    ps2_wait_read();
+    return inb(0x60);
+}
+
+static uint8_t ps2_mouse_read_ack(void) {
+    // Mouse komutlarına ACK genelde 0xFA döner.
+    // Çok sıkı kontrol etmek istemezsen direkt oku geç.
+    return ps2_mouse_read_byte();
+}
+
+static void ps2_mouse_set_sample_rate(uint8_t rate) {
+    ps2_mouse_write(0xF3);      // Set Sample Rate
+    (void)ps2_mouse_read_ack(); // ACK
+    ps2_mouse_write(rate);
+    (void)ps2_mouse_read_ack(); // ACK
+}
+
+static uint8_t ps2_mouse_get_device_id(void) {
+    ps2_mouse_write(0xF2);      // Get Device ID
+    (void)ps2_mouse_read_ack(); // ACK
+    return ps2_mouse_read_byte(); // ID
+}
+
+// ------------------------------------------------------------
+// Packet assembly (3-byte default, 4-byte if wheel enabled)
+// ------------------------------------------------------------
+static uint8_t packet[4];
+static int packet_index = 0;
+static int packet_size  = 3; // 3 = standart, 4 = wheel (IntelliMouse)
+
+// Event queue
+typedef struct {
+    int dx, dy;
+    int wheel;          // 0 normally, +/- on wheel
+    uint8_t buttons;    // bit0 L, bit1 R, bit2 M
+} mouse_ev_t;
+
+#define MOUSE_QSIZE 32
+static mouse_ev_t q[MOUSE_QSIZE];
+static int q_r = 0, q_w = 0;
+
+static void q_push(int dx, int dy, int wheel, uint8_t buttons) {
+    int next = (q_w + 1) % MOUSE_QSIZE;
+    if (next == q_r) {
+        // dolu -> en eskiyi ez
+        q_r = (q_r + 1) % MOUSE_QSIZE;
+    }
+    q[q_w].dx = dx;
+    q[q_w].dy = dy;
+    q[q_w].wheel = wheel;
+    q[q_w].buttons = buttons;
+    q_w = next;
+}
+
+int ps2_mouse_pop(int* dx, int* dy, int* wheel, uint8_t* buttons) {
+    if (q_r == q_w) return 0;
+
+    mouse_ev_t ev = q[q_r];
+    q_r = (q_r + 1) % MOUSE_QSIZE;
+
+    if (dx) *dx = ev.dx;
+    if (dy) *dy = ev.dy;
+    if (wheel) *wheel = ev.wheel;
+    if (buttons) *buttons = ev.buttons;
+    return 1;
+}
+
+// ------------------------------------------------------------
+// Init
+// ------------------------------------------------------------
 void ps2_mouse_init(void) {
     // A. Flush
     for (int i = 0; i < 32; i++) {
@@ -70,43 +143,32 @@ void ps2_mouse_init(void) {
 
     // E. defaults
     ps2_mouse_write(0xF6);
-    ps2_wait_read();
-    (void)inb(0x60); // ACK
+    (void)ps2_mouse_read_ack(); // ACK
+
+    // --- Wheel enable (IntelliMouse) ---
+    // Set sample rate sequence: 200, 100, 80 then Get ID
+    ps2_mouse_set_sample_rate(200);
+    ps2_mouse_set_sample_rate(100);
+    ps2_mouse_set_sample_rate(80);
+
+    uint8_t id = ps2_mouse_get_device_id();
+    packet_size = (id == 3) ? 4 : 3;
 
     // F. enable reporting
     ps2_mouse_write(0xF4);
-    ps2_wait_read();
-    (void)inb(0x60); // ACK
+    (void)ps2_mouse_read_ack(); // ACK
 
     // G. Flush
     while (inb(0x64) & 0x01) (void)inb(0x60);
+
+    // reset assembly
+    packet_index = 0;
+    g_mouse_last_wheel = 0;
 }
 
-// 3-byte packet assembly
-static uint8_t packet[3];
-static int packet_index = 0;
-
-typedef struct {
-    int dx, dy;
-    uint8_t buttons;
-} mouse_ev_t;
-
-#define MOUSE_QSIZE 32
-static mouse_ev_t q[MOUSE_QSIZE];
-static int q_r = 0, q_w = 0;
-
-static void q_push(int dx, int dy, uint8_t buttons) {
-    int next = (q_w + 1) % MOUSE_QSIZE;
-    if (next == q_r) {
-        // dolu -> en eskiyi ez
-        q_r = (q_r + 1) % MOUSE_QSIZE;
-    }
-    q[q_w].dx = dx;
-    q[q_w].dy = dy;
-    q[q_w].buttons = buttons;
-    q_w = next;
-}
-
+// ------------------------------------------------------------
+// Byte handler (called from IRQ / poll)
+// ------------------------------------------------------------
 void ps2_mouse_handle_byte(uint8_t data) {
     if (packet_index == 0) {
         // sync bit (bit3) şart
@@ -116,40 +178,41 @@ void ps2_mouse_handle_byte(uint8_t data) {
     }
 
     packet[packet_index++] = data;
-    if (packet_index < 3) return;
+    if (packet_index < packet_size) return;
 
     packet_index = 0;
 
     uint8_t b = packet[0];
+
     int dx = sign_extend_8(packet[1], (b & 0x10) != 0);
     int dy = sign_extend_8(packet[2], (b & 0x20) != 0);
     dy = -dy;
 
-    // Telemetri için son dx/dy
+    int wheel = 0;
+    if (packet_size == 4) {
+        wheel = (int)(int8_t)packet[3]; // genelde -1/+1
+        g_mouse_last_wheel = wheel;
+    } else {
+        g_mouse_last_wheel = 0;
+    }
+
+    // Telemetri
     g_mouse_last_dx = dx;
     g_mouse_last_dy = dy;
 
-    q_push(dx, dy, b & 0x07);
+    // buttons: low 3 bits
+    q_push(dx, dy, wheel, (uint8_t)(b & 0x07));
 }
 
-int ps2_mouse_pop(int* dx, int* dy, uint8_t* buttons) {
-    if (q_r == q_w) return 0;
-
-    mouse_ev_t ev = q[q_r];
-    q_r = (q_r + 1) % MOUSE_QSIZE;
-
-    if (dx) *dx = ev.dx;
-    if (dy) *dy = ev.dy;
-    if (buttons) *buttons = ev.buttons;
-    return 1;
-}
-
+// ------------------------------------------------------------
+// Update -> WM
+// ------------------------------------------------------------
 void ps2_mouse_update(void) {
-    int dx, dy;
+    int dx, dy, wheel;
     uint8_t buttons;
     static uint8_t last_buttons = 0;
 
-    while (ps2_mouse_pop(&dx, &dy, &buttons)) {
+    while (ps2_mouse_pop(&dx, &dy, &wheel, &buttons)) {
         mouse_x += dx;
         mouse_y += dy;
 
@@ -161,20 +224,30 @@ void ps2_mouse_update(void) {
 #ifndef DEBUG_SELFTEST
         wm_handle_mouse_move(mouse_x, mouse_y);
 
-        uint8_t pressed  = buttons & ~last_buttons;
-        uint8_t released = last_buttons & ~buttons;
+        uint8_t pressed  = (uint8_t)(buttons & ~last_buttons);
+        uint8_t released = (uint8_t)(last_buttons & ~buttons);
 
         if (pressed || released) {
             wm_handle_mouse(mouse_x, mouse_y, pressed, released, buttons);
         }
+
+        // WHEEL event:
+        // WM tarafına wheel route etmek için 2 seçeneğin var:
+        // 1) wm_handle_mouse_wheel(...) diye yeni fonksiyon ekle
+        // 2) wm_handle_mouse(...) imzasını genişlet (e1/e2 gibi)
+        //
+        // Şimdilik sadece telemetri olarak duruyor.
+        // Eğer WM'e eklemek istersen örnek:
+        // if (wheel != 0) wm_handle_mouse_wheel(mouse_x, mouse_y, wheel, buttons);
 #endif
 
         last_buttons = buttons;
     }
 }
 
-// (Opsiyonel) polling’i test modunda kullanacaksan IRQ'yu kapat.
-// Aksi halde polling + IRQ beraber çalışmasın.
+// ------------------------------------------------------------
+// Poll (test mode)
+// ------------------------------------------------------------
 void ps2_mouse_poll(void) {
     while (inb(0x64) & 0x01) {
         uint8_t status = inb(0x64);
@@ -182,46 +255,29 @@ void ps2_mouse_poll(void) {
         if (status & 0x20) {
             ps2_mouse_handle_byte(data);
         } else {
-            // klavye byte'ı -> drop (buffer boşalsın yeter)
+            // klavye byte'ı -> drop
         }
     }
 }
 
-// IRQ12 handler: EN KRİTİK FIX -> 0x60'ı her zaman oku (buffer boşalsın)
+// ------------------------------------------------------------
+// IRQ12 handler
+// ------------------------------------------------------------
 void mouse_handler(void) {
     g_mouse_irq_count++;
 
     while (inb(0x64) & 0x01) {
         uint8_t status = inb(0x64);
-        uint8_t data   = inb(0x60); // HER ZAMAN oku
+        uint8_t data   = inb(0x60);
 
         if (status & 0x20) {
             ps2_mouse_handle_byte(data);
         } else {
-            // klavye byte'ı -> drop (istersen kbd kuyruğuna atarsın)
+            // klavye byte'ı -> drop
         }
     }
 
-    outb(0xA0, 0x20);
-    outb(0x20, 0x20);
-    g_mouse_irq_count++;
-
-    for (int i = 0; i < 32; i++)
-    {
-        uint8_t status = inb(0x64);
-
-        if ((status &0x01) == 0)
-            break;
-        
-        uint8_t data = inb(0x60);
-
-        if (status & 0x20) {
-            ps2_mouse_handle_byte(data);
-        } else {
-
-        }
-    }
-
+    // EOI
     outb(0xA0, 0x20);
     outb(0x20, 0x20);
 }

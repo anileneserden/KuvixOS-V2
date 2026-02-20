@@ -26,6 +26,7 @@ void wm_set_owner(int win_id, void* owner_app);
 
 void wm_set_active(int win_id);
 int  wm_get_active_id(void);
+void wm_set_active_id(int win_id);
 app_t* wm_get_active_owner(void);
 
 void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t buttons);

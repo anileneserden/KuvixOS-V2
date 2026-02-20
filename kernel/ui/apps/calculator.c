@@ -190,15 +190,19 @@ static void press_op(calculator_t* c, char op) {
     if (c->entering) {
         int64_t rhs = parse_i64(c->input);
         commit_pending(c, rhs);
+
         c->entering = 0;
         c->input_len = 0;
         c->input[0] = 0;
-        show_acc(c);
     } else {
-        // entering değilse: sadece op değiştir (Windows gibi)
-        show_acc(c);
+        // entering değilse: sadece op değiştir
     }
+
     c->pending_op = op;
+
+    // ✅ operatör feedback
+    char opbuf[2] = { op, 0 };
+    set_display(c, opbuf);
 }
 
 static void press_equals(calculator_t* c) {
@@ -363,8 +367,8 @@ static void calculator_on_create(app_t* self) {
     //
     // Not: '.' şimdilik sadece UI olsun (fixed-point eklemedik), istersen disable ederiz.
     const char* labels[20] = {
-        "%","CE","C","⌫",
-        "7","8","9","÷",
+        "%","CE","C","BK",
+        "7","8","9","/",
         "4","5","6","×",
         "1","2","3","-",
         "±","0",".","="
@@ -388,18 +392,23 @@ static void calculator_on_create(app_t* self) {
         // ops
         else if (t[0] == '+' && t[1] == 0) { g_btn_user[i].kind = ACT_OP; g_btn_user[i].value = '+'; }
         else if (t[0] == '-' && t[1] == 0) { g_btn_user[i].kind = ACT_OP; g_btn_user[i].value = '-'; }
+        else if (t[0] == '*' && t[1] == 0) { g_btn_user[i].kind = ACT_OP; g_btn_user[i].value = '*'; }
+        else if (t[0] == '/' && t[1] == 0) { g_btn_user[i].kind = ACT_OP; g_btn_user[i].value = '/'; }
         else if (t[0] == '%' && t[1] == 0) { g_btn_user[i].kind = ACT_OP; g_btn_user[i].value = '%'; }
-        else if (t[0] == '÷')              { g_btn_user[i].kind = ACT_OP; g_btn_user[i].value = '/'; }
-        else if (t[0] == '×')              { g_btn_user[i].kind = ACT_OP; g_btn_user[i].value = '*'; }
 
         else if (t[0] == '=' && t[1] == 0) { g_btn_user[i].kind = ACT_EQ; }
         else if (t[0] == 'C' && t[1] == 0) { g_btn_user[i].kind = ACT_C; }
-        else if (t[0] == 'C' && t[1] == 'E') { g_btn_user[i].kind = ACT_CE; }
-        else if (t[0] == '⌫')              { g_btn_user[i].kind = ACT_BKSP; }
-        else if (t[0] == '±')              { g_btn_user[i].kind = ACT_SIGN; }
+        else if (t[0] == 'C' && t[1] == 'E' && t[2] == 0) { g_btn_user[i].kind = ACT_CE; }
+
+        // BK (backspace)
+        else if (t[0] == 'B' && t[1] == 'K' && t[2] == 0) { g_btn_user[i].kind = ACT_BKSP; }
+
+        // +/- (sign)
+        else if (t[0] == '+' && t[1] == '/' && t[2] == '-' && t[3] == 0) { g_btn_user[i].kind = ACT_SIGN; }
+
+        // '.' (şimdilik disable ediyorsan bırak)
         else if (t[0] == '.' && t[1] == 0) {
-            // Şimdilik '.' yok -> disabled (fixed-point ekleyince açarız)
-            c->btns[i].base.enabled = false;
+            c->btns[i].base.enabled = false;  // fixed-point ekleyince açarız
         }
 
         ui_button2_onclick(&c->btns[i], on_btn, &g_btn_user[i]);
