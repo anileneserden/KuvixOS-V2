@@ -1,7 +1,6 @@
 // kernel/user.c
 #include <kernel/user.h>
 #include <lib/string.h>
-#include <lib/commands.h>
 
 // küçük yardımcı: prefix match
 static bool starts_with(const char* s, const char* pre) {
@@ -88,6 +87,6 @@ void user_format_prompt(const char* cwd_abs, char* out, int out_sz, user_lang_t 
     char pbuf[256];
     user_format_path(cwd_abs, pbuf, sizeof(pbuf), lang);
     str_append(out, out_sz, pbuf);
-    
-    commands_putc(' ');
+
+    str_append(out, out_sz, "$ ");
 }

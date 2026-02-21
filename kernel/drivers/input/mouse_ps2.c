@@ -190,7 +190,17 @@ void ps2_mouse_handle_byte(uint8_t data) {
 
     int wheel = 0;
     if (packet_size == 4) {
-        wheel = (int)(int8_t)packet[3]; // genelde -1/+1
+        // IntelliMouse / Explorer formatında wheel genelde low-nibble signed (4-bit)
+        int8_t w4 = (int8_t)(packet[3] & 0x0F);
+        if (w4 & 0x08) w4 |= (int8_t)0xF0;  // sign-extend 4-bit -> 8-bit
+
+        wheel = (int)w4;
+
+        // Explorer (ID=4) extra buttons (bit4/bit5) de burada durur
+        // İstersen buttons'a ekleyebilirsin:
+        // uint8_t extra = (packet[3] & 0x30) >> 1; // örnek mapping (istersen düzenleriz)
+        // buttons |= extra;
+
         g_mouse_last_wheel = wheel;
     } else {
         g_mouse_last_wheel = 0;
@@ -238,7 +248,7 @@ void ps2_mouse_update(void) {
         //
         // Şimdilik sadece telemetri olarak duruyor.
         // Eğer WM'e eklemek istersen örnek:
-        // if (wheel != 0) wm_handle_mouse_wheel(mouse_x, mouse_y, wheel, buttons);
+        if (wheel != 0) wm_handle_mouse_wheel(mouse_x, mouse_y, wheel, buttons);
 #endif
 
         last_buttons = buttons;

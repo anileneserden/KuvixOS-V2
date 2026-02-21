@@ -128,10 +128,11 @@ static void demo_on_key(app_t* self, uint16_t sc) { (void)self; (void)sc; }
 static void demo_on_destroy(app_t* self) { (void)self; }
 
 const app_vtbl_t demo_app_vtbl = {
-    .on_create = demo_on_create,
-    .on_draw   = demo_on_draw,
-    .on_key    = demo_on_key,
-    .on_mouse  = demo_on_mouse,
-    .on_destroy= demo_on_destroy,
-    .on_close_request = 0
+    .on_create        = demo_on_create,
+    .on_draw          = demo_on_draw,
+    .on_key           = demo_on_key,
+    .on_mouse         = demo_on_mouse,
+    .on_destroy       = demo_on_destroy,
+    .on_wheel         = 0,
+    .on_close_request = 0,
 };

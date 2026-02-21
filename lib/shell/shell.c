@@ -91,7 +91,7 @@ void shell_handle_scancode(uint16_t ev) {
             // ✅ komutlar shell’e basacak + clear shell’i temizleyecek
             commands_set_output(shell_cmd_out, NULL);
             commands_set_clear(shell_cmd_clear, NULL);
-            // commands_set_cwd(t->cwd);
+            commands_set_cwd(g_cwd);
 
             commands_execute(g_line);
             fb_console_flush();

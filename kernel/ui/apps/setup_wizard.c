@@ -518,5 +518,6 @@ const app_vtbl_t setup_wizard_vtbl = {
     .on_key           = setup_wizard_on_key,
     .on_mouse         = setup_wizard_on_mouse,
     .on_destroy       = setup_wizard_on_destroy,
+    .on_wheel         = 0,
     .on_close_request = setup_wizard_on_close_request
 };

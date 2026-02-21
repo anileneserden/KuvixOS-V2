@@ -418,9 +418,10 @@ static void file_mgr_on_key(app_t* app, uint16_t key) {
 }
 
 const app_vtbl_t file_manager_vtbl = {
-    .on_create  = file_mgr_on_create,
-    .on_draw    = file_mgr_on_draw,
-    .on_mouse   = file_mgr_on_mouse,
-    .on_key     = file_mgr_on_key,
-    .on_destroy = 0
+    .on_create        = file_mgr_on_create,
+    .on_draw          = file_mgr_on_draw,
+    .on_mouse         = file_mgr_on_mouse,
+    .on_key           = file_mgr_on_key,
+    .on_wheel         = 0,
+    .on_destroy       = 0
 };

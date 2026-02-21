@@ -53,7 +53,6 @@ SRC_C = \
     kernel/drivers/video/gfx.c \
     kernel/drivers/ata_pio.c \
     kernel/drivers/power.c \
-    kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
     kernel/fs/fs_init.c \
@@ -71,6 +70,7 @@ SRC_C = \
     kernel/ui/apps/notepad.c \
     kernel/ui/apps/pixel_draw_app.c \
     kernel/ui/apps/run.c \
+    kernel/ui/apps/scroll_demo.c \
     kernel/ui/apps/setup_wizard.c \
     kernel/ui/apps/terminal.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
@@ -91,6 +91,7 @@ SRC_C = \
     kernel/ui/cursor.c \
     kernel/ui/desktop_icons.c \
     kernel/ui/desktop.c \
+    kernel/ui/inputtest.c \
     kernel/ui/messagebox.c \
     kernel/ui/mouse.c \
     kernel/ui/notification.c \

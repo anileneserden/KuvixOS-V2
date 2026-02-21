@@ -289,7 +289,7 @@ void ui_desktop_init(void) {
 
     desktop_icons_init();
     desktop_icons_snap_all();
-    appmgr_start_app(1);
+    appmgr_start_app(11);
 
     g_last_btn = 0;
     g_lmb_down = 0;

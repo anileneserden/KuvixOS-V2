@@ -31,6 +31,7 @@ app_t* wm_get_active_owner(void);
 
 void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t buttons);
 void wm_handle_mouse_move(int mx, int my);
+void wm_handle_mouse_wheel(int x, int y, int wheel, uint8_t buttons);
 
 ui_rect_t wm_get_client_rect(int win_id);
 

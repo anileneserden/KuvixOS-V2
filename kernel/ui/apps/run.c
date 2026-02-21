@@ -123,5 +123,6 @@ const app_vtbl_t run_vtbl = {
     .on_key           = run_on_key,
     .on_mouse         = run_on_mouse,
     .on_destroy       = run_on_destroy,
+    .on_wheel         = 0,
     .on_close_request = 0
 };

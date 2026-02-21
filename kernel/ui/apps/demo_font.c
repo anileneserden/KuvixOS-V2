@@ -102,5 +102,6 @@ const app_vtbl_t demo_font_vtbl = {
     .on_draw    = demo_font_on_draw,
     .on_mouse   = demo_font_on_mouse,
     .on_key     = demo_font_on_key,
-    .on_destroy = demo_font_on_destroy
+    .on_destroy = demo_font_on_destroy,
+    .on_wheel   = 0,
 };

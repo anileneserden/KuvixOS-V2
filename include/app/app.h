@@ -11,6 +11,7 @@ typedef struct app_vtbl {
     void (*on_update)(app_t* a);
     void (*on_draw)(app_t* a);
     int (*on_close_request)(app_t* self);
+    void (*on_wheel)(app_t* app, int wheel);
 } app_vtbl_t;
 
 struct app {

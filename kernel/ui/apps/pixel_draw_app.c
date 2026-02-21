@@ -354,10 +354,11 @@ static void pixel_draw_on_destroy(app_t* self) {
 }
 
 const app_vtbl_t pixel_draw_app_vtbl = {
-    .on_create = pixel_draw_on_create,
-    .on_draw   = pixel_draw_on_draw,
-    .on_key    = pixel_draw_on_key,
-    .on_mouse  = pixel_draw_on_mouse,
-    .on_destroy= pixel_draw_on_destroy,
+    .on_create        = pixel_draw_on_create,
+    .on_draw          = pixel_draw_on_draw,
+    .on_key           = pixel_draw_on_key,
+    .on_mouse         = pixel_draw_on_mouse,
+    .on_destroy       = pixel_draw_on_destroy,
+    .on_wheel         = 0,
     .on_close_request = 0
 };

@@ -456,10 +456,11 @@ static void calculator_on_key(app_t* self, uint16_t sc) { (void)self; (void)sc; 
 static void calculator_on_destroy(app_t* self) { (void)self; }
 
 const app_vtbl_t calculator_vtbl = {
-    .on_create = calculator_on_create,
-    .on_draw   = calculator_on_draw,
-    .on_key    = calculator_on_key,
-    .on_mouse  = calculator_on_mouse,
-    .on_destroy= calculator_on_destroy,
+    .on_create        = calculator_on_create,
+    .on_draw          = calculator_on_draw,
+    .on_key           = calculator_on_key,
+    .on_mouse         = calculator_on_mouse,
+    .on_destroy       = calculator_on_destroy,
+    .on_wheel         = 0,
     .on_close_request = 0
 };

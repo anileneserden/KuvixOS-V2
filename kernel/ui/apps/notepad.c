@@ -497,5 +497,6 @@ const app_vtbl_t notepad_vtbl = {
     .on_key           = notepad_on_key,
     .on_mouse         = notepad_on_mouse,
     .on_destroy       = notepad_on_destroy,
-    .on_close_request = notepad_on_close_request
+    .on_wheel         = 0,
+    .on_close_request = notepad_on_close_request,
 };

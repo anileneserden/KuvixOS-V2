@@ -20,10 +20,8 @@
 // ✅ heap/kmalloc
 #include <kernel/memory/kmalloc.h>
 
-// UI / Session
-#include <ui/session.h>
-
-#include <kernel/fs/fs_init.h>
+// ✅ Input Test ekranı
+#include <ui/inputtest.h>
 
 extern void gdt_init(void);
 extern void idt_init(void);
@@ -63,14 +61,11 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
         bpp   = 32;
     }
 
-    if (bpp != 32) {
-        // printk("[FB] Warning: bpp=%u, forcing 32bpp path\n", bpp);
-    }
-
     if (pitch == 0) pitch = w * 4;
 
     printk("MBI flags=0x%x\n", mbi ? mbi->flags : 0);
 
+    (void)bpp; // şimdilik unused uyarısı olmasın
     fb_init(addr, w, h, pitch);
 }
 
@@ -78,8 +73,9 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
 // Kernel entry
 // ------------------------------------------------------------
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
-    printk("MB magic=%x\n", magic);
+    // ✅ seri printk kullanıyorsa önce seri init daha sağlıklı
     serial_init();
+    printk("MB magic=%x\n", magic);
 
     gdt_init();
     idt_init();
@@ -88,18 +84,14 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     // ✅ HEAP INIT (kernel end’den başlat)
     // =========================================================
     uintptr_t heap_base = align_up((uintptr_t)&_end, 0x1000); // 4K hizala
-
-    // QEMU 256MB ise şimdilik 32MB heap gayet güvenli.
-    // İstersen 8/16/64 yapabilirsin.
-    uint32_t heap_size = 32u * 1024u * 1024u;
+    uint32_t  heap_size = 32u * 1024u * 1024u;               // 32MB heap
 
     kmalloc_init((void*)heap_base, heap_size);
 
     printk("[KMALLOC] _end=%x heap_base=%x heap_size=%x KB\n",
-       (uint32_t)(uintptr_t)&_end,
-       (uint32_t)heap_base,
-       (uint32_t)(heap_size / 1024));
-
+           (uint32_t)(uintptr_t)&_end,
+           (uint32_t)heap_base,
+           (uint32_t)(heap_size / 1024));
     // =========================================================
 
     init_framebuffer(magic, mbi);
@@ -117,23 +109,15 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     // ✅ IRQ’ları aç (mouse/timer için şart)
     asm volatile("sti");
 
-    // FS (eğer fs_init kullanıyorsan burada çağır)
-    // fs_init();  // sende nasıl ise (fs_prepare_user_layout vb.) ona göre
-
-    // UI
-    ui_session_init();
-    ui_session_switch(UI_SESSION_DESKTOP);
+    // ✅ InputTest ekranını başlat
+    inputtest_init();
 
     while (1) {
-        // klavye event dispatch
-        uint16_t sc;
-        while ((sc = kbd_pop_event()) != 0) {
-            ui_session_handle_scancode(sc);
-        }
+        // Mouse eventleri IRQ ile queue'ya düşüyor -> inputtest_tick pop edip çizecek
+        inputtest_tick();
 
-        // frame tick
-        ui_session_tick();
-
+        // CPU boşuna %100 olmasın:
+        // HLT interrupt gelince uyanır (mouse hareketi/timer ile)
         asm volatile("hlt");
     }
 }

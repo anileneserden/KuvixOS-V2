@@ -38,8 +38,8 @@ void notification_draw(void) {
     gfx_draw_rect(x, y, w, h, 0x00AAFF); 
 
     // Bildirim İkonu ve Metin
-    gfx_draw_text(x + 10, y + 15, 0x00AAFF, "[!] ");
-    gfx_draw_text(x + 35, y + 15, 0xFFFFFF, notify_text);
+    gfx_draw_text_utf8(x + 10, y + 15, 0x00AAFF, "[!] ");
+    gfx_draw_text_utf8(x + 35, y + 15, 0xFFFFFF, notify_text);
 
     // Zamanlayıcıyı azalt
     notify_timer--;
