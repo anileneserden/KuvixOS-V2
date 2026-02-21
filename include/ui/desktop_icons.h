@@ -42,4 +42,6 @@ void desktop_icons_begin_edit(int index);
 bool desktop_icons_is_any_editing(void);
 void desktop_icons_handle_key(uint16_t scancode, char ascii);
 
+const char* desktop_icons_get_path(int index);
+
 #endif

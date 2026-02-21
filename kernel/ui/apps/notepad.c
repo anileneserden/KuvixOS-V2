@@ -14,9 +14,7 @@
 #include <ui/apps/notepad.h>
 #include <kernel/printk.h>
 #include <ui/messagebox.h>
-
-#include <kernel/drivers/ata_pio.h>
-#include <kernel/block/block.h>
+#include <kernel/user.h>
 
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
@@ -24,7 +22,7 @@ extern int  wm_get_mouse_x(void);
 extern int  wm_get_mouse_y(void);
 
 // Menü itemları
-static const char* notepad_menu_items[] = { "Ac", "Kaydet", "Farkli Kaydet", "Kapat" };
+static const char* notepad_menu_items[] = { "Aç", "Kaydet", "Farklı Kaydet", "Kapat" };
 
 // DEBUG
 static int debug_frame_counter = 0;
@@ -50,7 +48,7 @@ static inline notepad_tab_t* ntab(notepad_t* n) {
 }
 
 // ------------------------------------------------------------
-// YARDIMCI: Direkt Kaydet
+// DIRECT SAVE
 // ------------------------------------------------------------
 static void notepad_direct_save(notepad_t* data) {
     notepad_tab_t* tab = ntab(data);
@@ -61,6 +59,11 @@ static void notepad_direct_save(notepad_t* data) {
         return;
     }
 
+    // cursor güvenliği
+    if (tab->cursor >= NOTEPAD_MAX_TEXT) tab->cursor = NOTEPAD_MAX_TEXT - 1;
+    tab->text[tab->cursor] = '\0';
+
+    // dosyayı sıfırlamak için remove (şimdilik kalsın)
     vfs_remove(tab->file_path);
 
     vfs_file_t* f = NULL;
@@ -69,13 +72,7 @@ static void notepad_direct_save(notepad_t* data) {
         vfs_write(f, tab->text, tab->cursor, &written);
         vfs_close(f);
 
-        if (ata_pio_is_ready()) {
-            blockdev_t* dev = ata_pio_get_dev();
-            if (dev && dev->write) {
-                int ok = dev->write(dev, 2000, 1, tab->text);
-                printk("[Notepad] ATA write %s\n", ok ? "SUCCESS" : "FAILED");
-            }
-        }
+        printk("[Notepad] saved bytes=%u\n", written);
 
         tab->is_dirty = false;
 
@@ -102,7 +99,7 @@ static void notepad_on_save_confirm(const char* filename) {
         return;
     }
 
-    strcpy(tab->file_path, "/home/desktop/");
+    strcpy(tab->file_path, USER_DESKTOP_PATH "/");
     strcat(tab->file_path, (filename && filename[0]) ? filename : "adsiz");
     if (strstr(tab->file_path, ".txt") == NULL) strcat(tab->file_path, ".txt");
 
@@ -124,30 +121,18 @@ static void notepad_on_save_confirm(const char* filename) {
 static void notepad_on_open_confirm(const char* full_path) {
     int owner = open_dialog_get_owner_win_id();
     notepad_t* data = notepad_from_win_id(owner);
-    notepad_tab_t* tab = ntab(data);
 
-    if (!data || !tab) {
+    if (!data) {
         printk("[Notepad] OPEN_CONFIRM: owner=%d not found\n", owner);
         return;
     }
-
     if (!full_path || !full_path[0]) return;
 
-    strncpy(tab->file_path, full_path, 127);
-    tab->file_path[127] = '\0';
+    // ✅ create/draw race yok: pending ile draw’da okunacak
+    data->pending_open = true;
+    strncpy(data->pending_path, full_path, sizeof(data->pending_path) - 1);
+    data->pending_path[sizeof(data->pending_path) - 1] = '\0';
 
-    uint32_t actual_size = 0;
-    int result = vfs_read_all(full_path, (uint8_t*)tab->text, NOTEPAD_MAX_TEXT - 1, &actual_size);
-
-    if (result >= 0) {
-        tab->cursor = actual_size;
-        tab->text[actual_size] = '\0';
-    } else {
-        tab->cursor = 0;
-        tab->text[0] = '\0';
-    }
-
-    tab->is_dirty = false;
     data->menu_open = false;
 }
 
@@ -202,18 +187,57 @@ static void notepad_on_create(app_t* self) {
     data->tab_count = 1;
     data->active_tab = 0;
 
+    // ✅ pending open init
+    data->pending_open = false;
+    data->pending_path[0] = '\0';
+
     notepad_tab_t* tab = &data->tabs[0];
     memset(tab->text, 0, NOTEPAD_MAX_TEXT);
-    memset(tab->file_path, 0, 128);
+    memset(tab->file_path, 0, sizeof(tab->file_path));
     tab->cursor = 0;
     tab->is_dirty = false;
 }
 
+// ------------------------------------------------------------
+// DRAW
+// ------------------------------------------------------------
 static void notepad_on_draw(app_t* self) {
     if (!self || !self->user) return;
     notepad_t* data = (notepad_t*)self->user;
     notepad_tab_t* tab = ntab(data);
     if (!tab) return;
+
+    // ✅ Desktop/OpenDialog open race fix: dosyayı create bittikten sonra burada oku
+    if (data->pending_open) {
+        data->pending_open = false;
+
+        const char* p = data->pending_path;
+        printk("[Notepad] pending open: '%s'\n", p ? p : "(null)");
+
+        if (p && p[0]) {
+            strncpy(tab->file_path, p, sizeof(tab->file_path) - 1);
+            tab->file_path[sizeof(tab->file_path) - 1] = '\0';
+
+            uint32_t actual_size = 0;
+            int result = vfs_read_all(p, (uint8_t*)tab->text, NOTEPAD_MAX_TEXT - 1, &actual_size);
+            printk("[Notepad] read_all: result=%d size=%u\n", result, actual_size);
+
+            if (result >= 0) {
+                if (actual_size >= (NOTEPAD_MAX_TEXT - 1)) actual_size = (NOTEPAD_MAX_TEXT - 1);
+                tab->cursor = actual_size;
+                tab->text[actual_size] = '\0';
+            } else {
+                tab->cursor = 0;
+                tab->text[0] = '\0';
+            }
+
+            tab->is_dirty = false;
+            data->menu_open = false;
+        } else {
+            tab->cursor = 0;
+            tab->text[0] = '\0';
+        }
+    }
 
     debug_frame_counter++;
     if (debug_frame_counter % 60 == 0) {
@@ -297,6 +321,9 @@ static void notepad_on_draw(app_t* self) {
     }
 }
 
+// ------------------------------------------------------------
+// MOUSE
+// ------------------------------------------------------------
 static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8_t extra1, uint8_t extra2) {
     (void)extra1; (void)extra2;
 
@@ -308,23 +335,17 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
     if (messagebox_is_visible()) return;
     if (wm_is_any_window_captured()) return;
 
-    // client rect
     ui_rect_t client = wm_get_client_rect(self->win_id);
     int lx = mx - client.x;
     int ly = my - client.y;
 
-    // Bu sürümde WM sadece buttons veriyorsa, "basılıyken sürekli toggle" olur.
-    // Şimdilik sadece basılıyken bir kere toggle yapmamak için
-    // "button latch" kullanacağız.
     static uint8_t prev_buttons = 0;
     uint8_t pressed = (uint8_t)(buttons & ~prev_buttons);
     prev_buttons = buttons;
 
-    if (!(pressed & 1)) return; // sadece click anında
+    if (!(pressed & 1)) return;
 
-    bool file_btn_hit = (lx >= 0 && lx <= 60 &&
-                         ly >= 0 && ly <= 20);
-
+    bool file_btn_hit = (lx >= 0 && lx <= 60 && ly >= 0 && ly <= 20);
     if (file_btn_hit) {
         data->menu_open = !data->menu_open;
         return;
@@ -342,7 +363,7 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
             data->menu_open = false;
 
             if (item == 0) {
-                open_dialog_show("Dosya Ac", "", self->win_id, notepad_on_open_confirm);
+                open_dialog_show("Dosya Aç", "", self->win_id, notepad_on_open_confirm);
                 return;
             }
 
@@ -359,7 +380,7 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
             }
 
             if (item == 2) {
-                save_dialog_show("Farkli Kaydet", "adsiz.txt", 0, self->win_id, notepad_on_save_confirm);
+                save_dialog_show("Farklı Kaydet", "adsiz.txt", 0, self->win_id, notepad_on_save_confirm);
                 return;
             }
 
@@ -374,6 +395,9 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
     }
 }
 
+// ------------------------------------------------------------
+// KEY
+// ------------------------------------------------------------
 static void notepad_on_key(app_t* self, uint16_t scancode) {
     if (!self || !self->user) return;
 
@@ -391,6 +415,7 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
     if (scancode == 0x1C) { // Enter
         if (tab->cursor < NOTEPAD_MAX_TEXT - 1) {
             tab->text[tab->cursor++] = '\n';
+            tab->text[tab->cursor] = '\0';
             changed = true;
         }
     } else if (c == '\b') {
@@ -401,6 +426,7 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
     } else if (c >= 32 && c <= 126) {
         if (tab->cursor < NOTEPAD_MAX_TEXT - 1) {
             tab->text[tab->cursor++] = c;
+            tab->text[tab->cursor] = '\0';
             changed = true;
         }
     }
@@ -420,32 +446,20 @@ void notepad_open_file(const char* path) {
     if (!self || !self->user) return;
 
     notepad_t* data = (notepad_t*)self->user;
-    notepad_tab_t* tab = ntab(data);
-    if (!tab) return;
-
     if (!path || !path[0]) return;
 
-    strncpy(tab->file_path, path, 127);
-    tab->file_path[127] = '\0';
+    data->pending_open = true;
+    strncpy(data->pending_path, path, sizeof(data->pending_path) - 1);
+    data->pending_path[sizeof(data->pending_path) - 1] = '\0';
 
-    uint32_t actual_size = 0;
-    int result = vfs_read_all(path, (uint8_t*)tab->text, NOTEPAD_MAX_TEXT - 1, &actual_size);
-
-    if (result >= 0) {
-        tab->cursor = actual_size;
-        tab->text[actual_size] = '\0';
-    } else {
-        tab->cursor = 0;
-        tab->text[0] = '\0';
-    }
-
-    tab->is_dirty = false;
     data->menu_open = false;
     data->close_pending = false;
     data->close_after_save = false;
     data->pending_close_win_id = -1;
 
     wm_set_active(self->win_id);
+
+    printk("[Notepad] open_file queued: '%s'\n", data->pending_path);
 }
 
 // ------------------------------------------------------------

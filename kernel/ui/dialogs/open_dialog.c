@@ -1,6 +1,7 @@
 #include <ui/dialogs/open_dialog.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
+#include <kernel/user.h>
 #include <kernel/fs/vfs.h>
 #include <lib/string.h>
 #include <ui/notification.h>
@@ -378,7 +379,7 @@ void open_dialog_show(const char* title, const char* initial_name, int owner_win
     desktop_reset_selection_state();
     desktop_icons_reset_selection();
 
-    strcpy(g_path, "/home/desktop");
+    strcpy(g_path, USER_DESKTOP_PATH);
     open_dialog_refresh();
 }
 

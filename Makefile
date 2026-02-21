@@ -35,6 +35,7 @@ SRC_C = \
     kernel/printk.c \
     kernel/serial.c \
     kernel/time.c \
+    kernel/user.c \
     kernel/vga.c \
     kernel/arch/x86/gdt.c \
     kernel/arch/x86/idt.c \
@@ -64,6 +65,7 @@ SRC_C = \
     kernel/memory/kmalloc.c \
     kernel/ui/apps/calculator.c \
     kernel/ui/apps/demo.c \
+    kernel/ui/apps/demo_font.c \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/grid_demo.c \
     kernel/ui/apps/notepad.c \
@@ -102,6 +104,7 @@ SRC_C = \
     kernel/ui/topbar.c \
     kernel/ui/ui_button.c \
     kernel/ui/ui_label.c \
+    kernel/ui/ui_settings.c \
     kernel/ui/wallpaper.c \
     kernel/ui/window_chrome.c \
     kernel/ui/window.c \
@@ -167,7 +170,7 @@ run: iso
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=disk.img,format=raw,index=0,media=disk \
 		-drive file=disk2.img,format=raw,index=1,media=disk \
-		-m 256M -serial stdio -no-reboot -no-shutdown
+		-m 256M -serial stdio
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)

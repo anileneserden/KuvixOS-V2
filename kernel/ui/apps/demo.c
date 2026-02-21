@@ -83,7 +83,7 @@ static void demo_on_create(app_t* self) {
     ui_label2_init(&d->lbl,  2, (ui_point_t){0,0}, 0x000000, d->buf);
 
     ui_button2_init(&d->btn, 3, (ui_point_t){0,0}, (ui_size_t){90,26}, "+1");
-    ui_button2_onclick(&d->btn, on_click_inc, d);
+    ui_button2_onclick(&d->btn, on_click_inc, d);    
 
     // root -> children
     ui_control_add_child(&d->root.base, &d->lbl.base);

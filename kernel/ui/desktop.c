@@ -31,6 +31,8 @@
 
 #include <kernel/serial.h>
 
+#include <ui/ui_settings.h>
+
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -97,8 +99,13 @@ static int      g_last_click_hit = -1;
 static const int      DRAG_THRESHOLD_PX = 6;
 static const uint32_t DBLCLICK_MS = 350;
 
+static bool g_open_after_rename = false;
+static char g_open_after_rename_path[256];
+
 // ✅ Klavye/hotkey ile UI değişince bir kere full present zorla
 static bool g_force_full_present = false;
+
+static void desktop_toggle_ext(void);
 
 void desktop_invalidate_full(void) {
     g_force_full_present = true;
@@ -150,35 +157,51 @@ static void get_unique_filename(const char* base_path, const char* ext, char* ou
     strcpy(out_path, temp_path);
 }
 
+static void desktop_toggle_ext(void) {
+    ui_toggle_show_extensions();
+    desktop_icons_init();
+    desktop_icons_snap_all();      // ✅ iyi olur, dizilim bozulmasın
+    desktop_invalidate_full();     // ✅ senin helper, g_force_full_present = true
+}
+
 // ============================================================
 // Desktop Handlers
 // ============================================================
 
 void desktop_handle_rename_confirm(const char* new_name) {
-    if (rename_target_index == -1 || !new_name || strlen(new_name) == 0) return;
+    if (rename_target_index < 0) return;
 
-    const char* old_name = desktop_icons_get_name(rename_target_index);
+    const char* old_full_path = desktop_icons_get_path(rename_target_index);
+    if (!old_full_path || !old_full_path[0]) return;
 
-    char old_full_path[256];
     char new_full_path[256];
 
-    strcpy(old_full_path, USER_DESKTOP_PATH);
-    strcat(old_full_path, "/");
-    strcat(old_full_path, old_name);
-
-    strcpy(new_full_path, USER_DESKTOP_PATH);
-    strcat(new_full_path, "/");
-    strcat(new_full_path, new_name);
-    if (strstr(new_name, ".txt") == 0) strcat(new_full_path, ".txt");
-
-    if (vfs_rename(old_full_path, new_full_path) == 1) {
-        notification_show("Isim degistirildi", 500);
+    // Uzantı kontrolü
+    if (!strstr(new_name, ".txt")) {
+        printk(new_full_path, sizeof(new_full_path),
+                 "%s/%s.txt", USER_DESKTOP_PATH, new_name);
     } else {
-        notification_show("Hata!", 1000);
+        printk(new_full_path, sizeof(new_full_path),
+                 "%s/%s", USER_DESKTOP_PATH, new_name);
     }
 
-    desktop_icons_init();
-    desktop_icons_snap_all();
+    if (vfs_rename(old_full_path, new_full_path) == 1) {
+
+        notification_show("Isim degistirildi", 800);
+
+        // Eğer yeni dosya oluşturma sonrası açılacaksa
+        if (g_open_after_rename) {
+            g_open_after_rename = false;
+            notepad_open_file(new_full_path);
+        }
+
+        desktop_icons_init();
+        desktop_icons_snap_all();
+    } else {
+        notification_show("Isim degistirilemedi!", 1200);
+        g_open_after_rename = false;
+    }
+
     rename_target_index = -1;
 }
 
@@ -204,13 +227,14 @@ static void desktop_handle_create_file(void) {
     get_unique_filename(base, ".txt", final_path);
 
     vfs_file_t* f = 0;
-    if (vfs_open(final_path, VFS_O_CREAT | VFS_O_RDWR, &f) == 1) {
-        const char* hello = "Merhaba KuvixOS!\n";
-        uint32_t w = 0;
-        vfs_write(f, hello, (uint32_t)strlen(hello), &w);
-
+    if (vfs_open(final_path, VFS_O_CREAT | VFS_O_WRONLY, &f) == 1) {
+        // ✅ boş dosya oluştur: yazma yok
         vfs_close(f);
 
+        g_open_after_rename = true;
+        strncpy(g_open_after_rename_path, final_path, sizeof(g_open_after_rename_path) -1);
+        g_open_after_rename_path[sizeof(g_open_after_rename_path) - 1] = '\0';
+        
         desktop_icons_init();
         desktop_icons_snap_all();
 
@@ -219,6 +243,8 @@ static void desktop_handle_create_file(void) {
             rename_target_index = count - 1;
             desktop_icons_begin_edit(rename_target_index);
         }
+    } else {
+        notification_show("Hata: dosya olusturulamadi!", 1500);
     }
 }
 
@@ -263,7 +289,7 @@ void ui_desktop_init(void) {
 
     desktop_icons_init();
     desktop_icons_snap_all();
-    appmgr_start_app(9);
+    appmgr_start_app(1);
 
     g_last_btn = 0;
     g_lmb_down = 0;
@@ -434,36 +460,77 @@ void ui_desktop_tick(void) {
         // 4) Desktop alanı
         if (!wm_is_any_window_captured()) {
 
-            // Sağ tık: context menu
+            // ✅ Context menu açıkken: her eventte hover/submenu update
+            if (context_menu_is_visible()) {
+                need_full_present = true; // dirty-rect menü için güvenli değil
+                context_menu_handle_mouse(mouse_x, mouse_y, false);
+            }
+
+            // Sağ tık: context menu (yeniden kur + aç)
             if (pressed & 2) {
                 need_full_present = true;
 
+                // Desktop input state reset
                 g_lmb_down = 0;
                 g_dragging = 0;
                 g_down_hit = -1;
+                is_selecting = false;
 
                 int hit = desktop_icons_get_hit(mouse_x, mouse_y);
+
+                // ✅ Windows gibi: sağ tık ikon üstündeyse onu seç
+                desktop_icons_deselect_all();
+                if (hit != -1) desktop_icons_select(hit);
+
                 context_menu_reset();
+
                 if (hit != -1) {
+                    // ikon üstü
                     context_menu_add_item("Ac", desktop_handle_open);
                     context_menu_add_item("Ad Degistir", desktop_handle_rename);
                     context_menu_add_item("Sil", desktop_icons_delete_selected);
+
+                    // (istersen ikon üstünde de Görünüm koy)
+                    // context_menu_t* view = context_menu_add_submenu("Gorunum");
+                    // context_menu_add_item_to(view, "Dosya uzantilarini goster", desktop_toggle_ext);
                 } else {
+                    // boş alan
+                    context_menu_t* view = context_menu_add_submenu("Gorunum");
+                    context_menu_add_item_to(view,
+                        ui_get_show_extensions() ? "Dosya uzantilarini gizle" : "Dosya uzantilarini goster",
+                        desktop_toggle_ext);
+
                     context_menu_add_item("Yeni Metin Belgesi", desktop_handle_create_file);
-                    context_menu_add_item("Yeni Klasör", desktop_handle_create_folder);
+                    context_menu_add_item("Yeni Klasor", desktop_handle_create_folder);
                 }
+
                 context_menu_show(mouse_x, mouse_y);
+
+                g_last_btn = btn;
+                continue;
             }
 
-            // Sol tık pressed
-            if (pressed & 1) {
-                need_full_present = true;
-
-                if (context_menu_is_visible()) {
+            // ✅ Menü açıkken: sol tık pressed menüye gider, desktop’a geçmez
+            if (context_menu_is_visible()) {
+                if (pressed & 1) {
+                    need_full_present = true;
                     context_menu_handle_mouse(mouse_x, mouse_y, true);
                     g_last_btn = btn;
                     continue;
                 }
+
+                // Menü açıkken desktop drag/selection yok
+                g_last_btn = btn;
+                continue;
+            }
+
+            // ------------------------------------------------------------
+            // Menü kapalıysa normal desktop input
+            // ------------------------------------------------------------
+
+            // Sol tık pressed
+            if (pressed & 1) {
+                need_full_present = true;
 
                 int hit = desktop_icons_get_hit(mouse_x, mouse_y);
 

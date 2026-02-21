@@ -5,7 +5,7 @@
 
 void cmd_touch(int argc, char** argv) {
     if (argc < 2) {
-        printk("Kullanım: touch /persist/dosya_adı\n");
+        commands_puts("Kullanım: touch /persist/dosya_adı\n");
         return;
     }
 
@@ -13,7 +13,7 @@ void cmd_touch(int argc, char** argv) {
 
     // Sadece /persist/ dizinine izin veriyoruz
     if (strncmp(path, "/persist/", 9) != 0) {
-        printk("Hata: Sadece /persist/ altında dosya oluşturulabilir.\n");
+        commands_puts("Hata: Sadece /persist/ altında dosya oluşturulabilir.\n");
         return;
     }
 
@@ -22,9 +22,9 @@ void cmd_touch(int argc, char** argv) {
     
     // kvxfs_write_all kullanarak diske yazıyoruz
     if (kvxfs_write_all(path, &empty_data, 0)) {
-        printk("Dosya oluşturuldu: %s\n", path);
+        commands_printf("Dosya oluşturuldu: %s\n", path);
     } else {
-        printk("Hata: Dosya oluşturulamadı!\n");
+        commands_puts("Hata: Dosya oluşturulamadı!\n");
     }
 }
 

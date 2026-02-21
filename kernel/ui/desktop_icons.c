@@ -77,6 +77,25 @@ static void icons_add(const char* full_path, const char* label, bool is_dir) {
     icon_count++;
 }
 
+static void strip_ext(char* out, int out_sz, const char* name, const char* ext) {
+    if (!out || out_sz <= 0) return;
+    out[0] = '\0';
+    if (!name) return;
+
+    // default: name'i kopyala
+    strncpy(out, name, out_sz - 1);
+    out[out_sz - 1] = '\0';
+
+    if (!ext) return;
+
+    int nlen = (int)strlen(out);
+    int elen = (int)strlen(ext);
+
+    if (nlen >= elen && strcmp(out + (nlen - elen), ext) == 0) {
+        out[nlen - elen] = '\0'; // ext'i kırp
+    }
+}
+
 // ------------------------------------------------------------
 // vfs_list callback -> ikon üret
 // ------------------------------------------------------------
@@ -90,9 +109,11 @@ static int desktop_load_callback(const char* path, uint32_t size, void* u) {
     if (strcmp(path, "/home") == 0 ||
         strcmp(path, "/home/desktop") == 0 ||
         strcmp(path, "/home/desktop/") == 0 ||
+        strcmp(path, USER_DESKTOP_PATH) == 0 ||
+        strcmp(path, USER_DESKTOP_PATH "/") == 0 ||
         strcmp(path, "/") == 0) {
         return 1;
-    }
+     }
 
     const char* filename = base_name(path);
 
@@ -114,7 +135,13 @@ static int desktop_load_callback(const char* path, uint32_t size, void* u) {
 
     // .ksf -> kısayol dosyası (parse AppManager tarafında)
     if (ends_with(filename, ".ksf")) {
-        icons_add(path, filename, false);
+        char label[32];
+        strip_ext(label, sizeof(label), filename, ".ksf");
+        // boş kalırsa fallback
+        if (label[0] == '\0') strncpy(label, filename, sizeof(label) - 1);
+        label[sizeof(label) - 1] = '\0';
+
+        icons_add(path, label, false);   // ✅ uzantısız label
         return 1;
     }
 
@@ -211,6 +238,12 @@ void desktop_icons_handle_key(uint16_t scancode, char ascii) {
             return;
         }
     }
+}
+
+const char* desktop_icons_get_path(int index) {
+    if (index >= 0 && index < icon_count)
+        return icons[index].vfs_name;
+    return "";
 }
 
 void desktop_icons_begin_edit(int index) {

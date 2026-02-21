@@ -15,13 +15,10 @@ typedef struct {
     ui_control_t* active;  // pressed control
 
     bool has_dirty;
-    int dirt
+    int dirty;             // ✅ en azından derlensin
 } ui_context_t;
 
 void ui_ctx_init(ui_context_t* ui);
 bool ui_ctx_add_root(ui_context_t* ui, ui_control_t* c);
-
 void ui_ctx_draw(ui_context_t* ui);
-
-// Input giriş noktası:
 void ui_ctx_mouse(ui_context_t* ui, int mx, int my, bool left_down);

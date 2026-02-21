@@ -14,6 +14,7 @@
 
 #include <kernel/fs/vfs.h>
 #include <kernel/printk.h>
+#include <kernel/user.h>   // ✅ USER_HOME_PATH / USER_DESKTOP_PATH / USER_APPS_PATH
 
 extern int wm_get_mouse_x(void);
 extern int wm_get_mouse_y(void);
@@ -177,10 +178,15 @@ static void do_install_once(setup_wizard_t* st) {
     if (!st || st->did_install) return;
     st->did_install = true;
 
+    // ✅ user layout
+    // Parent chain: /home -> /home/<user> -> /home/<user>/desktop/apps/trash
     vfs_mkdir("/home");
-    vfs_mkdir("/home/desktop");
-    vfs_mkdir("/home/apps");
+    vfs_mkdir(USER_HOME_PATH);
+    vfs_mkdir(USER_DESKTOP_PATH);
+    vfs_mkdir(USER_APPS_PATH);
+    vfs_mkdir(USER_TRASH_PATH);
 
+    // Target dir (kullanıcı seçtiyse)
     vfs_mkdir(st->target_path);
 
     char appdir[128];
@@ -208,7 +214,13 @@ static void do_install_once(setup_wizard_t* st) {
             "type=app\n"
             "title=Notepad\n"
             "app_id=3\n";
-        vfs_write_all("/home/desktop/Notepad.ksf", (const uint8_t*)ksf, strlen(ksf));
+
+        char ksf_path[160];
+        memset(ksf_path, 0, sizeof(ksf_path));
+        strncpy(ksf_path, USER_DESKTOP_PATH, sizeof(ksf_path) - 1);
+        if ((int)strlen(ksf_path) < (int)sizeof(ksf_path) - 1) strcat(ksf_path, "/Notepad.ksf");
+
+        vfs_write_all(ksf_path, (const uint8_t*)ksf, strlen(ksf));
     }
 
     desktop_icons_init();
@@ -226,7 +238,9 @@ static void setup_wizard_on_create(app_t* self) {
     st->step = WZ_WELCOME;
 
     memset(st->target_path, 0, sizeof(st->target_path));
-    strcpy(st->target_path, "/home/apps");
+    // ✅ default: /home/<user>/apps
+    strncpy(st->target_path, USER_APPS_PATH, sizeof(st->target_path) - 1);
+    st->target_path[sizeof(st->target_path) - 1] = '\0';
 
     st->license_accepted = false;
     st->progress = 0;

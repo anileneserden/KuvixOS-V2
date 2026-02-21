@@ -20,6 +20,22 @@ void shell_set_username(const char* u) { if (u) { strncpy(g_username,u,sizeof(g_
 void shell_set_hostname(const char* h) { if (h) { strncpy(g_hostname,h,sizeof(g_hostname)-1); g_hostname[31]=0; } }
 void shell_set_cwd(const char* p)      { if (p) { strncpy(g_cwd,p,sizeof(g_cwd)-1); g_cwd[127]=0; } }
 
+// -----------------------------------------
+// Commands routing: Shell output + clear
+// -----------------------------------------
+static void shell_cmd_out(void* u, const char* s) {
+    (void)u;
+    if (!s) return;
+    printk("%s", s);
+    fb_console_flush();
+}
+
+static void shell_cmd_clear(void* u) {
+    (void)u;
+    fb_console_clear();
+    fb_console_flush();
+}
+
 static void shell_print_prompt(void) {
     fb_console_set_color(0x0000FF00, 0x00000000);
     printk("%s", g_username);
@@ -35,6 +51,10 @@ void shell_init(void) {
     printk("KuvixOS Shell V2 Hazir!\n");
     printk("Komutlar icin 'help' yazabilirsiniz.\n");
     fb_console_flush();
+
+    // ✅ Shell aktifken commands çıktısı + clear hedefi shell olsun
+    commands_set_output(shell_cmd_out, NULL);
+    commands_set_clear(shell_cmd_clear, NULL);
 
     g_len = 0;
     g_line[0] = 0;
@@ -68,6 +88,11 @@ void shell_handle_scancode(uint16_t ev) {
         fb_console_flush();
 
         if (g_len > 0) {
+            // ✅ komutlar shell’e basacak + clear shell’i temizleyecek
+            commands_set_output(shell_cmd_out, NULL);
+            commands_set_clear(shell_cmd_clear, NULL);
+            // commands_set_cwd(t->cwd);
+
             commands_execute(g_line);
             fb_console_flush();
         }

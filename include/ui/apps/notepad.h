@@ -29,6 +29,10 @@ typedef struct {
     bool close_pending;
     bool close_after_save;
     int  pending_close_win_id;
+
+    // ✅ desktop open race fix
+    bool pending_open;
+    char pending_path[128];
 } notepad_t;
 
 void notepad_init(void);

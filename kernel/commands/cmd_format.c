@@ -4,12 +4,12 @@
 
 void cmd_format(int argc, char** argv) {
     (void)argc; (void)argv;
-    printk("KuvixOS: Manuel format başlatılıyor...\n");
+    commands_puts("KuvixOS: Manuel format başlatılıyor...\n");
     
     if (kvxfs_force_format()) {
-        printk("Disk başarıyla formatlandı ve baglandı.\n");
+        commands_puts("Disk başarıyla formatlandı ve baglandı.\n");
     } else {
-        printk("HATA: Format işlemi hala başarısız. ATA sürücüsünü kontrol edin.\n");
+        commands_puts("HATA: Format işlemi hala başarısız. ATA sürücüsünü kontrol edin.\n");
     }
 }
 

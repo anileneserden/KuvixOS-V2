@@ -7,7 +7,9 @@
 #include <stdint.h>
 #include <ui/wm.h>
 
+#include <ui/apps/notepad.h>
 #include <ui/apps/pixel_draw_app.h>
+#include <ui/apps/demo_font.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -19,6 +21,7 @@ extern const app_vtbl_t calculator_vtbl;
 extern const app_vtbl_t run_vtbl;
 extern const app_vtbl_t grid_demo_app_vtbl;
 extern const app_vtbl_t pixel_draw_app_vtbl;
+extern const app_vtbl_t demo_font_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -42,6 +45,7 @@ static app_definition_t app_registry[] = {
     { 7, "Run",          &run_vtbl,            200, 140, 420, 140,  256 },
     { 8, "Grid Demo",    &grid_demo_app_vtbl,  120,  80, 720, 540,   16 },
     { 9, "Pixel Draw",   &pixel_draw_app_vtbl, 120,  80, 900, 650, sizeof(pixel_draw_app_t) },
+    { 10, "Font Demo",   &demo_font_vtbl,      140,  90, 700, 500, sizeof(demo_font_t) },
     { 0, NULL,           NULL,                  0,   0,   0,   0,    0 }
 };
 
@@ -191,35 +195,41 @@ app_t* appmgr_start_app(int app_id) {
     return a;
 }
 
-// ------------------------------------------------------------
-// ROUTER: Path'e göre doğru app'i açar
-// ------------------------------------------------------------
+static bool ends_with(const char* s, const char* suf) {
+    if (!s || !suf) return false;
+    int sl = (int)strlen(s);
+    int pl = (int)strlen(suf);
+    if (sl < pl) return false;
+    return strcmp(s + (sl - pl), suf) == 0;
+}
 
 app_t* appmgr_open_path(const char* path) {
+    if (!path || !path[0]) return NULL;
 
-    if (!path) return NULL;
+    printk("[AppMgr] open_path: '%s'\n", path);
 
     vfs_stat_t st;
     if (vfs_stat(path, &st) == 1) {
-
         // Klasör -> File Manager
         if (st.type == VFS_T_DIR) {
             return appmgr_start_app(2);
         }
     }
 
-    // .txt -> Notepad
-    if (strstr(path, ".txt")) {
-        return appmgr_start_app(3);
+    // .txt -> Notepad (DOSYAYI AÇ)
+    if (ends_with(path, ".txt")) {
+        app_t* a = appmgr_start_app(3);
+        // ✅ Notepad singleton ise var olanı döndürür, sorun değil
+        notepad_open_file(path);   // ✅ kritik satır
+        return a;
     }
 
     // .ksf -> shortcut parse
-    if (strstr(path, ".ksf")) {
-
+    if (ends_with(path, ".ksf")) {
         uint8_t buf[256];
         uint32_t sz = 0;
 
-        if (vfs_read_all(path, buf, sizeof(buf)-1, &sz) >= 0) {
+        if (vfs_read_all(path, buf, sizeof(buf) - 1, &sz) >= 0) {
             buf[sz] = 0;
 
             char* s = (char*)buf;
@@ -232,8 +242,9 @@ app_t* appmgr_open_path(const char* path) {
                     p++;
                 }
 
-                if (id > 0)
+                if (id > 0) {
                     return appmgr_start_app(id);
+                }
             }
         }
     }
