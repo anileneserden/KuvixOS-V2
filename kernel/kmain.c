@@ -25,6 +25,8 @@
 
 #include <kernel/fs/fs_init.h>
 
+#include <ui/inputtest.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -123,6 +125,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     // UI
     ui_session_init();
     ui_session_switch(UI_SESSION_DESKTOP);
+    // inputtest_init();
 
     while (1) {
         // klavye event dispatch

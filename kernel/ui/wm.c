@@ -363,7 +363,14 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
     {
         app_t* app = g_wins[idx].owner;
         if (app && app->v && app->v->on_mouse) {
-            app->v->on_mouse(app, mx, my, buttons, pressed, released);
+            ui_rect_t cr = wm_get_client_rect(idx);
+
+            // mx,my ekran coords -> client coords
+            int cx = mx - cr.x;
+            int cy = my - cr.y;
+
+            // ✅ param sıra: pressed, released, buttons
+            app->v->on_mouse(app, cx, cy, pressed, released, buttons);
         }
     }
 
@@ -398,8 +405,46 @@ void wm_handle_mouse_move(int mx, int my) {
     if (top != -1) {
         app_t* app = g_wins[top].owner;
         if (app && app->v && app->v->on_mouse) {
-            app->v->on_mouse(app, mx, my, g_buttons_state, 0, 0);
+            ui_rect_t cr = wm_get_client_rect(top);
+
+            int cx = mx - cr.x;
+            int cy = my - cr.y;
+
+            app->v->on_mouse(app, cx, cy, 0, 0, g_buttons_state);
         }
+    }
+}
+
+void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons) {
+    g_buttons_state = buttons;
+    g_mouse_x = mx;
+    g_mouse_y = my;
+
+    // 1) modal varsa önce ona ver (istersen)
+    if (save_dialog_is_active()) {
+        // save dialog wheel desteklemiyorsa direkt return edebilirsin
+        return;
+    }
+
+    // 2) mouse altındaki pencere
+    int idx = pick_top(mx, my);
+
+    // 3) eğer altında pencere yoksa active’e gönder
+    if (idx == -1) idx = g_active;
+
+    if (!is_alive_id(idx)) return;
+
+    // minimized’a wheel verme
+    if (g_wins[idx].win.state == WIN_MINIMIZED) return;
+
+    // wheel genelde focus/active window’a gider, ama biz hover+fallback yaptık
+    // eğer hover pencereyi aktifleştirmek istersen:
+    // bring_to_front(idx);
+
+    app_t* app = g_wins[idx].owner;
+    if (app && app->v && app->v->on_wheel) {
+        desktop_invalidate_full();
+        app->v->on_wheel(app, wheel);
     }
 }
 

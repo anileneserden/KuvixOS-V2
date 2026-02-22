@@ -64,4 +64,7 @@ int wm_is_dragging_window(void);
 int wm_get_mouse_x(void);
 int wm_get_mouse_y(void);
 
+void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons);
+
+
 #endif

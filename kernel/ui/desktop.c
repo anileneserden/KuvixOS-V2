@@ -93,6 +93,52 @@ static int g_down_y = 0;
 static int g_down_hit = -1;
 static int g_dragging = 0;
 
+static int g_dbg_last_dx = 0;
+static int g_dbg_last_dy = 0;
+static int g_dbg_wheel_step = 0;
+static int g_dbg_wheel_total = 0;
+
+// --- Debug overlay helps (desktop içi) ---
+static bool g_dbg_overlay = true;
+
+static void dbg_itoa(int v, char* out) {
+    char tmp[16];
+    int i = 0, neg = 0;
+    if (v < 0) { neg = 1; v = -v; }
+    if (v == 0) tmp[i++] = '0';
+    while (v > 0 && i < 15) { tmp[i++] = (char)('0' + (v % 10)); v /= 10; }
+    int p = 0;
+    if (neg) out[p++] = '-';
+    while (i > 0) out[p++] = tmp[--i];
+    out[p] = 0;
+}
+
+static void dbg_draw_kv(int x, int y, const char* k, int v) {
+    char n[16];
+    dbg_itoa(v, n);
+    gfx_draw_text_utf8(x, y, 0x00FFFFFF, k);
+    gfx_draw_text_utf8(x + 92, y, 0x00FFFF00, n);
+}
+
+static void dbg_draw_panel(void) {
+    if (!g_dbg_overlay) return;
+
+    int x = 8, y = 8;
+    int w = 220, h = 112;
+
+    gfx_fill_rect(x - 4, y - 4, w, h, 0x00202020);
+    gfx_draw_rect(x - 4, y - 4, w, h, 0x00AAAAAA);
+
+    gfx_draw_text_utf8(x, y, 0x00FFFFFF, "DEBUG INPUT (F12 toggle)");
+    y += 16;
+
+    dbg_draw_kv(x, y, "dx", g_dbg_last_dx); y += 14;
+    dbg_draw_kv(x, y, "dy", g_dbg_last_dy); y += 14;
+    dbg_draw_kv(x, y, "wheel", g_dbg_wheel_step); y += 14;
+    dbg_draw_kv(x, y, "w_total", g_dbg_wheel_total); y += 14;
+    dbg_draw_kv(x, y, "btn", (int)g_last_btn);
+}
+
 static uint32_t g_last_click_ms = 0;
 static int      g_last_click_hit = -1;
 
@@ -289,7 +335,7 @@ void ui_desktop_init(void) {
 
     desktop_icons_init();
     desktop_icons_snap_all();
-    appmgr_start_app(1);
+    appmgr_start_app(11);
 
     g_last_btn = 0;
     g_lmb_down = 0;
@@ -340,6 +386,13 @@ void ui_desktop_handle_scancode(uint16_t sc) {
     if (kbd_is_super_pressed() && sc8 == 0x13 && ((sc8 & 0x80) == 0)) {
         app_t* a = appmgr_start_app(7);
         if (a) wm_set_active_id(a->win_id);
+        desktop_invalidate_full();
+        return;
+    }
+
+    // F12 (Set1 make=0x58) -> debug overlay toggle
+    if (((sc8 & 0x80) == 0) && sc8 == 0x58) {
+        g_dbg_overlay = !g_dbg_overlay;
         desktop_invalidate_full();
         return;
     }
@@ -397,11 +450,25 @@ void ui_desktop_tick(void) {
 
         mouse_x += dx;
         mouse_y += dy;
+        g_dbg_last_dx = dx;
+        g_dbg_last_dy = dy;
 
         if (mouse_x < 0) mouse_x = 0;
         if (mouse_y < 0) mouse_y = 0;
         if (mouse_x > (int)(fb_get_width() - 1))  mouse_x = (int)fb_get_width() - 1;
         if (mouse_y > (int)(fb_get_height() - 1)) mouse_y = (int)fb_get_height() - 1;
+
+        // ---- WHEEL ----
+        if (wheel != 0) {
+            int step = (wheel > 0) ? -1 : 1;
+            g_dbg_wheel_step = step;
+            g_dbg_wheel_total += step;
+            if (g_dbg_wheel_total > 500) g_dbg_wheel_total = 500;
+            if (g_dbg_wheel_total < -500) g_dbg_wheel_total = -500;
+
+            wm_handle_mouse_wheel(mouse_x, mouse_y, step, btn);
+            need_full_present = true;
+        }
 
         if (dx != 0 || dy != 0) {
             wm_handle_mouse_move(mouse_x, mouse_y);
@@ -626,6 +693,8 @@ void ui_desktop_tick(void) {
         g_force_full_present = false;
     }
 
+    if (g_dbg_overlay) need_full_present = true;
+
     if (wm_is_dragging_window()) need_full_present = true;
 
     fb_clear(desktop_bg_color);
@@ -649,6 +718,7 @@ void ui_desktop_tick(void) {
     messagebox_draw();
     notification_draw();
     cursor_draw_arrow(mouse_x, mouse_y);
+    dbg_draw_panel();
 
     // ---------- Present ----------
     const int CW = 32;
