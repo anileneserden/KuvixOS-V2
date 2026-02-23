@@ -27,6 +27,8 @@
 
 #include <ui/inputtest.h>
 
+#include <ui/theme.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -120,7 +122,9 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     asm volatile("sti");
 
     // FS (eğer fs_init kullanıyorsan burada çağır)
-    // fs_init();  // sende nasıl ise (fs_prepare_user_layout vb.) ona göre
+    fs_init_once();  // sende nasıl ise (fs_prepare_user_layout vb.) ona göre
+
+    ui_theme_bootstrap_default();
 
     // UI
     ui_session_init();

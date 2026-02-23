@@ -7,6 +7,7 @@ iso/
 *.iso
 *.img
 *.vdi
+disk.img
 
 # Editors
 .vscode/
@@ -20,4 +21,5 @@ diff.txt
 status.txt
 tree.txt
 qemu.log
-vs-test.txt
+vs-test.txtdisk.img
+*.img

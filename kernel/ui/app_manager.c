@@ -221,10 +221,9 @@ app_t* appmgr_open_path(const char* path) {
     }
 
     // .txt -> Notepad (DOSYAYI AÇ)
-    if (ends_with(path, ".txt")) {
+    if (ends_with(path, ".txt") || ends_with(path, ".kth")) {
         app_t* a = appmgr_start_app(3);
-        // ✅ Notepad singleton ise var olanı döndürür, sorun değil
-        notepad_open_file(path);   // ✅ kritik satır
+        notepad_open_file(path);
         return a;
     }
 

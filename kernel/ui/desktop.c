@@ -1,7 +1,7 @@
 // kernel/ui/desktop.c
 #include <ui/desktop.h>
 #include <ui/desktop_icons.h>
-#include <ui/messagebox.h>
+#include <ui/dialogs/messagebox.h>
 #include <ui/wm.h>
 #include <ui/cursor.h>
 #include <app/app_manager.h>
@@ -335,7 +335,7 @@ void ui_desktop_init(void) {
 
     desktop_icons_init();
     desktop_icons_snap_all();
-    appmgr_start_app(11);
+    appmgr_start_app(1);
 
     g_last_btn = 0;
     g_lmb_down = 0;

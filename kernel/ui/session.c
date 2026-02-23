@@ -2,10 +2,13 @@
 #include <lib/shell.h>
 #include <ui/desktop.h>
 #include <kernel/drivers/video/fb_console.h>
+#include <ui/icons.h>
+#include <ui/ui_init.h>
 
 static ui_session_t g_current = UI_SESSION_NONE;
 
 void ui_session_init(void) {
+    ui_init();
     g_current = UI_SESSION_NONE;
 }
 

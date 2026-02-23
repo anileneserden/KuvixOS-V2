@@ -84,6 +84,7 @@ SRC_C = \
     kernel/ui/controls/ui_context.c \
     kernel/ui/dialogs/open_dialog.c \
     kernel/ui/dialogs/save_dialog.c \
+    kernel/ui/dialogs/messagebox.c \
     kernel/ui/font/font8x8_basic.c \
     kernel/ui/font/font8x16_basic.c \
     kernel/ui/wm/hittest.c \
@@ -93,8 +94,8 @@ SRC_C = \
     kernel/ui/debug_overlay.c \
     kernel/ui/desktop_icons.c \
     kernel/ui/desktop.c \
+    kernel/ui/icons/ui_icons.c \
     kernel/ui/inputtest.c \
-    kernel/ui/messagebox.c \
     kernel/ui/mouse.c \
     kernel/ui/notification.c \
     kernel/ui/power_screen.c \
@@ -104,8 +105,10 @@ SRC_C = \
     kernel/ui/theme_builtin_data.c \
     kernel/ui/theme_parser.c \
     kernel/ui/theme_runtime.c \
+    kernel/ui/theme_session.c \
     kernel/ui/topbar.c \
     kernel/ui/ui_button.c \
+    kernel/ui/ui_init.c \
     kernel/ui/ui_label.c \
     kernel/ui/ui_settings.c \
     kernel/ui/wallpaper.c \

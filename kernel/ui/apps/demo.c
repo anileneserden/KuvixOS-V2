@@ -3,7 +3,7 @@
 #include <app/app.h>
 #include <ui/wm.h>
 #include <kernel/drivers/video/gfx.h>
-#include <ui/messagebox.h>
+#include <ui/dialogs/messagebox.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -20,6 +20,7 @@ typedef struct {
     ui_panel2_t  root;
     ui_label2_t  lbl;
     ui_button2_t btn;
+    ui_button2_t btn_msg;
 
     int  counter;
     char buf[32];
@@ -52,6 +53,16 @@ static void on_click_inc(void* user) {
     // İstersen burada WM'e "redraw" flag’i koyarsın.
 }
 
+static void on_click_msg(void* user) {
+    (void)user;
+    MessageBox.Show(
+        "KuvixOS",
+        "Bu bir test MessageBox.",
+        MB_ICON_INFO,
+        MessageBoxButtons.OK
+    );
+}
+
 static void demo_layout(demo_app_t* d) {
     // WM origin set ettiği için: burada sadece size alacağız.
     // Client rect'in w/h lazım.
@@ -66,6 +77,9 @@ static void demo_layout(demo_app_t* d) {
 
     d->btn.base.location  = (ui_point_t){ 12, 44 };
     d->btn.base.size      = (ui_size_t){ 90, 26 };
+
+    d->btn_msg.base.location = (ui_point_t){ 110, 44 };
+    d->btn_msg.base.size     = (ui_size_t){ 130, 26 };
 }
 
 static void demo_on_create(app_t* self) {
@@ -83,11 +97,15 @@ static void demo_on_create(app_t* self) {
     ui_label2_init(&d->lbl,  2, (ui_point_t){0,0}, 0x000000, d->buf);
 
     ui_button2_init(&d->btn, 3, (ui_point_t){0,0}, (ui_size_t){90,26}, "+1");
-    ui_button2_onclick(&d->btn, on_click_inc, d);    
+    ui_button2_onclick(&d->btn, on_click_inc, d);
+
+    ui_button2_init(&d->btn_msg, 4, (ui_point_t){0,0}, (ui_size_t){130,26}, "MessageBox");
+    ui_button2_onclick(&d->btn_msg, on_click_msg, d);
 
     // root -> children
     ui_control_add_child(&d->root.base, &d->lbl.base);
     ui_control_add_child(&d->root.base, &d->btn.base);
+    ui_control_add_child(&d->root.base, &d->btn_msg.base);
 
     // ui roots
     ui_ctx_add_root(&d->ui, &d->root.base);
@@ -106,22 +124,23 @@ static void demo_on_draw(app_t* self) {
     ui_ctx_draw(&d->ui);
 }
 
-static void demo_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8_t e1, uint8_t e2) {
-    (void)e1; (void)e2;
+static void demo_on_mouse(app_t* self,
+                          int mx, int my,
+                          uint8_t pressed,
+                          uint8_t released,
+                          uint8_t buttons)
+{
+    (void)pressed;
+    (void)released;
+
     demo_app_t* d = (demo_app_t*)self->user;
 
     if (messagebox_is_visible()) return;
     if (wm_is_any_window_captured()) return;
 
-    // mx,my = ekran koordinatı. WM origin set ettiğine göre UIContext'e client-relative vermeliyiz.
-    // WM origin sadece çizimi kaydırıyor; input hâlâ ekran koordinatı.
-    // O yüzden client.x/y çıkar.
-    ui_rect_t c = wm_get_client_rect(d->window_id);
-    int lx = mx - c.x;
-    int ly = my - c.y;
-
+    // mx,my zaten client coords geliyor
     bool ldown = (buttons & 1) != 0;
-    ui_ctx_mouse(&d->ui, lx, ly, ldown);
+    ui_ctx_mouse(&d->ui, mx, my, ldown);
 }
 
 static void demo_on_key(app_t* self, uint16_t sc) { (void)self; (void)sc; }

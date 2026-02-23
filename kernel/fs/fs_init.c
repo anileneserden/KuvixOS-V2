@@ -4,6 +4,7 @@
 #include <kernel/drivers/ata_pio.h>
 #include <kernel/block/block.h>
 #include <kernel/printk.h>
+#include <kernel/serial.h>
 
 #include <kernel/user.h>   // ✅ eklendi
 
@@ -27,6 +28,7 @@ int fs_prepare_user_layout(void) {
 int fs_init_once(void) {
     // 1. VFS Temel Yapısını Hazırla
     vfs_init();
+    printk("FS Init edildi\n");
 
     // 2. ATA/IDE Sürücüsünü Başlat
     if (ata_pio_init()) {

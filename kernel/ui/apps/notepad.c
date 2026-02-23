@@ -13,7 +13,7 @@
 #include <ui/notification.h>
 #include <ui/apps/notepad.h>
 #include <kernel/printk.h>
-#include <ui/messagebox.h>
+#include <ui/dialogs/messagebox.h>
 #include <kernel/user.h>
 
 // --- DIŞ BİLDİRİMLER ---

@@ -1,6 +1,6 @@
 #include <app/app.h>
 #include <ui/wm.h>
-#include <ui/messagebox.h>
+#include <ui/dialogs/messagebox.h>
 #include <kernel/drivers/video/gfx.h>
 #include <lib/string.h>
 #include <stdint.h>

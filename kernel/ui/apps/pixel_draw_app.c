@@ -16,7 +16,7 @@
 #include <app/app.h>
 #include <ui/wm.h>
 #include <kernel/drivers/video/gfx.h>
-#include <ui/messagebox.h>
+#include <ui/dialogs/messagebox.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <kernel/memory/kmalloc.h>

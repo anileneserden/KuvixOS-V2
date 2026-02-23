@@ -1,4 +1,5 @@
 #include <ui/controls/ui_context.h>
+#include <lib/string.h>
 
 // ------------------------------------------------------------
 // Recursive hit-test: en derin child (üstte olan önce)
@@ -61,8 +62,10 @@ static void dispatch_event(ui_control_t* c, ui_event_type_t type, int mx, int my
 // ------------------------------------------------------------
 // Public API
 // ------------------------------------------------------------
-void ui_ctx_init(ui_context_t* ui) {
+void ui_ctx_init(ui_context_t* ui) {    
     if (!ui) return;
+    memset(ui, 0, sizeof(*ui));
+    ui->theme = ui_get_theme();
     ui->root_count = 0;
 
     ui->mouse_x = 0;

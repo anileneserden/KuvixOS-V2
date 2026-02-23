@@ -1,5 +1,6 @@
 #include <ui/controls/button2.h>
 #include <kernel/drivers/video/gfx.h>
+#include <ui/theme.h>
 
 static void button2_draw(ui_control_t* c) {
     ui_button2_t* b = (ui_button2_t*)c;
@@ -9,21 +10,18 @@ static void button2_draw(ui_control_t* c) {
     int w = b->base.size.w;
     int h = b->base.size.h;
 
-    // basit tema: hover/pressed ile renk değiştir
-    uint32_t bg = 0xE0E0E0;
-    uint32_t border = 0x404040;
-    uint32_t text = 0x000000;
+    const ui_theme_t* th = ui_get_theme();
 
-    if (b->base.hovered) bg = 0xD0D0D0;
-    if (b->base.pressed) bg = 0xB8B8B8;
+    if (b->base.hovered) th->button_hover_bg;
+    if (b->base.pressed) th->button_pressed_bg;
 
-    gfx_fill_rect(x, y, w, h, bg);
-    gfx_draw_rect(x, y, w, h, border);
+    gfx_fill_rect(x, y, w, h, th->button_bg);
+    gfx_draw_rect(x, y, w, h, th->button_border);
 
     // text’i ortalamaya çok girmeyelim (şimdilik)
     int tx = x + 6;
     int ty = y + (h > 16 ? (h - 16) / 2 : 0);
-    gfx_draw_text_utf8(tx, ty, text, b->label ? b->label : "");
+    gfx_draw_text_utf8(tx, ty, th->button_text, b->label ? b->label : "");
 }
 
 static bool button2_event(ui_control_t* c, const ui_event_t* e) {

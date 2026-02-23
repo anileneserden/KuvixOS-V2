@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <kernel/drivers/video/fb.h>
-#include "icon_max_16.h"
+#include <ui/bitmaps/icons/icon_max_16.h>
 
 // 12 (W) x 16 (H)
 static const uint8_t max_bitmap[ICON_MAX_H][ICON_MAX_W] = {

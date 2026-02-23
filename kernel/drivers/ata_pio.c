@@ -26,9 +26,10 @@
 #define ATA_SR_ERR  0x01
 
 /* --- Global Değişkenler --- */
-static ata_disk_t g_disks[4];
-static int g_disk_count = 0;
-static int g_ready = 0;
+static ata_disk_t  g_disks[4];
+static int         g_disk_count = 0;
+static int         g_ready = 0;
+static ata_disk_t* g_root_disk = 0;
 
 /* --- Yardımcı Fonksiyonlar --- */
 
@@ -60,11 +61,15 @@ static void ata_fix_string(char* str, int len) {
 /* --- Alt Seviye Okuma/Yazma --- */
 
 int ata_pio_read_disk(ata_disk_t* disk, uint32_t lba, void* out) {
+    if (!disk) return 0;
+
     uint16_t base = disk->base;
     if (!ata_wait_not_busy(base)) return 0;
 
-    // 0xE0 (Master) veya 0xF0 (Slave) kullanarak LBA bayrağını (bit 6) set ediyoruz
-    outb(base + ATA_REG_HDDEVSEL, (disk->drive == 0xA0 ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F));
+    // 0xE0 (Master) veya 0xF0 (Slave) + LBA bit
+    outb(base + ATA_REG_HDDEVSEL,
+         (disk->drive == 0xA0 ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F));
+
     outb(base + ATA_REG_SECCOUNT, 1);
     outb(base + ATA_REG_LBA0, (uint8_t)lba);
     outb(base + ATA_REG_LBA1, (uint8_t)(lba >> 8));
@@ -75,16 +80,19 @@ int ata_pio_read_disk(ata_disk_t* disk, uint32_t lba, void* out) {
 
     uint16_t* dst = (uint16_t*)out;
     for (int i = 0; i < 256; i++) *dst++ = inw(base + ATA_REG_DATA);
-    
+
     return 1;
 }
 
 int ata_pio_write_disk(ata_disk_t* disk, uint32_t lba, const void* in) {
+    if (!disk) return 0;
+
     uint16_t base = disk->base;
     if (!ata_wait_not_busy(base)) return 0;
 
-    // VirtualBox için en güvenli drive select formatı
-    outb(base + ATA_REG_HDDEVSEL, (disk->drive == 0xA0 ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F));
+    outb(base + ATA_REG_HDDEVSEL,
+         (disk->drive == 0xA0 ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F));
+
     outb(base + ATA_REG_SECCOUNT, 1);
     outb(base + ATA_REG_LBA0, (uint8_t)lba);
     outb(base + ATA_REG_LBA1, (uint8_t)(lba >> 8));
@@ -96,11 +104,11 @@ int ata_pio_write_disk(ata_disk_t* disk, uint32_t lba, const void* in) {
     const uint16_t* src = (const uint16_t*)in;
     for (int i = 0; i < 256; i++) outw(base + ATA_REG_DATA, src[i]);
 
-    // Veriyi diske kalıcı olarak işle (VirtualBox için kritik)
+    // VirtualBox/QEMU için flush
     outb(base + ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
-    
-    // 400ns kuralı: Durum kaydını 4 kez oku
-    for(int i = 0; i < 4; i++) inb(base + ATA_REG_STATUS);
+
+    // 400ns kuralı: 4 kez status oku
+    for (int i = 0; i < 4; i++) inb(base + ATA_REG_STATUS);
 
     return ata_wait_not_busy(base);
 }
@@ -109,27 +117,31 @@ int ata_pio_write_disk(ata_disk_t* disk, uint32_t lba, const void* in) {
 
 static int ata_dev_read(blockdev_t* dev, uint64_t lba, uint32_t count, void* buffer) {
     (void)dev;
-    if (g_disk_count == 0) return 0;
+    if (!g_root_disk) return 0;
+
     uint8_t* p = (uint8_t*)buffer;
-    for(uint32_t i=0; i<count; i++) {
-        if(!ata_pio_read_disk(&g_disks[0], (uint32_t)lba + i, p + (i * 512))) return 0;
+    for (uint32_t i = 0; i < count; i++) {
+        if (!ata_pio_read_disk(g_root_disk, (uint32_t)lba + i, p + (i * 512)))
+            return 0;
     }
     return 1;
 }
 
 static int ata_dev_write(blockdev_t* dev, uint64_t lba, uint32_t count, const void* buffer) {
     (void)dev;
-    if (g_disk_count == 0) return 0;
+    if (!g_root_disk) return 0;
+
     const uint8_t* p = (const uint8_t*)buffer;
-    for(uint32_t i=0; i<count; i++) {
-        if(!ata_pio_write_disk(&g_disks[0], (uint32_t)lba + i, p + (i * 512))) return 0;
+    for (uint32_t i = 0; i < count; i++) {
+        if (!ata_pio_write_disk(g_root_disk, (uint32_t)lba + i, p + (i * 512)))
+            return 0;
     }
     return 1;
 }
 
 static blockdev_t g_dev = {
     .sector_size = 512,
-    .read = ata_dev_read,
+    .read  = ata_dev_read,
     .write = ata_dev_write
 };
 
@@ -137,46 +149,73 @@ static blockdev_t g_dev = {
 
 void ata_pio_scan_all(void) {
     g_disk_count = 0;
-    uint16_t ports[] = {0x1F0, 0x170}; 
-    uint8_t drives[] = {0xA0, 0xB0};   
+    g_root_disk  = 0;
+
+    uint16_t ports[]  = { 0x1F0, 0x170 };
+    uint8_t  drives[] = { 0xA0, 0xB0 };
 
     for (int p = 0; p < 2; p++) {
         for (int d = 0; d < 2; d++) {
-            uint16_t base = ports[p];
-            uint8_t drive = drives[d];
+            uint16_t base  = ports[p];
+            uint8_t  drive = drives[d];
 
             outb(base + ATA_REG_HDDEVSEL, drive);
-            for(int i=0; i<4; i++) inb(base + ATA_REG_STATUS); 
+            for (int i = 0; i < 4; i++) inb(base + ATA_REG_STATUS);
 
             outb(base + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
-            
+
             uint8_t status = inb(base + ATA_REG_STATUS);
-            if (status == 0xFF || status == 0) continue; 
+            if (status == 0xFF || status == 0) continue;
 
-            if (ata_wait_not_busy(base)) {
-                uint8_t l1 = inb(base + ATA_REG_LBA1);
-                uint8_t l2 = inb(base + ATA_REG_LBA2);
+            if (!ata_wait_not_busy(base)) continue;
 
-                if (l1 == 0 && l2 == 0) {
-                    if (ata_wait_drq(base)) {
-                        uint16_t data[256];
-                        for (int i = 0; i < 256; i++) data[i] = inw(base + ATA_REG_DATA);
+            uint8_t l1 = inb(base + ATA_REG_LBA1);
+            uint8_t l2 = inb(base + ATA_REG_LBA2);
 
-                        g_disks[g_disk_count].base = base;
-                        g_disks[g_disk_count].drive = drive;
-                        g_disks[g_disk_count].present = true;
+            // ATAPI/CDROM genelde LBA1/LBA2 != 0 gelir.
+            // Burada sadece ATA HDD kabul ediyoruz.
+            if (!(l1 == 0 && l2 == 0)) continue;
 
-                        memcpy(g_disks[g_disk_count].model, (char*)(data + 27), 40);
-                        g_disks[g_disk_count].model[40] = '\0';
-                        ata_fix_string(g_disks[g_disk_count].model, 40);
+            if (!ata_wait_drq(base)) continue;
 
-                        g_disk_count++;
-                    }
-                }
-            }
+            uint16_t data[256];
+            for (int i = 0; i < 256; i++) data[i] = inw(base + ATA_REG_DATA);
+
+            if (g_disk_count >= 4) break;
+
+            ata_disk_t* dk = &g_disks[g_disk_count];
+            memset(dk, 0, sizeof(*dk));
+
+            dk->base    = base;
+            dk->drive   = drive;
+            dk->present = true;
+
+            memcpy(dk->model, (char*)(data + 27), 40);
+            dk->model[40] = '\0';
+            ata_fix_string(dk->model, 40);
+
+            g_disk_count++;
         }
     }
+
     g_ready = (g_disk_count > 0);
+
+    // Root disk seç: Primary master varsa onu seç
+    if (g_ready) {
+        for (int i = 0; i < g_disk_count; i++) {
+            if (g_disks[i].base == 0x1F0 && g_disks[i].drive == 0xA0) {
+                g_root_disk = &g_disks[i];
+                break;
+            }
+        }
+        // yoksa ilk disk
+        if (!g_root_disk) g_root_disk = &g_disks[0];
+
+        printk("[ATA] root=%s base=%x drive=%x\n",
+               g_root_disk->model, g_root_disk->base, g_root_disk->drive);
+    } else {
+        printk("[ATA] no disk found\n");
+    }
 }
 
 int ata_pio_init(void) {
@@ -186,26 +225,44 @@ int ata_pio_init(void) {
 
 int ata_pio_is_ready(void) { return g_ready; }
 int ata_pio_get_disk_count(void) { return g_disk_count; }
+
 ata_disk_t* ata_pio_get_disk(int index) {
     if (index >= 0 && index < g_disk_count) return &g_disks[index];
     return 0;
 }
-blockdev_t* ata_pio_get_dev(void) { return g_ready ? &g_dev : 0; }
+
+blockdev_t* ata_pio_get_dev(void) {
+    return g_ready ? &g_dev : 0;
+}
 
 void ata_pio_print_info(void) {
     if (g_disk_count == 0) return;
     for (int i = 0; i < g_disk_count; i++) {
-        printk("Disk %d: %s [%s]\n", i, g_disks[i].model, 
-               (g_disks[i].drive == 0xA0 ? "Master" : "Slave"));
+        printk("Disk %d: %s [%s] base=%x\n",
+               i, g_disks[i].model,
+               (g_disks[i].drive == 0xA0 ? "Master" : "Slave"),
+               g_disks[i].base);
     }
 }
 
 int ata_pio_read(blockdev_t* dev, uint32_t lba, void* buffer, uint32_t count) {
     (void)dev;
-    if (g_disk_count == 0) return 0;
+    if (!g_root_disk) return 0;
+
     uint8_t* p = (uint8_t*)buffer;
-    for(uint32_t i = 0; i < count; i++) {
-        if(!ata_pio_read_disk(&g_disks[0], lba + i, p + (i * 512))) return 0;
+    for (uint32_t i = 0; i < count; i++) {
+        if (!ata_pio_read_disk(g_root_disk, lba + i, p + (i * 512))) return 0;
+    }
+    return 1;
+}
+
+int ata_pio_write(blockdev_t* dev, uint32_t lba, const void* buffer, uint32_t count) {
+    (void)dev;
+    if (!g_root_disk) return 0;
+
+    const uint8_t* p = (const uint8_t*)buffer;
+    for (uint32_t i = 0; i < count; i++) {
+        if (!ata_pio_write_disk(g_root_disk, lba + i, p + (i * 512))) return 0;
     }
     return 1;
 }

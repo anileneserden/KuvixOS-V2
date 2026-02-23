@@ -37,9 +37,9 @@ static void mem_zero(void* p, uint32_t n) {
 }
 
 static int meta_read(void) {
-    uint8_t buf[KVX_META_SECTORS * 512];
-    if (!block_read(KVX_META_LBA, KVX_META_SECTORS, buf)) return 0;
-    memcpy(&g_meta, buf, sizeof(g_meta));
+    mem_zero(g_io_buf, sizeof(g_io_buf));
+    if (!block_read(KVX_META_LBA, KVX_META_SECTORS, g_io_buf)) return 0;
+    memcpy(&g_meta, g_io_buf, sizeof(g_meta));
     return 1;
 }
 
@@ -88,33 +88,53 @@ static int alloc_ent(void) {
 }
 
 int kvxfs_init(void) {
-    // 1. Zaten başlatılmışsa tekrar uğraşma
     if (g_inited) return 1;
-    
-    // 2. ATA sürücüsünün hazır olduğundan emin ol
+
+    if (!ata_pio_is_ready()) {
+        printk("[KVXFS] ATA not ready\n");
+        return 0;
+    }
+
+    printk("[KVXFS] reading meta lba=%d sectors=%d\n", KVX_META_LBA, KVX_META_SECTORS);
+
+    if (!meta_read()) {
+        printk("[KVXFS] meta_read FAILED\n");
+        return 0;
+    }
+
+    printk("[KVXFS] magic='%.6s'\n", g_meta.magic);
+
+    if (strncmp(g_meta.magic, KVX_MAGIC, 6) != 0) {
+        printk("[KVXFS] magic mismatch (need %.6s)\n", KVX_MAGIC);
+        return 0;
+    }
+
+    printk("[KVXFS] OK\n");
+    g_inited = 1;
+    return 1;
+}
+
+int kvxfs_format(void) {
     if (!ata_pio_is_ready()) return 0;
 
-    // 3. Diskten meta veriyi oku
-    if (!meta_read()) {
-        // Okuma hatası donanımsal bir sorundur, formatlama çözüm olmayabilir
-        return 0; 
-    }
+    mem_zero(&g_meta, sizeof(g_meta));
 
-    // 4. Magic Check: Disk bizim formatımızda mı?
-    if (strncmp(g_meta.magic, KVX_MAGIC, 6) != 0) {
-        // ÖNEMLİ: Burada otomatik format atmıyoruz! 
-        // Sadece diskin "KVXFS" olmadığını bildiriyoruz.
-        return 0; 
-    }
+    memcpy(g_meta.magic, KVX_MAGIC, 6);
+    g_meta.magic[6] = 0;
+    g_meta.magic[7] = 0;
+
+    g_meta.file_count = 0;
+    g_meta.next_free_lba = KVX_DATA_LBA;
+
+    if (!meta_write()) return 0;
 
     g_inited = 1;
     return 1;
 }
 
-// KVXFS'i dışarıdan zorla formatlamak için kullanılır
 int kvxfs_force_format(void) {
-    g_inited = 0; // Dosya içindeki static değişkene buradan erişebiliriz
-    return kvxfs_init();
+    g_inited = 0;
+    return kvxfs_format();
 }
 
 int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {

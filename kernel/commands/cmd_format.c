@@ -1,15 +1,24 @@
 #include <kernel/printk.h>
 #include <kernel/fs/kvxfs.h>
 #include <lib/commands.h>
+#include <lib/string.h>
 
 void cmd_format(int argc, char** argv) {
-    (void)argc; (void)argv;
-    commands_puts("KuvixOS: Manuel format başlatılıyor...\n");
-    
+    int force = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--force") == 0) force = 1;
+    }
+    if (!force) {
+        commands_puts("Kullanim: format --force\n");
+        commands_puts("UYARI: Bu islem KVXFS verilerini siler.\n");
+        return;
+    }
+
+    commands_puts("KVXFS format baslatiliyor...\n");
     if (kvxfs_force_format()) {
-        commands_puts("Disk başarıyla formatlandı ve baglandı.\n");
+        commands_puts("OK: KVXFS formatlandi.\n");
     } else {
-        commands_puts("HATA: Format işlemi hala başarısız. ATA sürücüsünü kontrol edin.\n");
+        commands_puts("HATA: KVXFS format basarisiz.\n");
     }
 }
 

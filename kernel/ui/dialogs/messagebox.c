@@ -1,6 +1,7 @@
-#include <ui/messagebox.h>
+#include <ui/dialogs/messagebox.h>
 #include <kernel/drivers/video/gfx.h>
 #include <lib/string.h>
+#include <kernel/drivers/video/fb.h>
 
 // Private (Statik) Değişkenler
 static char _title[64];
@@ -17,14 +18,18 @@ static int _win_x, _win_y;
 
 static void _show(const char* title, const char* text, MB_ICON_T icon, MB_BTNS_T buttons) {
     (void)icon; // şimdilik kullanılmıyor
-    strncpy(_title, title, 63);
-    strncpy(_text, text, 255);
+    strncpy(_title, title ? title : "", sizeof(_title) - 1);
+    _title[sizeof(_title) - 1] = '\0';
+    strncpy(_text, text ? text : "", sizeof(_text) - 1);
+    _text[sizeof(_text) - 1] = '\0';
     _active_btns = buttons;
     _visible = true;
     _result = MB_RES_NONE;
 
-    _win_x = (1024 - _win_w) / 2;
-    _win_y = (768 - _win_h) / 2;
+    int sw = (int)fb_get_width();
+    int sh = (int)fb_get_height();
+    _win_x = (sw - _win_w) / 2;
+    _win_y = (sh - _win_h) / 2;
 }
 
 static void _close(void) {
@@ -84,7 +89,7 @@ void messagebox_handle_mouse(int mx, int my, bool pressed) {
         int bh = 25;
 
         // Fare butonun sınırları içinde mi?
-        if (mx >= bx && mx <= bx + bw && my >= by && my <= by + bh) {
+        if (mx >= bx && mx < bx + bw && my >= by && my <= by + bh) {
             _result = MB_RES_OK;   // ✅
             _visible = false;
         }
