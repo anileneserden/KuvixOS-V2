@@ -16,3 +16,7 @@ diff.txt
 status.txt
 tree.txt
 qemu.log
+
+disk.img
+disk2.img
+share.img
