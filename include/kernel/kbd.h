@@ -7,6 +7,7 @@ typedef struct {
     const char* name;
     const uint8_t* normal;
     const uint8_t* shift;
+    const uint8_t* altgr;
 } kbd_layout_t;
 
 void kbd_set_layout(const char* name);

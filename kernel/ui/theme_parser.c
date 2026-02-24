@@ -2,6 +2,29 @@
 #include <ui/theme.h>
 #include <stdint.h>
 #include <kernel/drivers/video/fb.h>
+#include <lib/string.h>
+#include <kernel/printk.h>
+
+static void dbg_print_kv(const char* key_start, const char* key_end,
+                         const char* val_start, const char* val_end)
+{
+    char kbuf[64];
+    char vbuf[96];
+
+    int klen = (int)(key_end - key_start);
+    int vlen = (int)(val_end - val_start);
+
+    if (klen < 0) klen = 0;
+    if (vlen < 0) vlen = 0;
+
+    if (klen > (int)sizeof(kbuf) - 1) klen = (int)sizeof(kbuf) - 1;
+    if (vlen > (int)sizeof(vbuf) - 1) vlen = (int)sizeof(vbuf) - 1;
+
+    memcpy(kbuf, key_start, (uint32_t)klen); kbuf[klen] = 0;
+    memcpy(vbuf, val_start, (uint32_t)vlen); vbuf[vlen] = 0;
+
+    printk("[THEME] SEC_WINDOW key='%s' val='%s'\n", kbuf, vbuf);
+}
 
 typedef enum {
     SEC_NONE,
@@ -10,7 +33,8 @@ typedef enum {
     SEC_CURSOR,   // ileride istersen kullanırsın
     SEC_TEXTBOX,
     SEC_BUTTON,
-    SEC_DOCK
+    SEC_DOCK,
+    SEC_CAPBUTTONS
 } theme_section_t;
 
 // Küçük yardımcı: hepsi boşluk/tab mı?
@@ -106,9 +130,7 @@ void ui_theme_load_from_kth(const char* text, ui_theme_t* out)
     out->window_border      = fb_rgb(80, 80, 80);
     out->window_title_bg    = fb_rgb(40, 40, 90);
     out->window_title_text  = fb_rgb(255, 255, 255);
-    out->window_corner_radius = 0;
-    out->window_border_px = 2;
-    out->window_title_h   = 24;
+    out->window_radius_px   = 0;
 
     out->dock_bg            = fb_rgba(32,32,32,200);
     out->dock_border        = fb_rgb(64,64,64);
@@ -149,6 +171,26 @@ void ui_theme_load_from_kth(const char* text, ui_theme_t* out)
 
     out->window_btn_hover_dark = 15;
     out->window_btn_press_dark = 30;
+
+    // ---- capbuttons defaults ----
+    out->capbtn_style = UI_CAPBTN_STYLE_TRAFFIC;
+    out->capbtn_icon_enabled = 1;
+    out->capbtn_icon_size = 16;
+    out->capbtn_radius = 999;        // yuvarlak
+    out->capbtn_outline_px = 0;
+
+    out->capbtn_bg_close = parse_color("#FF5F57", "#FF5F57"+7);
+    out->capbtn_bg_max   = parse_color("#28C840", "#28C840"+7);
+    out->capbtn_bg_min   = parse_color("#FEBC2E", "#FEBC2E"+7);
+
+    out->capbtn_bg_hover = fb_rgb(80,80,80);
+    out->capbtn_bg_press = fb_rgb(50,50,50);
+
+    out->capbtn_icon       = fb_rgb(0,0,0);
+    out->capbtn_icon_hover = fb_rgb(0,0,0);
+    out->capbtn_icon_press = fb_rgb(0,0,0);
+
+    out->capbtn_close_red_on_hover = 0;
 
     // Textbox default
     out->textbox_bg           = fb_rgb(239,239,239);
@@ -214,6 +256,14 @@ void ui_theme_load_from_kth(const char* text, ui_theme_t* out)
             else if ((nl - line) >= 6 && line[1]=='d' && line[2]=='o' && line[3]=='c' && line[4]=='k' && line[5]==']') {
                 sec = SEC_DOCK;
             }
+            // [capbuttons]
+            else if ((nl - line) >= 12
+                     && line[1]=='c' && line[2]=='a' && line[3]=='p'
+                     && line[4]=='b' && line[5]=='u' && line[6]=='t'
+                     && line[7]=='t' && line[8]=='o' && line[9]=='n'
+                     && line[10]=='s' && line[11]==']') {
+                sec = SEC_CAPBUTTONS;
+            }
         }
         else {
             // key = value satırı
@@ -241,21 +291,47 @@ void ui_theme_load_from_kth(const char* text, ui_theme_t* out)
                     }
                 }
                 else if (sec == SEC_WINDOW) {
-                    if (line_starts_with(key_start, key_end, "bg", 2)) {
+                    // bg
+                    if (line_starts_with(key_start, key_end, "bg", 2) ||
+                        line_starts_with(key_start, key_end, "window_bg", 9)) {
                         out->window_bg = parse_color(val_start, val_end);
+                        dbg_print_kv(key_start, key_end, val_start, val_end);
                     }
-                    else if (line_starts_with(key_start, key_end, "border", 6)) {
+                    // border color
+                    else if (line_starts_with(key_start, key_end, "border", 6) ||
+                            line_starts_with(key_start, key_end, "window_border", 13)) {
                         out->window_border = parse_color(val_start, val_end);
                     }
-                    else if (line_starts_with(key_start, key_end, "title_bg", 8)) {
+                    // title bg
+                    else if (line_starts_with(key_start, key_end, "title_bg", 8) ||
+                            line_starts_with(key_start, key_end, "window_title_bg", 15)) {
                         out->window_title_bg = parse_color(val_start, val_end);
                     }
-                    else if (line_starts_with(key_start, key_end, "title_text", 10)) {
+                    // title text
+                    else if (line_starts_with(key_start, key_end, "title_text", 10) ||
+                            line_starts_with(key_start, key_end, "window_title_text", 17)) {
                         out->window_title_text = parse_color(val_start, val_end);
                     }
-                    else if (line_starts_with(key_start, key_end, "corner_radius", 13)) {
-                        out->window_corner_radius = parse_int(val_start, val_end);
+                    // border px
+                    else if (line_starts_with(key_start, key_end, "border_px", 9) ||
+                            line_starts_with(key_start, key_end, "window_border_px", 16)) {
+                        out->window_border_px = parse_int(val_start, val_end);
                     }
+                    // title height
+                    else if (line_starts_with(key_start, key_end, "title_h", 7) ||
+                            line_starts_with(key_start, key_end, "window_title_h", 14)) {
+                        out->window_title_h = parse_int(val_start, val_end);
+                    }
+                    // radius (iki isim de aynı yere yazsın)
+                    else if (line_starts_with(key_start, key_end, "radius_px", 9) ||
+                            line_starts_with(key_start, key_end, "window_radius_px", 16) ||
+                            line_starts_with(key_start, key_end, "corner_radius", 13)) {
+                        int r = parse_int(val_start, val_end);
+                        out->window_radius_px = r;         // ✅ BUNU KULLAN
+                        out->window_corner_radius = r;     // (eğer eski alanı da tutuyorsan)
+                    }
+
+                    // title align/pad vs (şimdilik sonra eklenebilir)
                 }
                 else if (sec == SEC_TEXTBOX) {
                     if (line_starts_with(key_start, key_end, "bg", 2)) {
@@ -319,7 +395,58 @@ void ui_theme_load_from_kth(const char* text, ui_theme_t* out)
                         out->dock_gap = parse_int(val_start, val_end);
                     }
                 }
+                else if (sec == SEC_CAPBUTTONS) {
 
+                    if (line_starts_with(key_start, key_end, "style", 5)) {
+                        // style = traffic/windows/flat
+                        const char* v = skip_ws(val_start, val_end);
+                        if (streq_lit(v, val_end, "traffic")) out->capbtn_style = UI_CAPBTN_STYLE_TRAFFIC;
+                        else if (streq_lit(v, val_end, "windows")) out->capbtn_style = UI_CAPBTN_STYLE_WINDOWS;
+                        else if (streq_lit(v, val_end, "flat")) out->capbtn_style = UI_CAPBTN_STYLE_FLAT;
+                    }
+                    else if (line_starts_with(key_start, key_end, "icon_enabled", 12)) {
+                        out->capbtn_icon_enabled = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "icon_size", 9)) {
+                        out->capbtn_icon_size = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "radius", 6)) {
+                        out->capbtn_radius = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "outline_px", 10)) {
+                        out->capbtn_outline_px = parse_int(val_start, val_end);
+                    }
+
+                    // Traffic bg renkleri
+                    else if (line_starts_with(key_start, key_end, "bg_close", 8)) {
+                        out->capbtn_bg_close = parse_color(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "bg_max", 6)) {
+                        out->capbtn_bg_max = parse_color(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "bg_min", 6)) {
+                        out->capbtn_bg_min = parse_color(val_start, val_end);
+                    }
+                    // Hover/press bg
+                    else if (line_starts_with(key_start, key_end, "bg_hover", 8)) {
+                        out->capbtn_bg_hover = parse_color(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "bg_press", 8)) {
+                        out->capbtn_bg_press = parse_color(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "icon_hover", 10)) {
+                        out->capbtn_icon_hover = parse_color(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "icon_press", 10)) {
+                        out->capbtn_icon_press = parse_color(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "icon", 4)) {
+                        out->capbtn_icon = parse_color(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "close_red_on_hover", 19)) {
+                        out->capbtn_close_red_on_hover = parse_int(val_start, val_end);
+                    }
+                }
             }
         }
 

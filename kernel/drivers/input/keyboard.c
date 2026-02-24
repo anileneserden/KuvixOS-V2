@@ -1,6 +1,6 @@
 // kernel/drivers/input/keyboard.c
 #include <kernel/drivers/input/keyboard.h>
-#include <kernel/kbd.h>              // layout API: kbd_set_layout(), kbd_get_current_layout()
+#include <kernel/kbd.h>
 #include <arch/x86/io.h>
 #include <lib/string.h>
 #include <stdint.h>
@@ -17,8 +17,8 @@
 -------------------------------------------------- */
 
 static uint16_t kbd_buffer[256];
-static uint8_t head = 0;
-static uint8_t tail = 0;
+static uint8_t  head = 0;
+static uint8_t  tail = 0;
 
 /* --------------------------------------------------
    MODIFIER STATE
@@ -26,16 +26,14 @@ static uint8_t tail = 0;
 
 static uint8_t g_shift = 0;
 static uint8_t g_ctrl  = 0;
-static uint8_t g_alt   = 0;
-static uint8_t g_super = 0;
+static uint8_t g_alt   = 0;     // Left Alt (0x38)
+static uint8_t g_altgr = 0;     // Right Alt (E0 38)
+static uint8_t g_super = 0;     // Win key (E0 5B/5C)
 
-// E0 prefix pending (bir sonraki byte ile birleştirmek için)
-static uint8_t g_e0_pending = 0;
+static uint8_t g_e0_pending = 0;    // E0 prefix pending
+static uint8_t g_key_down[128];     // duplicate make filter
 
-// duplicate make engelleme (yalnız normal tuşlar için pratik)
-static uint8_t g_key_down[128];
-
-// Set1 scancodes (normal)
+// Set1 (normal)
 static int is_shift_make(uint8_t sc)  { return (sc == 0x2A || sc == 0x36); }
 static int is_shift_break(uint8_t sc) { return (sc == 0xAA || sc == 0xB6); }
 
@@ -45,21 +43,29 @@ static int is_ctrl_break(uint8_t sc)  { return (sc == 0x9D); }
 static int is_alt_make(uint8_t sc)    { return (sc == 0x38); }
 static int is_alt_break(uint8_t sc)   { return (sc == 0xB8); }
 
-// E0 prefix Super/Win:
+// E0 prefix: Super/Win
 // LeftWin make: E0 5B  break: E0 DB
 // RightWin make: E0 5C break: E0 DC
 static int is_super_make_e0(uint8_t sc)  { return (sc == 0x5B || sc == 0x5C); }
 static int is_super_break_e0(uint8_t sc) { return (sc == 0xDB || sc == 0xDC); }
 
-// bit0=shift bit1=ctrl bit2=alt
+// E0 prefix: Right Alt (AltGr) is E0 38 / E0 B8
+static int is_altgr_make_e0(uint8_t sc)  { return (sc == 0x38); }
+static int is_altgr_break_e0(uint8_t sc) { return (sc == 0xB8); }
+
+// bit0=shift bit1=ctrl bit2=alt bit3=altgr bit4=super (istersen)
 uint8_t kbd_mods(void) {
     return (g_shift ? 1 : 0)
          | (g_ctrl  ? 2 : 0)
-         | (g_alt   ? 4 : 0);
+         | (g_alt   ? 4 : 0)
+         | (g_altgr ? 8 : 0)
+         | (g_super ? 16 : 0);
 }
 
 int kbd_is_ctrl_pressed(void)  { return g_ctrl  ? 1 : 0; }
 int kbd_is_shift_pressed(void) { return g_shift ? 1 : 0; }
+int kbd_is_alt_pressed(void)   { return g_alt   ? 1 : 0; }
+int kbd_is_altgr_pressed(void) { return g_altgr ? 1 : 0; }
 int kbd_is_super_pressed(void) { return g_super ? 1 : 0; }
 
 /* --------------------------------------------------
@@ -93,6 +99,7 @@ void kbd_init(void) {
     g_shift = 0;
     g_ctrl  = 0;
     g_alt   = 0;
+    g_altgr = 0;
     g_super = 0;
     g_e0_pending = 0;
 
@@ -105,56 +112,70 @@ void kbd_init(void) {
 
 /* --------------------------------------------------
    POP RAW EVENT
+   - Returns one raw event (8-bit scancode or 0xE0xx)
+   - Updates modifier states but DOES NOT swallow events
+     (so inputtest can see Shift/Ctrl/Alt etc.)
 -------------------------------------------------- */
 
 uint16_t kbd_pop_event(void) {
     while (head != tail) {
-
         uint16_t ev = kbd_buffer[tail];
         tail = (uint8_t)((tail + 1) & 0xFF);
 
-        uint8_t sc = (uint8_t)(ev & 0xFF);
+        uint8_t sc   = (uint8_t)(ev & 0xFF);
         uint8_t is_e0 = ((ev & 0xFF00) == 0xE000);
 
-        // --- Modifier state update (make/break) ---
+        // --- modifier update (do NOT continue; return event) ---
         if (!is_e0) {
-            if (is_shift_make(sc))  { g_shift = 1; continue; }
-            if (is_shift_break(sc)) { g_shift = 0; continue; }
+            if (is_shift_make(sc))  { g_shift = 1; return ev; }
+            if (is_shift_break(sc)) { g_shift = 0; return ev; }
 
-            if (is_ctrl_make(sc))   { g_ctrl = 1; continue; }
-            if (is_ctrl_break(sc))  { g_ctrl = 0; continue; }
+            if (is_ctrl_make(sc))   { g_ctrl = 1; return ev; }
+            if (is_ctrl_break(sc))  { g_ctrl = 0; return ev; }
 
-            if (is_alt_make(sc))    { g_alt = 1; continue; }
-            if (is_alt_break(sc))   { g_alt = 0; continue; }
+            if (is_alt_make(sc))    { g_alt  = 1; return ev; }
+            if (is_alt_break(sc))   { g_alt  = 0; return ev; }
         } else {
-            // ✅ Super/Win E0 prefix
-            if (is_super_make_e0(sc))  { g_super = 1; continue; }
-            if (is_super_break_e0(sc)) { g_super = 0; continue; }
+            if (is_altgr_make_e0(sc))  { g_altgr = 1; return ev; }
+            if (is_altgr_break_e0(sc)) { g_altgr = 0; return ev; }
+
+            if (is_super_make_e0(sc))  { g_super = 1; return ev; }
+            if (is_super_break_e0(sc)) { g_super = 0; return ev; }
         }
 
-        // --- Duplicate make filter (normal tuşlarda daha anlamlı) ---
-        // E0'lar için de code üzerinden çalışır ama super zaten yutuldu.
-        uint8_t code = (uint8_t)(sc & 0x7F);
+        // --- duplicate make filter (optional) ---
+        // IMPORTANT: Only apply this filter to non-modifier keys,
+        // otherwise Shift/Ctrl/Alt "make" might be suppressed in debug.
+        // We'll keep it simple: filter only non-E0 and not shift/ctrl/alt codes.
+        if (!is_e0) {
+            uint8_t code = (uint8_t)(sc & 0x7F);
 
-        if (sc & 0x80) {
             // break
-            if (code < 128) g_key_down[code] = 0;
-            return ev;
-        } else {
+            if (sc & 0x80) {
+                if (code < 128) g_key_down[code] = 0;
+                return ev;
+            }
+
             // make
             if (code < 128) {
-                if (g_key_down[code]) {
+                // skip filtering for known modifiers
+                if (!is_shift_make(sc) && !is_ctrl_make(sc) && !is_alt_make(sc)) {
+                    if (g_key_down[code]) {
 #ifdef KBD_SERIAL_DEBUG
-                    serial_write("[KBD] dup make ignored sc=0x");
-                    serial_write_hex8(sc);
-                    serial_write("\n");
+                        serial_write("[KBD] dup make ignored sc=0x");
+                        serial_write_hex8(sc);
+                        serial_write("\n");
 #endif
-                    continue;
+                        continue; // ignore duplicate
+                    }
+                    g_key_down[code] = 1;
                 }
-                g_key_down[code] = 1;
             }
             return ev;
         }
+
+        // E0 event: just return it (super/altgr already updated above when applicable)
+        return ev;
     }
 
     return 0;
@@ -173,7 +194,7 @@ char kbd_get_char(void) {
         uint16_t ev = kbd_pop_event();
         if (ev == 0) return 0;
 
-        // E0 event'lerden karakter üretmeyelim
+        // E0 events don't produce characters
         if ((ev & 0xFF00) == 0xE000)
             continue;
 
@@ -187,7 +208,12 @@ char kbd_get_char(void) {
         if (!lay) return 0;
 
         uint8_t code = (uint8_t)(sc & 0x7F);
-        const uint8_t* table = g_shift ? lay->shift : lay->normal;
+
+        const uint8_t* table = 0;
+        if (g_altgr && lay->altgr) table = lay->altgr;
+        else if (g_shift)         table = lay->shift;
+        else                      table = lay->normal;
+
         if (!table) return 0;
 
         uint8_t ch = table[code];
@@ -208,7 +234,7 @@ char kbd_get_char(void) {
     }
 }
 
-// Eski uyumluluk helper (sadece normal Set1 make sc)
+// Compatibility helper: ONLY for normal make codes (no E0)
 char kbd_scancode_to_ascii(uint8_t sc) {
     if (sc & 0x80) return 0; // break -> no char
 
@@ -216,14 +242,19 @@ char kbd_scancode_to_ascii(uint8_t sc) {
     if (!lay) return 0;
 
     uint8_t code = (uint8_t)(sc & 0x7F);
-    const uint8_t* table = (kbd_mods() & 1) ? lay->shift : lay->normal;
+
+    const uint8_t* table = 0;
+    if (g_altgr && lay->altgr) table = lay->altgr;
+    else if (g_shift)         table = lay->shift;
+    else                      table = lay->normal;
+
     if (!table) return 0;
 
     return (char)table[code];
 }
 
 /* --------------------------------------------------
-   POLLING
+   POLLING (optional)
 -------------------------------------------------- */
 
 void kbd_poll(void) {
@@ -265,7 +296,6 @@ void kbd_handler(void) {
         uint8_t data = inb(KBD_DATA_PORT);
 
         if (!(status & 0x20)) {
-
 #ifdef KBD_SERIAL_DEBUG
             serial_write("[KBD] irq raw=0x");
             serial_write_hex8(data);

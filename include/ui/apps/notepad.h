@@ -33,6 +33,10 @@ typedef struct {
     // ✅ desktop open race fix
     bool pending_open;
     char pending_path[128];
+
+    uint32_t caret_last_ms;
+    uint32_t caret_blink_ms;
+    int      caret_visible;
 } notepad_t;
 
 void notepad_init(void);

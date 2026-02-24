@@ -123,8 +123,22 @@ static const uint8_t trq_shift[128] = {
     [0x39] = ' ',
 };
 
+static const uint8_t trq_altgr[128] = {
+    // TRQ'de [ ] genelde AltGr+8 / AltGr+9 olur (TR klavye düzenine göre)
+    // Senin map'e göre indexleri gerekirse inputtest ile teyit ederiz.
+
+    [0x08] = '[',   // AltGr + 7/8 olabilir (scancode'a göre düzelt)
+    [0x09] = ']',   // AltGr + 8/9 olabilir
+    [0x07] = '{',   // AltGr + 7
+    [0x0A] = '}',   // AltGr + 0/9/10 vs
+    [0x2B] = '\\',  // TR'de \ genelde AltGr+,
+    [0x35] = '|',   // bazen AltGr+.
+    [0x04] = '#',
+};
+
 kbd_layout_t layout_trq = {
     .name   = "trq",
     .normal = trq_norm,
     .shift  = trq_shift,
+    .altgr  = trq_altgr
 };

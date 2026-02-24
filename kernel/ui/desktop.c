@@ -33,6 +33,8 @@
 
 #include <ui/ui_settings.h>
 
+#include <ui/recovery.h>
+
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -93,52 +95,10 @@ static int g_down_y = 0;
 static int g_down_hit = -1;
 static int g_dragging = 0;
 
-static int g_dbg_last_dx = 0;
-static int g_dbg_last_dy = 0;
-static int g_dbg_wheel_step = 0;
-static int g_dbg_wheel_total = 0;
+// debug overlay (istersen açarsın)
+static bool g_dbg_overlay = false;
 
-// --- Debug overlay helps (desktop içi) ---
-static bool g_dbg_overlay = true;
-
-static void dbg_itoa(int v, char* out) {
-    char tmp[16];
-    int i = 0, neg = 0;
-    if (v < 0) { neg = 1; v = -v; }
-    if (v == 0) tmp[i++] = '0';
-    while (v > 0 && i < 15) { tmp[i++] = (char)('0' + (v % 10)); v /= 10; }
-    int p = 0;
-    if (neg) out[p++] = '-';
-    while (i > 0) out[p++] = tmp[--i];
-    out[p] = 0;
-}
-
-static void dbg_draw_kv(int x, int y, const char* k, int v) {
-    char n[16];
-    dbg_itoa(v, n);
-    gfx_draw_text_utf8(x, y, 0x00FFFFFF, k);
-    gfx_draw_text_utf8(x + 92, y, 0x00FFFF00, n);
-}
-
-static void dbg_draw_panel(void) {
-    if (!g_dbg_overlay) return;
-
-    int x = 8, y = 8;
-    int w = 220, h = 112;
-
-    gfx_fill_rect(x - 4, y - 4, w, h, 0x00202020);
-    gfx_draw_rect(x - 4, y - 4, w, h, 0x00AAAAAA);
-
-    gfx_draw_text_utf8(x, y, 0x00FFFFFF, "DEBUG INPUT (F12 toggle)");
-    y += 16;
-
-    dbg_draw_kv(x, y, "dx", g_dbg_last_dx); y += 14;
-    dbg_draw_kv(x, y, "dy", g_dbg_last_dy); y += 14;
-    dbg_draw_kv(x, y, "wheel", g_dbg_wheel_step); y += 14;
-    dbg_draw_kv(x, y, "w_total", g_dbg_wheel_total); y += 14;
-    dbg_draw_kv(x, y, "btn", (int)g_last_btn);
-}
-
+// double click
 static uint32_t g_last_click_ms = 0;
 static int      g_last_click_hit = -1;
 
@@ -206,8 +166,12 @@ static void get_unique_filename(const char* base_path, const char* ext, char* ou
 static void desktop_toggle_ext(void) {
     ui_toggle_show_extensions();
     desktop_icons_init();
-    desktop_icons_snap_all();      // ✅ iyi olur, dizilim bozulmasın
-    desktop_invalidate_full();     // ✅ senin helper, g_force_full_present = true
+    desktop_icons_snap_all();
+    desktop_invalidate_full();
+}
+
+uint32_t desktop_get_bg_color(void) {
+    return desktop_bg_color;
 }
 
 // ============================================================
@@ -222,20 +186,26 @@ void desktop_handle_rename_confirm(const char* new_name) {
 
     char new_full_path[256];
 
-    // Uzantı kontrolü
+    // ⚠️ Burada printk ile string formatlama yapmışsın; doğru olan snprintf benzeri fonksiyon.
+    // Şimdilik dokunmuyorum (senin sistemde belki printk overload var).
+    // Eğer yoksa bunu düzeltmek lazım.
+
     if (!strstr(new_name, ".txt")) {
-        printk(new_full_path, sizeof(new_full_path),
-                 "%s/%s.txt", USER_DESKTOP_PATH, new_name);
+        // TODO: snprintf(new_full_path, sizeof(new_full_path), "%s/%s.txt", USER_DESKTOP_PATH, new_name);
+        // geçici:
+        strcpy(new_full_path, USER_DESKTOP_PATH);
+        strcat(new_full_path, "/");
+        strcat(new_full_path, new_name);
+        strcat(new_full_path, ".txt");
     } else {
-        printk(new_full_path, sizeof(new_full_path),
-                 "%s/%s", USER_DESKTOP_PATH, new_name);
+        strcpy(new_full_path, USER_DESKTOP_PATH);
+        strcat(new_full_path, "/");
+        strcat(new_full_path, new_name);
     }
 
     if (vfs_rename(old_full_path, new_full_path) == 1) {
-
         notification_show("Isim degistirildi", 800);
 
-        // Eğer yeni dosya oluşturma sonrası açılacaksa
         if (g_open_after_rename) {
             g_open_after_rename = false;
             notepad_open_file(new_full_path);
@@ -243,9 +213,11 @@ void desktop_handle_rename_confirm(const char* new_name) {
 
         desktop_icons_init();
         desktop_icons_snap_all();
+        desktop_invalidate_full();
     } else {
         notification_show("Isim degistirilemedi!", 1200);
         g_open_after_rename = false;
+        desktop_invalidate_full();
     }
 
     rename_target_index = -1;
@@ -255,12 +227,16 @@ static void desktop_handle_rename(void) {
     rename_target_index = desktop_icons_get_hit(mouse_x, mouse_y);
     if (rename_target_index != -1) {
         desktop_icons_begin_edit(rename_target_index);
+        desktop_invalidate_full();
     }
 }
 
 static void desktop_handle_open(void) {
     int hit = desktop_icons_get_hit(mouse_x, mouse_y);
-    if (hit != -1) desktop_icons_process_click(hit);
+    if (hit != -1) {
+        desktop_icons_process_click(hit);
+        desktop_invalidate_full();
+    }
 }
 
 static void desktop_handle_create_file(void) {
@@ -274,13 +250,12 @@ static void desktop_handle_create_file(void) {
 
     vfs_file_t* f = 0;
     if (vfs_open(final_path, VFS_O_CREAT | VFS_O_WRONLY, &f) == 1) {
-        // ✅ boş dosya oluştur: yazma yok
         vfs_close(f);
 
         g_open_after_rename = true;
-        strncpy(g_open_after_rename_path, final_path, sizeof(g_open_after_rename_path) -1);
+        strncpy(g_open_after_rename_path, final_path, sizeof(g_open_after_rename_path) - 1);
         g_open_after_rename_path[sizeof(g_open_after_rename_path) - 1] = '\0';
-        
+
         desktop_icons_init();
         desktop_icons_snap_all();
 
@@ -289,8 +264,11 @@ static void desktop_handle_create_file(void) {
             rename_target_index = count - 1;
             desktop_icons_begin_edit(rename_target_index);
         }
+
+        desktop_invalidate_full();
     } else {
         notification_show("Hata: dosya olusturulamadi!", 1500);
+        desktop_invalidate_full();
     }
 }
 
@@ -318,6 +296,7 @@ static void desktop_handle_create_folder(void) {
     desktop_icons_init();
     desktop_icons_snap_all();
     notification_show("Klasor olusturuldu", 600);
+    desktop_invalidate_full();
 }
 
 void desktop_reset_selection_state(void) {
@@ -335,7 +314,7 @@ void ui_desktop_init(void) {
 
     desktop_icons_init();
     desktop_icons_snap_all();
-    appmgr_start_app(1);
+    // appmgr_start_app(1);
 
     g_last_btn = 0;
     g_lmb_down = 0;
@@ -380,9 +359,7 @@ void ui_desktop_handle_scancode(uint16_t sc) {
     uint8_t sc8 = (uint8_t)(sc & 0xFF);
     char c = kbd_scancode_to_ascii(sc8);
 
-    // ✅ GLOBAL HOTKEY: SUPER+R -> Run (app id=7)
-    // Set1: R make = 0x13, break = 0x93
-    // Not: kbd_is_super_pressed() senin keyboard driver'da olmalı.
+    // SUPER+R -> Run (app id=7)
     if (kbd_is_super_pressed() && sc8 == 0x13 && ((sc8 & 0x80) == 0)) {
         app_t* a = appmgr_start_app(7);
         if (a) wm_set_active_id(a->win_id);
@@ -390,14 +367,20 @@ void ui_desktop_handle_scancode(uint16_t sc) {
         return;
     }
 
-    // F12 (Set1 make=0x58) -> debug overlay toggle
+    // F12 -> debug overlay toggle
     if (((sc8 & 0x80) == 0) && sc8 == 0x58) {
         g_dbg_overlay = !g_dbg_overlay;
         desktop_invalidate_full();
         return;
     }
 
-    printk("[DESKTOP] sc=0x%x\n", sc8);
+    // F10 make: Set1'de genelde 0x44 (F10)
+    if (((sc8 & 0x80) == 0) && sc8 == 0x44) {
+        // mesela sorun yaratan dosya neyse onu yaz
+        recovery_delete_and_reboot(USER_DESKTOP_PATH "/notum.txt");
+        return;
+    }
+
 
     // Modal'lar önce yesin
     if (save_dialog_is_active()) { save_dialog_handle_key(sc, c); desktop_invalidate_full(); return; }
@@ -411,10 +394,7 @@ void ui_desktop_handle_scancode(uint16_t sc) {
     }
 
     int active_id = wm_get_active_id();
-    printk("[DESKTOP] active_win=%d\n", active_id);
-
     app_t* active_app = appmgr_get_app_by_window_id(active_id);
-    printk("[DESKTOP] active_app=%p\n", (void*)active_app);
 
     if (active_app && active_app->v && active_app->v->on_key) {
         active_app->v->on_key(active_app, sc);
@@ -428,30 +408,24 @@ void ui_desktop_tick(void) {
     uint8_t btn;
 
     // --- Dirty-rect tracking (cursor + selection) ---
-    static int prev_mouse_x = -1;
-    static int prev_mouse_y = -1;
+    static int  prev_mouse_x = -1;
+    static int  prev_mouse_y = -1;
+
     static bool prev_selecting = false;
-    static int prev_sel_start_x = 0, prev_sel_start_y = 0;
-    static int prev_sel_end_x = 0, prev_sel_end_y = 0;
+    static int  prev_sel_start_x = 0, prev_sel_start_y = 0;
+    static int  prev_sel_end_x = 0,   prev_sel_end_y = 0;
 
     bool need_full_present = false;
-
-    // Bu tick'te mouse event geldi mi?
-    bool had_mouse_event = false;
 
     // ---------- Mouse ----------
     ps2_mouse_poll();
 
-    // Eğer hiç event yoksa bile btn state'ini bilmek bazen lazım olabilir.
     btn = g_last_btn;
 
     while (ps2_mouse_pop(&dx, &dy, &wheel, &btn)) {
-        had_mouse_event = true;
 
         mouse_x += dx;
         mouse_y += dy;
-        g_dbg_last_dx = dx;
-        g_dbg_last_dy = dy;
 
         if (mouse_x < 0) mouse_x = 0;
         if (mouse_y < 0) mouse_y = 0;
@@ -461,22 +435,13 @@ void ui_desktop_tick(void) {
         // ---- WHEEL ----
         if (wheel != 0) {
             int step = (wheel > 0) ? -1 : 1;
-            g_dbg_wheel_step = step;
-            g_dbg_wheel_total += step;
-            if (g_dbg_wheel_total > 500) g_dbg_wheel_total = 500;
-            if (g_dbg_wheel_total < -500) g_dbg_wheel_total = -500;
-
             wm_handle_mouse_wheel(mouse_x, mouse_y, step, btn);
             need_full_present = true;
         }
 
+        // MOVE (burada FULL'a düşürmüyoruz!)
         if (dx != 0 || dy != 0) {
             wm_handle_mouse_move(mouse_x, mouse_y);
-
-            // Mouse bir pencerenin üstündeyse hover değişebilir -> full present gerekli
-            if (wm_find_window_at(mouse_x, mouse_y) != -1) {
-                need_full_present = true;
-            }
         }
 
         uint8_t pressed  = btn & ~g_last_btn;
@@ -527,17 +492,16 @@ void ui_desktop_tick(void) {
         // 4) Desktop alanı
         if (!wm_is_any_window_captured()) {
 
-            // ✅ Context menu açıkken: her eventte hover/submenu update
+            // Context menu hover update
             if (context_menu_is_visible()) {
-                need_full_present = true; // dirty-rect menü için güvenli değil
+                need_full_present = true;
                 context_menu_handle_mouse(mouse_x, mouse_y, false);
             }
 
-            // Sağ tık: context menu (yeniden kur + aç)
+            // Sağ tık: context menu
             if (pressed & 2) {
                 need_full_present = true;
 
-                // Desktop input state reset
                 g_lmb_down = 0;
                 g_dragging = 0;
                 g_down_hit = -1;
@@ -545,23 +509,16 @@ void ui_desktop_tick(void) {
 
                 int hit = desktop_icons_get_hit(mouse_x, mouse_y);
 
-                // ✅ Windows gibi: sağ tık ikon üstündeyse onu seç
                 desktop_icons_deselect_all();
                 if (hit != -1) desktop_icons_select(hit);
 
                 context_menu_reset();
 
                 if (hit != -1) {
-                    // ikon üstü
                     context_menu_add_item("Ac", desktop_handle_open);
                     context_menu_add_item("Ad Degistir", desktop_handle_rename);
                     context_menu_add_item("Sil", desktop_icons_delete_selected);
-
-                    // (istersen ikon üstünde de Görünüm koy)
-                    // context_menu_t* view = context_menu_add_submenu("Gorunum");
-                    // context_menu_add_item_to(view, "Dosya uzantilarini goster", desktop_toggle_ext);
                 } else {
-                    // boş alan
                     context_menu_t* view = context_menu_add_submenu("Gorunum");
                     context_menu_add_item_to(view,
                         ui_get_show_extensions() ? "Dosya uzantilarini gizle" : "Dosya uzantilarini goster",
@@ -577,7 +534,7 @@ void ui_desktop_tick(void) {
                 continue;
             }
 
-            // ✅ Menü açıkken: sol tık pressed menüye gider, desktop’a geçmez
+            // Menü açıkken sol tık menüye
             if (context_menu_is_visible()) {
                 if (pressed & 1) {
                     need_full_present = true;
@@ -586,14 +543,9 @@ void ui_desktop_tick(void) {
                     continue;
                 }
 
-                // Menü açıkken desktop drag/selection yok
                 g_last_btn = btn;
                 continue;
             }
-
-            // ------------------------------------------------------------
-            // Menü kapalıysa normal desktop input
-            // ------------------------------------------------------------
 
             // Sol tık pressed
             if (pressed & 1) {
@@ -686,17 +638,19 @@ void ui_desktop_tick(void) {
         g_last_btn = btn;
     }
 
-    // ---------- Render ----------
-    // ✅ Klavye/hotkey ile UI değiştiyse bu frame full present zorla
+    // ---------- Render flags ----------
     if (g_force_full_present) {
         need_full_present = true;
         g_force_full_present = false;
     }
 
     if (g_dbg_overlay) need_full_present = true;
-
     if (wm_is_dragging_window()) need_full_present = true;
 
+    // ✅ CRITICAL: invalidate "consume" (1 kez FULL, sonra otomatik 0)
+    if (wm_consume_invalidated()) need_full_present = true;
+
+    // ---------- Draw ----------
     fb_clear(desktop_bg_color);
     desktop_icons_draw_all();
     topbar_draw();
@@ -718,7 +672,6 @@ void ui_desktop_tick(void) {
     messagebox_draw();
     notification_draw();
     cursor_draw_arrow(mouse_x, mouse_y);
-    dbg_draw_panel();
 
     // ---------- Present ----------
     const int CW = 32;

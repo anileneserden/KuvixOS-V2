@@ -6,6 +6,7 @@
 typedef enum { UI_ALIGN_LEFT=0, UI_ALIGN_CENTER=1, UI_ALIGN_RIGHT=2 } ui_align_t;
 typedef enum { UI_BTN_LAYOUT_LEFT=0, UI_BTN_LAYOUT_RIGHT=1 } ui_btn_layout_t;
 typedef enum { UI_BTN_STYLE_CLASSIC=0, UI_BTN_STYLE_TRAFFIC=1 } ui_btn_style_t;
+typedef enum { UI_CAPBTN_STYLE_TRAFFIC = 0, UI_CAPBTN_STYLE_WINDOWS = 1, UI_CAPBTN_STYLE_FLAT = 2 } ui_capbtn_style_t;
 
 typedef struct {
     fb_color_t desktop_bg;
@@ -17,6 +18,8 @@ typedef struct {
 
     int window_border_px;
     int window_title_h;
+    int window_radius_px;
+    int window_clip_client;
     ui_align_t window_title_align;
     int window_title_pad_l;
     int window_title_pad_r;
@@ -36,6 +39,30 @@ typedef struct {
 
     int window_btn_hover_dark;
     int window_btn_press_dark;
+
+    // ---- Caption buttons (titlebar buttons) ----
+    ui_capbtn_style_t capbtn_style;
+
+    int capbtn_icon_enabled;   // 0/1
+    int capbtn_icon_size;      // 16 default
+    int capbtn_radius;         // 0 kare, büyük sayı = yuvarlak
+    int capbtn_outline_px;     // 0/1
+
+    // Traffic style renkleri
+    fb_color_t capbtn_bg_close;
+    fb_color_t capbtn_bg_max;
+    fb_color_t capbtn_bg_min;
+
+    // Windows/Flat style hover/press bg
+    fb_color_t capbtn_bg_hover;
+    fb_color_t capbtn_bg_press;
+
+    // ikon rengi
+    fb_color_t capbtn_icon;
+    fb_color_t capbtn_icon_hover;
+    fb_color_t capbtn_icon_press;
+
+    int capbtn_close_red_on_hover;
 
     fb_color_t textbox_bg;
     fb_color_t textbox_border;

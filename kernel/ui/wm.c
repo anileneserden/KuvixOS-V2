@@ -17,6 +17,10 @@
 #include <ui/dialogs/save_dialog.h>
 #include <ui/desktop.h>
 
+#include <kernel/printk.h>
+
+#include <ui/theme.h>
+
 #define WM_MAX_WINDOWS 20
 
 typedef struct {
@@ -51,6 +55,10 @@ static int g_mouse_consumed = 0;
 static uint8_t g_buttons_state = 0;
 
 extern uint32_t g_ticks_ms;
+
+static int g_any_invalidated = 1;
+
+static int g_hover = -1;
 
 // ------------------------------------------------------------
 // Helpers
@@ -301,6 +309,10 @@ void wm_toggle_maximize(int win_id) {
 // ------------------------------------------------------------
 
 void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t buttons) {
+    #if WM_DEBUG_MOUSE
+    printk("[WM] mouse mx=%d my=%d pressed=%02x released=%02x buttons=%02x down=%d drag=%d idx=%d\n",
+       mx,my,pressed,released,buttons,g_mouse_down,g_dragging,g_drag_idx);
+    #endif
     g_mouse_x = mx;
     g_mouse_y = my;
     g_buttons_state = buttons;
@@ -413,6 +425,11 @@ void wm_handle_mouse_move(int mx, int my) {
             app->v->on_mouse(app, cx, cy, 0, 0, g_buttons_state);
         }
     }
+
+    if (top != g_hover) {
+        g_hover = top;
+        desktop_invalidate_full();
+    }
 }
 
 void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons) {
@@ -467,14 +484,15 @@ void wm_draw(void) {
             ui_window_draw(win, (id == g_active), g_mouse_x, g_mouse_y);
 
             if (app->v && app->v->on_draw) {
-                ui_rect_t client = wm_get_client_rect(id);
+                ui_rect_t content = ui_window_get_content_rect(win);
 
-                gfx_set_origin(client.x, client.y);
+                gfx_set_origin(content.x, content.y);
                 app->v->on_draw(app);
                 gfx_reset_origin();
             }
         }
     }
+    // g_any_invalidated = 0;
 }
 
 // ------------------------------------------------------------
@@ -489,6 +507,8 @@ int wm_get_active_id(void) {
     return g_active;
 }
 
+int wm_get_hover_id(void) { return g_hover; }
+
 void wm_set_active_id(int win_id) {
     g_active = win_id;
 }
@@ -497,19 +517,42 @@ int wm_is_any_window_captured(void) {
     return (g_mouse_down && g_drag_idx != -1);
 }
 
+int wm_get_captured_window_id(void) {
+    if (!(g_mouse_down && g_drag_idx != -1)) return -1;
+    return g_drag_idx;
+}
+
 bool wm_is_window_alive(int win_id) {
     return is_alive_id(win_id);
 }
 
-ui_rect_t wm_get_client_rect(int win_id) {
+ui_rect_t wm_get_client_rect(int win_id)
+{
     ui_rect_t r = {0,0,0,0};
     if (!is_alive_id(win_id)) return r;
 
-    ui_window_t* w = &g_wins[win_id].win;
-    r.x = w->x + 2;
-    r.y = w->y + 24;
-    r.w = w->w - 4;
-    r.h = w->h - 26;
+    ui_window_t* win = &g_wins[win_id].win;
+
+    const ui_theme_t* th = ui_get_theme();
+
+    int border  = th ? th->window_border_px : 1;
+    int title_h = th ? th->window_title_h  : 24;
+
+    if (border < 0) border = 0;
+    if (border > 32) border = 32;
+
+    if (title_h < 0) title_h = 0;
+    if (title_h > win->h) title_h = win->h;
+
+    r.x = win->x + border;
+    r.y = win->y + border + title_h;
+
+    r.w = win->w - border * 2;
+    r.h = win->h - border * 2 - title_h;
+
+    if (r.w < 0) r.w = 0;
+    if (r.h < 0) r.h = 0;
+
     return r;
 }
 
@@ -541,4 +584,18 @@ int wm_did_consume_mouse(void) {
 
 int wm_is_dragging_window(void) {
     return g_dragging;
+}
+
+void wm_invalidate(void) {
+    g_any_invalidated = 1;
+}
+
+int wm_has_invalidated(void) {
+    return g_any_invalidated;
+}
+
+int wm_consume_invalidated(void) {
+    int v = g_any_invalidated;
+    g_any_invalidated = 0;
+    return v;
 }

@@ -12,6 +12,7 @@
 #include <ui/apps/demo_font.h>
 #include <ui/apps/terminal.h>
 #include <ui/apps/scroll_demo.h>
+#include <ui/apps/notepad_demo.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -25,6 +26,7 @@ extern const app_vtbl_t grid_demo_app_vtbl;
 extern const app_vtbl_t pixel_draw_app_vtbl;
 extern const app_vtbl_t demo_font_vtbl;
 extern const app_vtbl_t scroll_demo_vtbl;
+extern const app_vtbl_t notepad_demo_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -50,7 +52,9 @@ static app_definition_t app_registry[] = {
     { 9, "Pixel Draw",   &pixel_draw_app_vtbl, 120,  80, 900, 650, sizeof(pixel_draw_app_t) },
     { 10, "Font Demo",   &demo_font_vtbl,      140,  90, 700, 500, sizeof(demo_font_t) },
     { 11, "Scroll Demo", &scroll_demo_vtbl,    120,  90, 520, 320, sizeof(scroll_demo_t) },
-    { 0, NULL,           NULL,                  0,   0,   0,   0,    0 }
+    { 12, "Kuvix Note",  &notepad_demo_vtbl, 150, 100, 520, 360, sizeof(notepad_demo_t) },
+
+    { 0, NULL, NULL, 0, 0, 0, 0, 0 }
 };
 
 #define APP_MAX 16

@@ -45,7 +45,9 @@ void wm_draw(void);
 int  wm_find_window_at(int x, int y);
 
 void wm_invalidate_window(int win_id);
+
 int  wm_is_any_window_captured(void);
+int  wm_get_captured_window_id(void);
 
 bool wm_is_window_alive(int win_id);
 
@@ -65,6 +67,8 @@ int wm_get_mouse_x(void);
 int wm_get_mouse_y(void);
 
 void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons);
-
+void wm_invalidate(void);
+int  wm_has_invalidated(void);
+int wm_consume_invalidated(void);
 
 #endif

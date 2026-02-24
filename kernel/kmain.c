@@ -29,6 +29,8 @@
 
 #include <ui/theme.h>
 
+#include <ui/icons.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -82,64 +84,46 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
 // Kernel entry
 // ------------------------------------------------------------
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
-    printk("MB magic=%x\n", magic);
     serial_init();
+    printk("MB magic=%x\n", magic);
 
     gdt_init();
     idt_init();
 
-    // =========================================================
-    // ✅ HEAP INIT (kernel end’den başlat)
-    // =========================================================
-    uintptr_t heap_base = align_up((uintptr_t)&_end, 0x1000); // 4K hizala
-
-    // QEMU 256MB ise şimdilik 32MB heap gayet güvenli.
-    // İstersen 8/16/64 yapabilirsin.
+    uintptr_t heap_base = align_up((uintptr_t)&_end, 0x1000);
     uint32_t heap_size = 32u * 1024u * 1024u;
-
     kmalloc_init((void*)heap_base, heap_size);
 
-    printk("[KMALLOC] _end=%x heap_base=%x heap_size=%x KB\n",
-       (uint32_t)(uintptr_t)&_end,
-       (uint32_t)heap_base,
-       (uint32_t)(heap_size / 1024));
-
-    // =========================================================
-
     init_framebuffer(magic, mbi);
-
     gfx_init();
-    fb_console_init(0x00FFFFFF, 0x00000000);
 
-    // input init
+    // input
     kbd_init();
     ps2_mouse_init();
 
     // time
     timer_init(1000);
-
-    // ✅ IRQ’ları aç (mouse/timer için şart)
     asm volatile("sti");
 
-    // FS (eğer fs_init kullanıyorsan burada çağır)
-    fs_init_once();  // sende nasıl ise (fs_prepare_user_layout vb.) ona göre
-
+    fs_init_once();
     ui_theme_bootstrap_default();
 
-    // UI
     ui_session_init();
     ui_session_switch(UI_SESSION_DESKTOP);
-    // inputtest_init();
+
+    uint32_t last_frame = 0;
 
     while (1) {
-        // klavye event dispatch
         uint16_t sc;
         while ((sc = kbd_pop_event()) != 0) {
             ui_session_handle_scancode(sc);
         }
 
-        // frame tick
-        ui_session_tick();
+        uint32_t now = g_ticks_ms;
+        if ((now - last_frame) >= 16) {
+            last_frame = now;
+            ui_session_tick();
+        }
 
         asm volatile("hlt");
     }

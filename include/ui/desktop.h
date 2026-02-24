@@ -15,3 +15,5 @@ void desktop_handle_rename_confirm(const char* new_name);
 
 // legacy (istersen kalsın)
 void ui_desktop_run(void);
+
+uint32_t desktop_get_bg_color(void);

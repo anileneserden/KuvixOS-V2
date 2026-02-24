@@ -4,10 +4,10 @@
 #include <stdint.h>
 
 void shell_init(void);
-
-/* NEW: event-driven */
-void shell_handle_scancode(uint16_t sc);
 void shell_tick(void);
+void shell_handle_scancode(uint16_t sc);
+
+void shell_begin_heredoc(const char* path, const char* endtok);
 
 /* opsiyonel eski ayarlar kalsın istiyorsan */
 void shell_set_username(const char* u);

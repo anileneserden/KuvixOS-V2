@@ -22,9 +22,8 @@ static const uint8_t min_bitmap[ICON_MIN_H][ICON_MIN_W] = {
 };
 
 static const uint32_t min_palette[] = {
-    0x00000000u, // 0 transparent
-    0xFFFFFFFFu, // 1 white
-    0xFF000000u, // 2 black
+    0x00000000u, // 0 transparent (key)
+    0x00FFFFFFu, // 1 white
 };
 
 static uint32_t min_argb[ICON_MIN_W * ICON_MIN_H];

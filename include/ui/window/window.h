@@ -52,3 +52,5 @@ static inline int ui_window_contains(const ui_window_t* w, int px, int py) {
 static inline int ui_window_in_titlebar(const ui_window_t* w, int px, int py) {
     return ui_window_contains(w, px, py) && (py >= w->y && py < (w->y + UI_TITLE_H));
 }
+
+ui_rect_t ui_window_get_content_rect(const ui_window_t* win);

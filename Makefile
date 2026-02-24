@@ -69,6 +69,7 @@ SRC_C = \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/grid_demo.c \
     kernel/ui/apps/notepad.c \
+    kernel/ui/apps/notepad_demo.c \
     kernel/ui/apps/pixel_draw_app.c \
     kernel/ui/apps/run.c \
     kernel/ui/apps/scroll_demo.c \
@@ -99,6 +100,7 @@ SRC_C = \
     kernel/ui/mouse.c \
     kernel/ui/notification.c \
     kernel/ui/power_screen.c \
+    kernel/ui/recovery.c \
     kernel/ui/select.c \
     kernel/ui/session.c \
     kernel/ui/theme_bootstrap.c \
@@ -173,10 +175,12 @@ run: iso
 	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
 	@test -f disk2.img || dd if=/dev/zero of=disk2.img bs=1M count=5
 	@chmod 666 disk.img disk2.img
+	rm -f serial.log
 	qemu-system-i386 -cdrom $(IMAGE) \
+		-vga std \
 		-drive file=disk.img,format=raw,index=0,media=disk \
 		-drive file=disk2.img,format=raw,index=1,media=disk \
-		-m 256M -serial stdio
+		-m 256M -serial file:serial.log
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)

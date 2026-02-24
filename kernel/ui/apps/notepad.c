@@ -26,6 +26,9 @@ static const char* notepad_menu_items[] = { "Aç", "Kaydet", "Farklı Kaydet", "
 
 // DEBUG
 static int debug_frame_counter = 0;
+extern uint32_t g_ticks_ms;
+
+#define MENU_H 20
 
 // ------------------------------------------------------------
 // Yardımcı: win_id -> notepad_t
@@ -48,6 +51,25 @@ static inline notepad_tab_t* ntab(notepad_t* n) {
 }
 
 // ------------------------------------------------------------
+// Mouse: screen -> local (content/client origin'e göre)
+// Not: WM tarafında gfx_set_origin(content.x, content.y) yapıyorsun.
+// Bu yüzden çizimler 0,0'dan; mouse'u da origin'e göre çevirmeliyiz.
+// ------------------------------------------------------------
+static inline void mouse_to_local(const ui_rect_t* area, int mx, int my, int* out_lx, int* out_ly)
+{
+    // area ekran koordinatlarında rect: x,y,w,h (content rect)
+    if (mx >= area->x && mx < area->x + area->w &&
+        my >= area->y && my < area->y + area->h) {
+        *out_lx = mx - area->x;
+        *out_ly = my - area->y;
+    } else {
+        // dışarıda ise yine de relative hesapla (negatif olabilir)
+        *out_lx = mx - area->x;
+        *out_ly = my - area->y;
+    }
+}
+
+// ------------------------------------------------------------
 // DIRECT SAVE
 // ------------------------------------------------------------
 static void notepad_direct_save(notepad_t* data) {
@@ -59,11 +81,9 @@ static void notepad_direct_save(notepad_t* data) {
         return;
     }
 
-    // cursor güvenliği
     if (tab->cursor >= NOTEPAD_MAX_TEXT) tab->cursor = NOTEPAD_MAX_TEXT - 1;
     tab->text[tab->cursor] = '\0';
 
-    // dosyayı sıfırlamak için remove (şimdilik kalsın)
     vfs_remove(tab->file_path);
 
     vfs_file_t* f = NULL;
@@ -128,7 +148,6 @@ static void notepad_on_open_confirm(const char* full_path) {
     }
     if (!full_path || !full_path[0]) return;
 
-    // ✅ create/draw race yok: pending ile draw’da okunacak
     data->pending_open = true;
     strncpy(data->pending_path, full_path, sizeof(data->pending_path) - 1);
     data->pending_path[sizeof(data->pending_path) - 1] = '\0';
@@ -187,9 +206,12 @@ static void notepad_on_create(app_t* self) {
     data->tab_count = 1;
     data->active_tab = 0;
 
-    // ✅ pending open init
     data->pending_open = false;
     data->pending_path[0] = '\0';
+
+    data->caret_last_ms  = g_ticks_ms;
+    data->caret_blink_ms = 0;
+    data->caret_visible  = 1;
 
     notepad_tab_t* tab = &data->tabs[0];
     memset(tab->text, 0, NOTEPAD_MAX_TEXT);
@@ -207,7 +229,21 @@ static void notepad_on_draw(app_t* self) {
     notepad_tab_t* tab = ntab(data);
     if (!tab) return;
 
-    // ✅ Desktop/OpenDialog open race fix: dosyayı create bittikten sonra burada oku
+    // Caret blink (instance-based)
+    uint32_t now = g_ticks_ms;
+    uint32_t dt  = now - data->caret_last_ms;
+    data->caret_last_ms = now;
+
+    if (dt > 2000) dt = 0;
+
+    data->caret_blink_ms += dt;
+    if (data->caret_blink_ms >= 500) {
+        data->caret_blink_ms %= 500;
+        data->caret_visible = !data->caret_visible;
+        wm_invalidate();
+    }
+
+    // pending open: draw'da oku
     if (data->pending_open) {
         data->pending_open = false;
 
@@ -249,21 +285,34 @@ static void notepad_on_draw(app_t* self) {
     }
 
     notepad_process_close_prompt(self);
-
     if (save_dialog_is_active() && data->menu_open) data->menu_open = false;
     if (open_dialog_is_active() && data->menu_open) data->menu_open = false;
 
-    // WM origin client’a set edildiği için çizimler 0,0'dan!
-    ui_rect_t client = wm_get_client_rect(self->win_id);
+    // 🔴 ÖNEMLİ:
+    // WM tarafında origin’i CONTENT rect’e set ettiğin için burada 0..w,h çiziyoruz.
+    // Ama mouse dönüştürmek için ekran coords’ta content rect lazım.
+    // Şimdilik wm_get_client_rect() ekran coords döndürüyor diye varsayıyoruz.
+    ui_rect_t content = wm_get_client_rect(self->win_id);
 
-    // Mouse ekran coords -> client-relative
+    // Mouse ekran coords -> local
     int mx = wm_get_mouse_x();
     int my = wm_get_mouse_y();
-    int lx = mx - client.x;
-    int ly = my - client.y;
+    int lx, ly;
+    mouse_to_local(&content, mx, my, &lx, &ly);
 
-    // --- Menü bar (client-relative) ---
-    gfx_fill_rect(0, 0, client.w, 20, 0xCCCCCC);
+    int W = content.w;
+    int H = content.h;
+    if (W <= 0 || H <= 0) return;
+
+    // ------------------------------------------------------------
+    // 1) Menü bar (0..W)
+    // ------------------------------------------------------------
+    gfx_fill_rect(0, 0, W, MENU_H, 0xCCCCCC);
+
+    const int FILE_BTN_X = 5;
+    const int FILE_BTN_Y = 2;
+    const int FILE_BTN_W = 55;
+    const int FILE_BTN_H = 16;
 
     char header_text[160];
     const char* display_name = (strlen(tab->file_path) > 0) ? tab->file_path : "Adsiz";
@@ -272,26 +321,34 @@ static void notepad_on_draw(app_t* self) {
     if (tab->is_dirty) strncat(header_text, "*", sizeof(header_text) - (int)strlen(header_text) - 1);
     gfx_draw_text_utf8(120, 5, 0x444444, header_text);
 
-    int btn_x = 5, btn_y = 2, btn_w = 55, btn_h = 16;
-    bool is_hover = (lx >= btn_x && lx <= btn_x + btn_w && ly >= btn_y && ly <= btn_y + btn_h);
+    bool is_hover =
+        (lx >= FILE_BTN_X && lx < FILE_BTN_X + FILE_BTN_W &&
+         ly >= FILE_BTN_Y && ly < FILE_BTN_Y + FILE_BTN_H);
 
     if (data->menu_open) {
-        gfx_fill_rect(btn_x, btn_y, btn_w, btn_h, 0xAAAAAA);
+        gfx_fill_rect(FILE_BTN_X, FILE_BTN_Y, FILE_BTN_W, FILE_BTN_H, 0xAAAAAA);
     } else if (is_hover) {
-        gfx_draw_rect(btn_x, btn_y, btn_w, btn_h, 0xFFFFFF);
+        gfx_draw_rect(FILE_BTN_X, FILE_BTN_Y, FILE_BTN_W, FILE_BTN_H, 0xFFFFFF);
     }
-    gfx_draw_text_utf8(btn_x + 8, btn_y + 3, 0x000000, "Dosya");
+    gfx_draw_text_utf8(FILE_BTN_X + 8, FILE_BTN_Y + 3, 0x000000, "Dosya");
 
-    // --- Yazı alanı ---
-    int text_y = 20;
-    gfx_fill_rect(0, text_y, client.w, client.h - 20, 0xFFFFFF);
-    gfx_draw_line(0, text_y, client.w, text_y, 0x808080);
+    // ------------------------------------------------------------
+    // 2) Yazı alanı (MENU_H..H)
+    // ------------------------------------------------------------
+    int text_y = MENU_H;
+    int text_h = H - MENU_H;
+    if (text_h < 0) text_h = 0;
 
-    int cx = 5, cy = text_y + 5;
+    gfx_fill_rect(0, text_y, W, text_h, 0xFFFFFF);
+    gfx_draw_line(0, text_y, W - 1, text_y, 0x808080);
+
+    int cx = 5;
+    int cy = text_y + 5;
     char buf[2] = {0, 0};
 
     for (uint32_t i = 0; i < tab->cursor; i++) {
         buf[0] = tab->text[i];
+
         if (buf[0] == '\n') {
             cy += 14;
             cx = 5;
@@ -299,20 +356,39 @@ static void notepad_on_draw(app_t* self) {
             gfx_draw_text(cx, cy, 0x000000, buf);
             cx += 8;
         }
-        if (cy > client.h - 14) break;
-    }
-    gfx_draw_text(cx, cy, 0x000000, "_");
 
-    // --- Dropdown (client-relative) ---
+        if (cy > (H - 14)) break;
+    }
+
+    // caret clamp
+    if (cy > (H - 14)) cy = (H - 14);
+    if (cy < text_y)   cy = text_y;
+
+    if (data->caret_visible) {
+        gfx_fill_rect(cx, cy, 1, 14, 0x000000);
+    }
+
+    // ------------------------------------------------------------
+    // 3) Dropdown
+    // ------------------------------------------------------------
     if (data->menu_open) {
-        int m_x = btn_x, m_y = 20;
-        gfx_fill_rect(m_x, m_y, 110, 72, 0xFFFFFF);
-        gfx_draw_rect(m_x, m_y, 110, 72, 0x000000);
+        int m_x = FILE_BTN_X;
+        int m_y = MENU_H;
+        int m_w = 110;
+        int m_h = 72;
+
+        gfx_fill_rect(m_x, m_y, m_w, m_h, 0xFFFFFF);
+        gfx_draw_rect(m_x, m_y, m_w, m_h, 0x000000);
 
         for (int i = 0; i < 4; i++) {
             int item_y = m_y + 5 + (i * 16);
-            if (lx >= m_x && lx <= m_x + 110 && ly >= item_y && ly <= item_y + 16) {
-                gfx_fill_rect(m_x + 1, item_y, 108, 16, 0x000080);
+
+            bool hover =
+                (lx >= m_x && lx < m_x + m_w &&
+                 ly >= item_y && ly < item_y + 16);
+
+            if (hover) {
+                gfx_fill_rect(m_x + 1, item_y, m_w - 2, 16, 0x000080);
                 gfx_draw_text_utf8(m_x + 10, item_y + 2, 0xFFFFFF, notepad_menu_items[i]);
             } else {
                 gfx_draw_text_utf8(m_x + 10, item_y + 2, 0x000000, notepad_menu_items[i]);
@@ -324,7 +400,9 @@ static void notepad_on_draw(app_t* self) {
 // ------------------------------------------------------------
 // MOUSE
 // ------------------------------------------------------------
-static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8_t extra1, uint8_t extra2) {
+static void notepad_on_mouse(app_t* self, int mx, int my,
+                            uint8_t buttons, uint8_t extra1, uint8_t extra2)
+{
     (void)extra1; (void)extra2;
 
     if (!self || !self->user) return;
@@ -333,40 +411,59 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
     if (save_dialog_is_active()) return;
     if (open_dialog_is_active()) return;
     if (messagebox_is_visible()) return;
-    if (wm_is_any_window_captured()) return;
 
-    ui_rect_t client = wm_get_client_rect(self->win_id);
-    int lx = mx - client.x;
-    int ly = my - client.y;
+    if (wm_is_any_window_captured()) {
+        int cap = wm_get_captured_window_id();
+        if (cap != self->win_id && cap != -1) return;
+    }
+
+    // Ekran coords’ta content rect
+    ui_rect_t content = wm_get_client_rect(self->win_id);
+
+    int lx, ly;
+    mouse_to_local(&content, mx, my, &lx, &ly);
+
+    if (lx < 0 || ly < 0 || lx >= content.w || ly >= content.h) return;
+
+    const int FILE_BTN_X = 5;
+    const int FILE_BTN_Y = 2;
+    const int FILE_BTN_W = 55;
+    const int FILE_BTN_H = 16;
 
     static uint8_t prev_buttons = 0;
     uint8_t pressed = (uint8_t)(buttons & ~prev_buttons);
     prev_buttons = buttons;
 
-    if (!(pressed & 1)) return;
+    if (!(pressed & 1)) return; // only left press
 
-    bool file_btn_hit = (lx >= 0 && lx <= 60 && ly >= 0 && ly <= 20);
+    bool file_btn_hit =
+        (lx >= FILE_BTN_X && lx < FILE_BTN_X + FILE_BTN_W &&
+         ly >= FILE_BTN_Y && ly < FILE_BTN_Y + FILE_BTN_H);
+
     if (file_btn_hit) {
         data->menu_open = !data->menu_open;
         return;
     }
 
     if (data->menu_open) {
-        int m_x = 5, m_y = 20;
-        int m_w = 110, m_h = 72;
+        int m_x = FILE_BTN_X;
+        int m_y = MENU_H;
+        int m_w = 110;
+        int m_h = 72;
 
-        bool menu_area_hit = (lx >= m_x && lx <= m_x + m_w &&
-                              ly >= m_y && ly <= m_y + m_h);
+        bool menu_area_hit =
+            (lx >= m_x && lx < m_x + m_w &&
+             ly >= m_y && ly < m_y + m_h);
 
         if (menu_area_hit) {
-            int item = (ly - m_y - 5) / 16;
+            int item = (ly - m_y - 5) / 16; // 0..3
+
             data->menu_open = false;
 
             if (item == 0) {
                 open_dialog_show("Dosya Aç", "", self->win_id, notepad_on_open_confirm);
                 return;
             }
-
             if (item == 1) {
                 notepad_tab_t* tab = ntab(data);
                 if (!tab) return;
@@ -378,12 +475,10 @@ static void notepad_on_mouse(app_t* self, int mx, int my, uint8_t buttons, uint8
                 notepad_direct_save(data);
                 return;
             }
-
             if (item == 2) {
                 save_dialog_show("Farklı Kaydet", "adsiz.txt", 0, self->win_id, notepad_on_save_confirm);
                 return;
             }
-
             if (item == 3) {
                 if (self->v && self->v->on_close_request) self->v->on_close_request(self);
                 else wm_close_window(self->win_id);
@@ -431,7 +526,13 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
         }
     }
 
-    if (changed) tab->is_dirty = true;
+    if (changed) {
+        tab->is_dirty = true;
+
+        data->caret_visible = 1;
+        data->caret_blink_ms = 0;
+        data->caret_last_ms = g_ticks_ms;
+    }
 }
 
 static void notepad_on_destroy(app_t* self) {
