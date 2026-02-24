@@ -99,7 +99,7 @@ static int g_dbg_wheel_step = 0;
 static int g_dbg_wheel_total = 0;
 
 // --- Debug overlay helps (desktop içi) ---
-static bool g_dbg_overlay = true;
+static bool g_dbg_overlay = false;
 
 static void dbg_itoa(int v, char* out) {
     char tmp[16];
