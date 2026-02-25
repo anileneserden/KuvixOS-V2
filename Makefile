@@ -68,10 +68,13 @@ SRC_C = \
     kernel/ui/apps/demo_font.c \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/grid_demo.c \
+    kernel/ui/apps/kuvix_store.c \
+    kernel/ui/apps/memmon.c \
     kernel/ui/apps/notepad.c \
     kernel/ui/apps/pixel_draw_app.c \
     kernel/ui/apps/run.c \
     kernel/ui/apps/scroll_demo.c \
+    kernel/ui/apps/settings.c \
     kernel/ui/apps/setup_wizard.c \
     kernel/ui/apps/terminal.c \
     kernel/ui/bitmaps/icons/icon_close_16.c \
@@ -93,6 +96,7 @@ SRC_C = \
     kernel/ui/cursor.c \
     kernel/ui/debug_overlay.c \
     kernel/ui/desktop_icons.c \
+    kernel/ui/desktop_seed.c \
     kernel/ui/desktop.c \
     kernel/ui/icons/ui_icons.c \
     kernel/ui/inputtest.c \

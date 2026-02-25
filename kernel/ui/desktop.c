@@ -33,6 +33,10 @@
 
 #include <ui/ui_settings.h>
 
+#include <ui/desktop_seed.h>
+
+#include <ui/apps/memmon.h>
+
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -210,6 +214,32 @@ static void desktop_toggle_ext(void) {
     desktop_invalidate_full();     // ✅ senin helper, g_force_full_present = true
 }
 
+void seed_store_repo(void) {
+    vfs_mkdir("/system");
+    vfs_mkdir("/system/repo");
+    vfs_mkdir("/system/repo/apps");
+
+    const char* notepad =
+        "title=Notepad\n"
+        "app_id=3\n"
+        "desc=Basit metin editoru\n"
+        "icon=/system/icons/notepad.kbi\n";
+
+    vfs_write_all("/system/repo/apps/notepad.kapp",
+                  (const uint8_t*)notepad,
+                  strlen(notepad));
+
+    const char* terminal =
+        "title=Terminal\n"
+        "app_id=1\n"
+        "desc=Komut satiri\n"
+        "icon=/system/icons/terminal.kbi\n";
+
+    vfs_write_all("/system/repo/apps/terminal.kapp",
+                  (const uint8_t*)terminal,
+                  strlen(terminal));
+}
+
 // ============================================================
 // Desktop Handlers
 // ============================================================
@@ -333,9 +363,11 @@ void ui_desktop_init(void) {
     appmgr_init();
     topbar_init();
 
+    seed_store_repo();
+
     desktop_icons_init();
     desktop_icons_snap_all();
-    appmgr_start_app(1);
+    appmgr_start_app(13);
 
     g_last_btn = 0;
     g_lmb_down = 0;
@@ -391,8 +423,25 @@ void ui_desktop_handle_scancode(uint16_t sc) {
     }
 
     // F12 (Set1 make=0x58) -> debug overlay toggle
-    if (((sc8 & 0x80) == 0) && sc8 == 0x58) {
+    if (((sc8 & 0x80) == 0) && sc8 == 0x58) { // F12
+        memmon_toggle();
+        desktop_invalidate_full();
+        return;
+    }
+    if (((sc8 & 0x80) == 0) && sc8 == 0x57) { // F11
         g_dbg_overlay = !g_dbg_overlay;
+        desktop_invalidate_full();
+        return;
+    }
+
+    // ✅ GLOBAL HOTKEY: CTRL+SHIFT+I -> Seed desktop icons
+    // Set1: I make = 0x17, break = 0x97
+    if (kbd_is_ctrl_pressed() &&
+        kbd_is_shift_pressed() &&
+        sc8 == 0x17 &&
+        ((sc8 & 0x80) == 0))   // make only
+    {
+        desktop_seed_default_shortcuts(false); // overwrite=false
         desktop_invalidate_full();
         return;
     }
@@ -694,6 +743,7 @@ void ui_desktop_tick(void) {
     }
 
     if (g_dbg_overlay) need_full_present = true;
+    if (memmon_is_visible()) need_full_present = true;
 
     if (wm_is_dragging_window()) need_full_present = true;
 
@@ -717,6 +767,9 @@ void ui_desktop_tick(void) {
     context_menu_draw();
     messagebox_draw();
     notification_draw();
+
+    memmon_draw((int)fb_get_width(), (int)fb_get_height());   // ✅ BURAYA
+
     cursor_draw_arrow(mouse_x, mouse_y);
     dbg_draw_panel();
 

@@ -11,9 +11,11 @@ typedef struct block_hdr {
     struct block_hdr* prev;
 } block_hdr_t;
 
-static block_hdr_t* g_head = 0;
-static void*        g_heap_start = 0;
-static size_t       g_heap_size  = 0;
+static block_hdr_t* g_head        = 0;
+static void*        g_heap_start  = 0;
+static size_t       g_heap_size   = 0;
+static uint32_t     g_alloc_count = 0;
+static uint32_t     g_free_count  = 0;
 
 static inline size_t align16(size_t x) { return (x + 15) & ~((size_t)15); }
 static inline void*  hdr_to_payload(block_hdr_t* h) { return (void*)((uint8_t*)h + sizeof(block_hdr_t)); }
@@ -44,20 +46,21 @@ static void split_block(block_hdr_t* b, size_t want) {
 static void coalesce(block_hdr_t* b) {
     if (!b) return;
 
-    // merge with next
-    if (b->next && b->next->free) {
-        block_hdr_t* n = b->next;
-        b->size = (uint32_t)(b->size + sizeof(block_hdr_t) + n->size);
-        b->next = n->next;
-        if (b->next) b->next->prev = b;
-    }
-
-    // merge with prev
+    // önce prev ile birleş (b'nin başı geriye kayabilir)
     if (b->prev && b->prev->free) {
         block_hdr_t* p = b->prev;
         p->size = (uint32_t)(p->size + sizeof(block_hdr_t) + b->size);
         p->next = b->next;
         if (p->next) p->next->prev = p;
+        b = p; // ✅ artık birleşik blok p
+    }
+
+    // sonra next ile birleş (artık b doğru blok)
+    if (b->next && b->next->free) {
+        block_hdr_t* n = b->next;
+        b->size = (uint32_t)(b->size + sizeof(block_hdr_t) + n->size);
+        b->next = n->next;
+        if (b->next) b->next->prev = b;
     }
 }
 
@@ -86,13 +89,23 @@ void* kmalloc(size_t size) {
         if (b->free && b->size >= want) {
             split_block(b, want);
             b->free = 0;
+            g_alloc_count++;
 
             void* p = hdr_to_payload(b);
-            // istersen güvenlik: memset(p,0,want);
             return p;
         }
         b = b->next;
     }
+
+    kmalloc_stats_t s;
+    kmalloc_get_stats(&s);
+    printk("[KMALLOC] OOM want=%u used=%u free=%u largest=%u alloc=%u freec=%u\n",
+        (unsigned)want,
+        (unsigned)s.used_bytes,
+        (unsigned)s.free_bytes,
+        (unsigned)s.largest_free,
+        (unsigned)s.alloc_count,
+        (unsigned)s.free_count);
 
     // heap full
     // printk("[KMALLOC] OOM size=%u\n", (unsigned)want);
@@ -108,11 +121,9 @@ void kfree(void* ptr) {
     if ((uint8_t*)b < (uint8_t*)g_heap_start) return;
     if ((uint8_t*)b >= (uint8_t*)g_heap_start + g_heap_size) return;
 
+    if (b->free) return;
     b->free = 1;
-
-    // optional: payload'ı temizlemek istersen
-    // memset(ptr, 0xCC, b->size);
-
+    g_free_count++;
     coalesce(b);
 }
 
@@ -122,4 +133,29 @@ size_t kmalloc_bytes_free(void) {
         if (b->free) sum += b->size;
     }
     return sum;
+}
+
+void kmalloc_get_stats(kmalloc_stats_t* out) {
+    if (!out) return;
+    memset(out, 0, sizeof(*out));
+
+    out->alloc_count = g_alloc_count;
+    out->free_count  = g_free_count;
+
+    uint32_t used = 0;
+    uint32_t fre  = 0;
+    uint32_t largest = 0;
+
+    for (block_hdr_t* b = g_head; b; b = b->next) {
+        if (b->free) {
+            fre += b->size;
+            if (b->size > largest) largest = b->size;
+        } else {
+            used += b->size;
+        }
+    }
+
+    out->used_bytes   = used;
+    out->free_bytes   = fre;
+    out->largest_free = largest;
 }

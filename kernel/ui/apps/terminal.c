@@ -15,6 +15,8 @@
 // dış
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 
+static term_line_t g_term_lines[TERM_MAX_LINES];
+
 // ------------------------------------------------------------
 // helpers
 // ------------------------------------------------------------
@@ -55,11 +57,11 @@ static term_line_t* term_cur_line(terminal_t* t) {
 
     if (t->line_count <= 0) {
         t->line_count = 1;
-        t->lines[0].len = 0;
-        t->lines[0].text[0] = '\0';
+        g_term_lines[0].len = 0;
+        g_term_lines[0].text[0] = '\0';
         t->view_start = 0;
     }
-    return &t->lines[t->line_count - 1];
+    return &g_term_lines[t->line_count - 1];
 }
 
 static void term_newline(terminal_t* t) {
@@ -68,15 +70,14 @@ static void term_newline(terminal_t* t) {
     if (t->line_count < TERM_MAX_LINES) {
         t->line_count++;
     } else {
-        // shift up
         for (int i = 1; i < TERM_MAX_LINES; i++) {
-            t->lines[i - 1] = t->lines[i];
+            g_term_lines[i - 1] = g_term_lines[i];
         }
         t->line_count = TERM_MAX_LINES;
         if (t->view_start > 0) t->view_start--;
     }
 
-    term_line_t* ln = &t->lines[t->line_count - 1];
+    term_line_t* ln = &g_term_lines[t->line_count - 1];
     ln->len = 0;
     ln->text[0] = '\0';
 }
@@ -236,7 +237,7 @@ static void terminal_on_draw(app_t* app) {
         int li = t->view_start + row;
         if (li >= t->line_count) break;
 
-        gfx_draw_text_utf8(margin_x, y, 0x00FF00, t->lines[li].text);
+        gfx_draw_text_utf8(margin_x, y, 0x00FF00, g_term_lines[li].text);
         y += t->line_h;
     }
 
@@ -259,7 +260,8 @@ static void terminal_on_draw(app_t* app) {
     if (base_y < margin_y) base_y = margin_y;
 
     int base_len = 0;
-    if (last_index >= 0 && last_index < t->line_count) base_len = t->lines[last_index].len;
+    if (last_index >= 0 && last_index < t->line_count)
+        base_len = g_term_lines[last_index].len;
 
     int x = margin_x + (base_len * 8);
     int y2 = base_y;

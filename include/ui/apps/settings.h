@@ -1,11 +1,28 @@
-// include/ui/apps/settings/settings_app.h
-#ifndef SETTINGS_APP_H
-#define SETTINGS_APP_H
+// include/ui/apps/settings.h
+#pragma once
 
+#include <app/app.h>
 #include <stdint.h>
 
-void settings_init(void);
-void settings_update(int mx, int my, uint8_t b);
-void settings_draw(int mx, int my);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+typedef enum {
+    SETTINGS_PAGE_GENERAL = 0,
+    SETTINGS_PAGE_APPEARANCE,
+    SETTINGS_PAGE_STORAGE,
+    SETTINGS_PAGE_ABOUT,
+    SETTINGS_PAGE_COUNT
+} settings_page_t;
+
+typedef struct {
+    int page;        // selected page (settings_page_t)
+    int scroll;      // future use
+} settings_t;
+
+extern const app_vtbl_t settings_vtbl;
+
+#ifdef __cplusplus
+}
 #endif

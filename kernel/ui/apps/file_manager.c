@@ -70,6 +70,7 @@ static const sidebar_link_t g_sidebar[] = {
     { "Ana Dizin",  USER_HOME_PATH },
     { "Sistem",     "/" },
     { "Çöp Kutusu", USER_TRASH_PATH },
+    { "Çıkartılabilir Disk", "/removable" },
 };
 
 static const int g_sidebar_count = (int)(sizeof(g_sidebar) / sizeof(g_sidebar[0]));
@@ -151,6 +152,11 @@ static void fm_clear_items(file_mgr_t* st) {
     st->last_click_ms = 0;
     st->last_click_index = -1;
     memset(st->items, 0, sizeof(st->items));
+}
+
+static bool fm_removable_ready(void) {
+    // vfs_list(cb=NULL) sadece kontrol: dir var mı?
+    return (vfs_list("/removable", 0, 0) == 1);
 }
 
 // ------------------------------------------------------------
@@ -266,15 +272,26 @@ static void file_mgr_on_draw(app_t* app) {
     gfx_fill_rect(SIDEBAR_WIDTH - 1, 0, 1, c.h, 0xFFCCCCCC);
 
     int sy = 8;
+    bool removable_ok = fm_removable_ready();
+
     for (int i = 0; i < g_sidebar_count; i++) {
         bool sel = (i == st->sidebar_sel);
         int iy = sy + i * ITEM_HEIGHT;
 
+        // ✅ sadece removable item disable olsun
+        bool is_rem = (strcmp(g_sidebar[i].path, "/removable") == 0);
+        bool enabled = (!is_rem) || removable_ok;
+
         if (sel) {
-            gfx_fill_rect(6, iy, SIDEBAR_WIDTH - 12, ITEM_HEIGHT, 0xFF0055AA);
-            gfx_draw_text_utf8(14, iy + 6, 0xFFFFFFFF, g_sidebar[i].label_utf8);
+            // seçili ama disabled ise farklı gösterebiliriz:
+            uint32_t bg = enabled ? 0xFF0055AA : 0xFFAAAAAA;
+            uint32_t fg = 0xFFFFFFFF;
+
+            gfx_fill_rect(6, iy, SIDEBAR_WIDTH - 12, ITEM_HEIGHT, bg);
+            gfx_draw_text_utf8(14, iy + 6, fg, g_sidebar[i].label_utf8);
         } else {
-            gfx_draw_text_utf8(14, iy + 6, 0xFF333333, g_sidebar[i].label_utf8);
+            uint32_t fg = enabled ? 0xFF333333 : 0xFF999999; // ✅ gri
+            gfx_draw_text_utf8(14, iy + 6, fg, g_sidebar[i].label_utf8);
         }
     }
 
@@ -356,14 +373,20 @@ static void file_mgr_on_mouse(app_t* app, int mx, int my,
     if (!app || !app->user) return;
     file_mgr_t* st = (file_mgr_t*)app->user;
 
-    ui_rect_t cr = wm_get_client_rect(app->win_id);
-    int x = mx - cr.x;
-    int y = my - cr.y;
+    int x = mx;
+    int y = my;
 
     if (!(pressed & 0x01)) return;
 
     int s = fm_hit_sidebar(x, y);
     if (s != -1) {
+        // ✅ removable disable ise tıklama yok
+        bool is_rem = (strcmp(g_sidebar[s].path, "/removable") == 0);
+        if (is_rem && !fm_removable_ready()) {
+            printk("[FileMgr] removable not present\n");
+            return;
+        }
+
         st->sidebar_sel = s;
         fm_set_cwd(st, g_sidebar[s].path);
         fm_refresh(app);

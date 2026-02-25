@@ -6,12 +6,15 @@
 #include <kernel/fs/vfs.h>
 #include <stdint.h>
 #include <ui/wm.h>
+#include <ui/desktop.h>
 
 #include <ui/apps/notepad.h>
 #include <ui/apps/pixel_draw_app.h>
 #include <ui/apps/demo_font.h>
 #include <ui/apps/terminal.h>
 #include <ui/apps/scroll_demo.h>
+#include <ui/apps/kuvix_store.h>
+#include <ui/apps/settings.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -25,6 +28,8 @@ extern const app_vtbl_t grid_demo_app_vtbl;
 extern const app_vtbl_t pixel_draw_app_vtbl;
 extern const app_vtbl_t demo_font_vtbl;
 extern const app_vtbl_t scroll_demo_vtbl;
+extern const app_vtbl_t kuvix_store_vtbl;
+extern const app_vtbl_t settings_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -39,18 +44,20 @@ typedef struct {
 } app_definition_t;
 
 static app_definition_t app_registry[] = {
-    { 1, "Terminal",     &terminal_vtbl,       120,  90, 520, 320, sizeof(terminal_t) },
-    { 2, "File Manager", &file_manager_vtbl,    40,  60, 420, 260, 2048 },
-    { 3, "Notepad",      &notepad_vtbl,        150, 100, 450, 350, 1024 },
-    { 4, "Setup Wizard", &setup_wizard_vtbl,   140,  90, 520, 320, 1024 },
-    { 5, "Demo",         &demo_app_vtbl,       160, 120, 520, 240,    0 },
-    { 6, "Calculator",   &calculator_vtbl,     160, 120, 300, 380,    0 },
-    { 7, "Run",          &run_vtbl,            200, 140, 420, 140,  256 },
-    { 8, "Grid Demo",    &grid_demo_app_vtbl,  120,  80, 720, 540,   16 },
-    { 9, "Pixel Draw",   &pixel_draw_app_vtbl, 120,  80, 900, 650, sizeof(pixel_draw_app_t) },
-    { 10, "Font Demo",   &demo_font_vtbl,      140,  90, 700, 500, sizeof(demo_font_t) },
-    { 11, "Scroll Demo", &scroll_demo_vtbl,    120,  90, 520, 320, sizeof(scroll_demo_t) },
-    { 0, NULL,           NULL,                  0,   0,   0,   0,    0 }
+    {  1, "Terminal",     &terminal_vtbl,       120,  90, 520, 320,                      256 },
+    {  2, "File Manager", &file_manager_vtbl,    40,  60, 420, 260,                     2048 },
+    {  3, "Notepad",      &notepad_vtbl,        150, 100, 450, 350,                      256 },
+    {  4, "Setup Wizard", &setup_wizard_vtbl,   140,  90, 520, 320,                     1024 },
+    {  5, "Demo",         &demo_app_vtbl,       160, 120, 520, 240,                        0 },
+    {  6, "Calculator",   &calculator_vtbl,     160, 120, 300, 380,                        0 },
+    {  7, "Run",          &run_vtbl,            200, 140, 420, 140,                      256 },
+    {  8, "Grid Demo",    &grid_demo_app_vtbl,  120,  80, 720, 540,                       16 },
+    {  9, "Pixel Draw",   &pixel_draw_app_vtbl, 120,  80, 900, 650, sizeof(pixel_draw_app_t) },
+    { 10, "Font Demo",    &demo_font_vtbl,      140,  90, 700, 500, sizeof(demo_font_t)      },
+    { 11, "Scroll Demo",  &scroll_demo_vtbl,    120,  90, 520, 320, sizeof(scroll_demo_t)    },
+    { 12, "KuvixStore",   &kuvix_store_vtbl,    160, 120, 720, 420, sizeof(kuvix_store_t)    },
+    { 13, "Settings",     &settings_vtbl,       170, 120, 640, 420, sizeof(settings_t)       },
+    { 0,  NULL,                        NULL,      0,   0,   0,   0,                        0 }
 };
 
 #define APP_MAX 16
@@ -92,6 +99,8 @@ void appmgr_on_window_closed(int win_id) {
         // app destroy callback
         if (a->v && a->v->on_destroy)
             a->v->on_destroy(a);
+        
+        printk("[AppMgr] close app_id=%d win=%d user=%p\n", a->id, a->win_id, a->user);
 
         // user data free
         if (a->user) kfree(a->user);
@@ -179,8 +188,12 @@ app_t* appmgr_start_app(int app_id) {
 
     if (def->data_size > 0) {
         a->user = kmalloc(def->data_size);
-        if (a->user)
-            memset(a->user, 0, def->data_size);
+        if (!a->user) {
+            printk("[AppMgr] ERROR: kmalloc failed for app_id=%d size=%u\n", app_id, def->data_size);
+            kfree(a);
+            return NULL;
+        }
+        memset(a->user, 0, def->data_size);
     }
 
     int win_id = wm_add_window(def->default_x, def->default_y,
@@ -195,6 +208,11 @@ app_t* appmgr_start_app(int app_id) {
     g_apps[slot] = a;
 
     wm_set_active(win_id);
+
+    desktop_invalidate_full();
+
+    printk("[AppMgr] start app_id=%d title=%s -> win_id=%d user=%p\n",
+       a->id, def->title, win_id, a->user);
 
     return a;
 }
@@ -232,23 +250,25 @@ app_t* appmgr_open_path(const char* path) {
         uint8_t buf[256];
         uint32_t sz = 0;
 
-        if (vfs_read_all(path, buf, sizeof(buf) - 1, &sz) >= 0) {
+        if (vfs_read_all(path, buf, sizeof(buf) - 1, &sz) == 1) {
             buf[sz] = 0;
 
-            char* s = (char*)buf;
-            char* p = strstr(s, "app_id=");
+            printk("[AppMgr] ksf read ok: %u bytes\n", sz);
+            printk("[AppMgr] ksf content:\n%s\n", (char*)buf);
+
+            char* p = strstr((char*)buf, "app_id=");
+            printk("[AppMgr] find app_id=: %p\n", (void*)p);
+
             if (p) {
                 int id = 0;
                 p += 7;
-                while (*p >= '0' && *p <= '9') {
-                    id = id * 10 + (*p - '0');
-                    p++;
-                }
+                while (*p >= '0' && *p <= '9') { id = id * 10 + (*p - '0'); p++; }
+                printk("[AppMgr] parsed id=%d\n", id);
 
-                if (id > 0) {
-                    return appmgr_start_app(id);
-                }
+                if (id > 0) return appmgr_start_app(id);
             }
+        } else {
+            printk("[AppMgr] ksf read FAILED: %s\n", path);
         }
     }
 
