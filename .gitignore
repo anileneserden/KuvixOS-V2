@@ -22,3 +22,5 @@ status.txt
 tree.txt
 qemu.log
 vs-test.txtdisk.img
+# local build/tools
+client/
