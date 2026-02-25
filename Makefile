@@ -63,6 +63,7 @@ SRC_C = \
     kernel/fs/toyfs.c \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
+    kernel/system/removable.c \
     kernel/ui/apps/calculator.c \
     kernel/ui/apps/demo.c \
     kernel/ui/apps/demo_font.c \
@@ -81,6 +82,7 @@ SRC_C = \
     kernel/ui/bitmaps/icons/icon_max_16.c \
     kernel/ui/bitmaps/icons/icon_min_16.c \
     kernel/ui/controls/button2.c \
+    kernel/ui/controls/combobox2.c \
     kernel/ui/controls/control.c \
     kernel/ui/controls/label2.c \
     kernel/ui/controls/panel2.c \

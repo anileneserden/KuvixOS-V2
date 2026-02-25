@@ -3,6 +3,7 @@
 
 #include <app/app.h>
 #include <stdint.h>
+#include <ui/controls/combobox2.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,6 +20,8 @@ typedef enum {
 typedef struct {
     int page;        // selected page (settings_page_t)
     int scroll;      // future use
+    ui_combobox2_t cb_bg;
+    int cb_inited;
 } settings_t;
 
 extern const app_vtbl_t settings_vtbl;

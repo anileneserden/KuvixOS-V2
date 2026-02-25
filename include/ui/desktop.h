@@ -1,6 +1,9 @@
 #pragma once
 #include <stdint.h>
 
+uint32_t desktop_get_bg_color(void);
+void     desktop_set_bg_color(uint32_t argb);
+
 // session-style desktop API
 void ui_desktop_init(void);
 void ui_desktop_tick(void);

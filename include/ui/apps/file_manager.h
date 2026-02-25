@@ -1,11 +1,31 @@
-#ifndef FILE_MANAGER_H
-#define FILE_MANAGER_H
-
+#pragma once
 #include <app/app.h>
 
-// File Manager Uygulama Yapısı
-void file_manager_init(app_t* app);
-void file_manager_draw(app_t* app);
-void file_manager_handle_mouse(app_t* app, int mx, int my, uint8_t pressed);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+typedef struct {
+    char cwd[256];
+
+    // items
+    struct {
+        char     name[64];
+        uint32_t size;
+        bool     is_dir;
+    } items[96];
+
+    int count;
+    int selected;
+
+    uint32_t last_click_ms;
+    int last_click_index;
+
+    int sidebar_sel;
+} file_mgr_t;
+
+extern const app_vtbl_t file_manager_vtbl;
+
+#ifdef __cplusplus
+}
 #endif

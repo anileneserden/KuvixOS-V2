@@ -11,6 +11,7 @@
 #include <ui/apps/notepad.h>
 #include <ui/apps/pixel_draw_app.h>
 #include <ui/apps/demo_font.h>
+#include <ui/apps/file_manager.h>
 #include <ui/apps/terminal.h>
 #include <ui/apps/scroll_demo.h>
 #include <ui/apps/kuvix_store.h>
@@ -44,9 +45,9 @@ typedef struct {
 } app_definition_t;
 
 static app_definition_t app_registry[] = {
-    {  1, "Terminal",     &terminal_vtbl,       120,  90, 520, 320,                      256 },
-    {  2, "File Manager", &file_manager_vtbl,    40,  60, 420, 260,                     2048 },
-    {  3, "Notepad",      &notepad_vtbl,        150, 100, 450, 350,                      256 },
+    {  1, "Terminal",     &terminal_vtbl,       120,  90, 520, 320, sizeof(terminal_t) },
+    {  2, "File Manager", &file_manager_vtbl,    40,  60, 420, 260, sizeof(file_mgr_t)       },
+    {  3, "Notepad",      &notepad_vtbl,        150, 100, 450, 350, sizeof(notepad_t)        },
     {  4, "Setup Wizard", &setup_wizard_vtbl,   140,  90, 520, 320,                     1024 },
     {  5, "Demo",         &demo_app_vtbl,       160, 120, 520, 240,                        0 },
     {  6, "Calculator",   &calculator_vtbl,     160, 120, 300, 380,                        0 },

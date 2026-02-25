@@ -37,6 +37,8 @@
 
 #include <ui/apps/memmon.h>
 
+#include <kernel/system/removable.h>
+
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -79,7 +81,16 @@ static inline void present_rect_safe(int x, int y, int w, int h) {
 // Desktop State (DOSYA SCOPE STATIC)
 // ============================================================
 
-static uint32_t desktop_bg_color = 0x182838;
+static uint32_t desktop_bg_color = 0xFF182838;
+
+uint32_t desktop_get_bg_color(void) {
+    return ui_get_desktop_bg();
+}
+
+void desktop_set_bg_color(uint32_t argb) {
+    ui_set_desktop_bg(argb);
+    desktop_invalidate_full();
+}
 
 static bool is_selecting = false;
 static int  sel_start_x = 0;
@@ -364,11 +375,11 @@ void ui_desktop_init(void) {
     topbar_init();
 
     seed_store_repo();
+    desktop_seed_default_shortcuts(false);
 
     desktop_icons_init();
     desktop_icons_snap_all();
-    appmgr_start_app(13);
-
+    
     g_last_btn = 0;
     g_lmb_down = 0;
     g_dragging = 0;
@@ -408,45 +419,75 @@ void ui_desktop_init(void) {
     }
 }
 
-void ui_desktop_handle_scancode(uint16_t sc) {
+void ui_desktop_handle_scancode(uint16_t sc)
+{
     uint8_t sc8 = (uint8_t)(sc & 0xFF);
     char c = kbd_scancode_to_ascii(sc8);
 
-    // ✅ GLOBAL HOTKEY: SUPER+R -> Run (app id=7)
-    // Set1: R make = 0x13, break = 0x93
-    // Not: kbd_is_super_pressed() senin keyboard driver'da olmalı.
-    if (kbd_is_super_pressed() && sc8 == 0x13 && ((sc8 & 0x80) == 0)) {
+    // ignore break (key up)
+    if (sc8 & 0x80) {
+        return;
+    }
+
+    // ------------------------------------------------------------
+    // GLOBAL HOTKEY: SUPER+R -> Run (app id=7)
+    // Set1: R make = 0x13
+    // ------------------------------------------------------------
+    if (kbd_is_super_pressed() && sc8 == 0x13) {
         app_t* a = appmgr_start_app(7);
-        if (a) wm_set_active_id(a->win_id);
+        if (a) wm_set_active_id(a->win_id); // sende bu var
         desktop_invalidate_full();
         return;
     }
 
-    // F12 (Set1 make=0x58) -> debug overlay toggle
-    if (((sc8 & 0x80) == 0) && sc8 == 0x58) { // F12
+    // ------------------------------------------------------------
+    // F12 -> memmon toggle (Set1: 0x58)
+    // ------------------------------------------------------------
+    if (sc8 == 0x58) {
         memmon_toggle();
         desktop_invalidate_full();
         return;
     }
-    if (((sc8 & 0x80) == 0) && sc8 == 0x57) { // F11
+
+    // ------------------------------------------------------------
+    // F11 -> debug overlay toggle (Set1: 0x57)
+    // ------------------------------------------------------------
+    if (sc8 == 0x57) {
         g_dbg_overlay = !g_dbg_overlay;
         desktop_invalidate_full();
         return;
     }
 
-    // ✅ GLOBAL HOTKEY: CTRL+SHIFT+I -> Seed desktop icons
-    // Set1: I make = 0x17, break = 0x97
-    if (kbd_is_ctrl_pressed() &&
-        kbd_is_shift_pressed() &&
-        sc8 == 0x17 &&
-        ((sc8 & 0x80) == 0))   // make only
-    {
-        desktop_seed_default_shortcuts(false); // overwrite=false
+    // ------------------------------------------------------------
+    // F10 -> removable toggle (Set1: 0x44)  ✅ DOĞRUSU BU
+    // ------------------------------------------------------------
+    if (sc8 == 0x44) {
+        g_removable_plugged = !g_removable_plugged;
+
+        // duration: frame-based (şimdilik)
+        if (g_removable_plugged) {
+            notification_show("Çıkartılabilir disk takildi", 180);
+        } else {
+            notification_show("Çıkartılabilir disk cikarildi", 180);
+        }
+
+        desktop_invalidate_full();
+        return; // app'lere gitmesin
+    }
+
+    // ------------------------------------------------------------
+    // (İstersen geri açarsın) CTRL+SHIFT+I -> seed shortcuts
+    // Set1: I make = 0x17
+    // ------------------------------------------------------------
+    /*
+    if (kbd_is_ctrl_pressed() && kbd_is_shift_pressed() && sc8 == 0x17) {
+        desktop_seed_default_shortcuts(false);
         desktop_invalidate_full();
         return;
     }
+    */
 
-    printk("[DESKTOP] sc=0x%x\n", sc8);
+    printk("[DESKTOP] sc=0x%02x\n", sc8);
 
     // Modal'lar önce yesin
     if (save_dialog_is_active()) { save_dialog_handle_key(sc, c); desktop_invalidate_full(); return; }
@@ -747,7 +788,7 @@ void ui_desktop_tick(void) {
 
     if (wm_is_dragging_window()) need_full_present = true;
 
-    fb_clear(desktop_bg_color);
+    fb_clear(ui_get_desktop_bg());
     desktop_icons_draw_all();
     topbar_draw();
 
@@ -760,6 +801,9 @@ void ui_desktop_tick(void) {
             min(sel_start_y, mouse_y)
         );
     }
+
+    static int once = 0;
+    if (!once) { once = 1; printk("[NOTIF] draw called\n"); }
 
     wm_draw();
     save_dialog_draw();

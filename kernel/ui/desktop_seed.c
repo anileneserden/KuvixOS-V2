@@ -13,15 +13,10 @@ typedef struct {
 } sc_t;
 
 static const sc_t k_defaults[] = {
-  { "Terminal.ksf", "Terminal",      1, "/system/icons/terminal.kbi" },
-  { "Files.ksf",    "File Manager",  2, "/system/icons/files.kbi"    },
-  { "Notepad.ksf",  "Notepad",       3, "/system/icons/notepad.kbi"  },
-  { "Demo.ksf",     "Demo",          5, "/system/icons/demo.kbi"     },
-
-  // İstersen bunları da ekleyebilirsin (registry'ndeki id'lere göre):
-  // { "Calculator.ksf", "Calculator", 6, "/system/icons/calc.kbi" },
-  // { "Run.ksf",        "Run",        7, "/system/icons/run.kbi"  },
-  // { "Scroll.ksf",     "Scroll Demo",11,"/system/icons/scroll.kbi"},
+  { "Terminal.ksf", "Terminal",      1, "/system/icons/terminal.kbi"  },
+  { "Files.ksf",    "File Manager",  2, "/system/icons/files.kbi"     },
+  { "Notepad.ksf",  "Notepad",       3, "/system/icons/notepad.kbi"   },
+  { "Settings.ksf", "Settings",     13, "/system/icons/settings.kbi"  },
 };
 
 static int exists_file(const char* path) {
