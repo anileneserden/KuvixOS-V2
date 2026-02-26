@@ -56,6 +56,8 @@ SRC_C = \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
+    kernel/exec/kef/kef_loader.c \
+    kernel/exec/kef/kef_seed.c \
     kernel/fs/fs_init.c \
     kernel/fs/kvxfs.c \
     kernel/fs/ramfs.c \
@@ -133,9 +135,43 @@ SRC_C = \
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 
+# ==========================
+# KEF Apps (build + embed)
+# ==========================
+
+KEF_HELLO_DIR := apps_kef/hello
+KEF_HELLO_ELF := $(KEF_HELLO_DIR)/hello.elf
+KEF_HELLO_BIN := $(KEF_HELLO_DIR)/hello.bin
+KEF_HELLO_KEF := $(KEF_HELLO_DIR)/hello.kef
+
+KEF_BLOB_OBJ  := $(BUILD)/kernel/exec/kef/hello_kef_blob.o
+
+$(KEF_HELLO_ELF): $(KEF_HELLO_DIR)/main.c $(KEF_HELLO_DIR)/link.ld
+	@mkdir -p $(KEF_HELLO_DIR)
+	$(CC) -m32 -ffreestanding -O2 -Wall -Wextra \
+		-fno-pie -fno-stack-protector \
+		-nostdlib -nostartfiles \
+		-Iinclude \
+		-c $(KEF_HELLO_DIR)/main.c -o $(KEF_HELLO_DIR)/main.o
+	$(LD) -m32 -nostdlib -ffreestanding -fno-pie \
+		-Wl,-T,$(KEF_HELLO_DIR)/link.ld \
+		-Wl,--emit-relocs \
+		-o $(KEF_HELLO_ELF) $(KEF_HELLO_DIR)/main.o
+
+$(KEF_HELLO_BIN): $(KEF_HELLO_ELF)
+	objcopy -O binary $(KEF_HELLO_ELF) $(KEF_HELLO_BIN)
+
+$(KEF_HELLO_KEF): $(KEF_HELLO_BIN) $(KEF_HELLO_ELF) tools/mk_kef.py
+	python3 tools/mk_kef.py $(KEF_HELLO_ELF) $(KEF_HELLO_BIN) $(KEF_HELLO_KEF) 0 0
+
+$(KEF_BLOB_OBJ): $(KEF_HELLO_KEF)
+	@mkdir -p $(dir $@)
+	objcopy -I binary -O elf32-i386 -B i386 $(KEF_HELLO_KEF) $@
+
 OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
        $(SRC_ASM:%.asm=$(BUILD)/%.o) \
-       $(SRC_C:%.c=$(BUILD)/%.o)
+       $(SRC_C:%.c=$(BUILD)/%.o) \
+       $(KEF_BLOB_OBJ)
 
 # --- Kurallar ---
 

@@ -27,7 +27,7 @@ static int is_removable_path(const char* path) {
 // "/removable/abc" -> "/abc"
 static void removable_to_toy(const char* in, char* out, uint32_t cap) {
     if (!out || cap == 0) return;
-    out[0] = 0;
+    out[0] = 0; 
 
     if (!in || !is_removable_path(in)) {
         copy_str(out, in, cap);
