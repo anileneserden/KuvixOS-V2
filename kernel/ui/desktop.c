@@ -422,12 +422,9 @@ void ui_desktop_init(void) {
 void ui_desktop_handle_scancode(uint16_t sc)
 {
     uint8_t sc8 = (uint8_t)(sc & 0xFF);
-    char c = kbd_scancode_to_ascii(sc8);
-
-    // ignore break (key up)
-    if (sc8 & 0x80) {
-        return;
-    }
+    
+    char c = 0;
+    if (!(sc8 & 0x80)) c = kbd_scancode_to_ascii(sc8);
 
     // ------------------------------------------------------------
     // GLOBAL HOTKEY: SUPER+R -> Run (app id=7)
@@ -787,6 +784,8 @@ void ui_desktop_tick(void) {
     if (memmon_is_visible()) need_full_present = true;
 
     if (wm_is_dragging_window()) need_full_present = true;
+
+    if (appmgr_any_continuous_redraw()) need_full_present = true;
 
     fb_clear(ui_get_desktop_bg());
     desktop_icons_draw_all();

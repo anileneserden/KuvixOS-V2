@@ -13,6 +13,10 @@ typedef struct {
     char     text[NOTEPAD_MAX_TEXT];
     uint32_t cursor;
     bool     is_dirty;
+
+    uint8_t  sel_active;
+    uint32_t sel_anchor;
+    uint32_t sel_end;
 } notepad_tab_t;
 
 typedef struct {

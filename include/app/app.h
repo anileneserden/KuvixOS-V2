@@ -16,8 +16,12 @@ typedef struct app_vtbl {
 
 struct app {
     int win_id;
-    void* user;      // <--- HATA BURADAYDI, İSMİN BU OLDUĞUNDAN EMİN OLALIM
+    void* user;
     const app_vtbl_t* v;
     int visible;
     int id;
+
+    // ✅ Oyun / animasyon / designer gibi app'ler için:
+    // 1 => her frame redraw/present zorla
+    int wants_continuous_redraw;
 };

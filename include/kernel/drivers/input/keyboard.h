@@ -12,8 +12,8 @@ uint8_t  kbd_mods(void);
 int      kbd_is_ctrl_pressed(void);
 int      kbd_is_shift_pressed(void);
 
-// ✅ Super/Win basılı mı?
 int      kbd_is_super_pressed(void);
+int      kbd_is_altgr_pressed(void);
 
 void     kbd_init(void);
 void     kbd_poll(void);

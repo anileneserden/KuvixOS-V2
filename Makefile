@@ -66,6 +66,7 @@ SRC_C = \
     kernel/system/removable.c \
     kernel/ui/apps/calculator.c \
     kernel/ui/apps/demo.c \
+    kernel/ui/apps/designer.c \
     kernel/ui/apps/demo_font.c \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/grid_demo.c \

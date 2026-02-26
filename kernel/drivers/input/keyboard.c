@@ -27,6 +27,7 @@ static uint8_t tail = 0;
 static uint8_t g_shift = 0;
 static uint8_t g_ctrl  = 0;
 static uint8_t g_alt   = 0;
+static uint8_t g_altgr = 0;
 static uint8_t g_super = 0;
 
 // E0 prefix pending (bir sonraki byte ile birleştirmek için)
@@ -50,6 +51,11 @@ static int is_alt_break(uint8_t sc)   { return (sc == 0xB8); }
 // RightWin make: E0 5C break: E0 DC
 static int is_super_make_e0(uint8_t sc)  { return (sc == 0x5B || sc == 0x5C); }
 static int is_super_break_e0(uint8_t sc) { return (sc == 0xDB || sc == 0xDC); }
+
+static int is_altgr_make_e0(uint8_t sc) { return (sc == 0x38); }
+static int is_altgr_break_e0(uint8_t sc) { return (sc == 0xB8); }
+
+int kbd_is_altgr_pressed(void) { return g_altgr ? 1 : 0; }
 
 // bit0=shift bit1=ctrl bit2=alt
 uint8_t kbd_mods(void) {
@@ -93,6 +99,7 @@ void kbd_init(void) {
     g_shift = 0;
     g_ctrl  = 0;
     g_alt   = 0;
+    g_altgr = 0;
     g_super = 0;
     g_e0_pending = 0;
 
@@ -127,6 +134,9 @@ uint16_t kbd_pop_event(void) {
             if (is_alt_make(sc))    { g_alt = 1; continue; }
             if (is_alt_break(sc))   { g_alt = 0; continue; }
         } else {
+            if (is_altgr_make_e0(sc))  { g_altgr = 1; continue; }
+            if (is_altgr_break_e0(sc)) { g_altgr = 0; continue; }
+
             // ✅ Super/Win E0 prefix
             if (is_super_make_e0(sc))  { g_super = 1; continue; }
             if (is_super_break_e0(sc)) { g_super = 0; continue; }
@@ -187,7 +197,12 @@ char kbd_get_char(void) {
         if (!lay) return 0;
 
         uint8_t code = (uint8_t)(sc & 0x7F);
-        const uint8_t* table = g_shift ? lay->shift : lay->normal;
+        const uint8_t* table = 0;
+
+        if (g_altgr && lay->altgr)      table = lay->altgr;
+        else if (g_shift && lay->shift) table = lay->shift;
+        else                            table = lay->normal;
+
         if (!table) return 0;
 
         uint8_t ch = table[code];
@@ -216,7 +231,12 @@ char kbd_scancode_to_ascii(uint8_t sc) {
     if (!lay) return 0;
 
     uint8_t code = (uint8_t)(sc & 0x7F);
-    const uint8_t* table = (kbd_mods() & 1) ? lay->shift : lay->normal;
+    
+    const uint8_t* table = 0;
+    if (g_altgr && lay->altgr)      table = lay->altgr;
+    else if (g_shift && lay->shift) table = lay->shift;
+    else                            table = lay->normal;
+
     if (!table) return 0;
 
     return (char)table[code];

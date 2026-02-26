@@ -1,6 +1,7 @@
 // src/lib/app/app_manager.h
 #pragma once
 #include "app.h"
+#include <stdbool.h>
 
 // include/app/app_manager.h
 void appmgr_init(void);
@@ -15,3 +16,4 @@ app_t* appmgr_get_app_by_id(int app_id);
 void   appmgr_on_window_closed(int win_id);
 
 int    appmgr_find_window_by_app_id(int app_id);
+bool   appmgr_any_continuous_redraw(void);

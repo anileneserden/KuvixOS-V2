@@ -353,8 +353,8 @@ static void store_on_draw(app_t* app) {
         // buttons
         int by = 100;
         bool can_open = (it->app_id > 0);
-        draw_button(rx, by, "Ac", can_open);
-        draw_button(rx, by + BTN_H + 8, "Masaustune Ekle", true);
+        draw_button(rx, by, "Aç", can_open);
+        draw_button(rx, by + BTN_H + 8, "Masaüstüne Ekle", true);
 
         if (icon[0]) {
             gfx_draw_text_utf8(rx, by + 2 * BTN_H + 24, 0xFF999999, icon);

@@ -26,24 +26,27 @@ void gfx_putpixel(int x, int y, uint32_t color) {
 // r, g, b: Yeni rengin bileşenleri
 // a: Saydamlık (0-255 arası, 0 tam saydam, 255 tam mat)
 void gfx_putpixel_alpha(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    if (x < 0 || y < 0 || (uint32_t)x >= fb_get_width() || (uint32_t)y >= fb_get_height()) return;
+    // ✅ origin uygula
+    int sx = x + g_origin_x;
+    int sy = y + g_origin_y;
 
-    // 1. Arka plandaki mevcut rengi oku
-    fb_color_t bg_color = fb_getpixel(x, y);
+    if (sx < 0 || sy < 0 || (uint32_t)sx >= fb_get_width() || (uint32_t)sy >= fb_get_height()) return;
 
-    // 2. Arka plan bileşenlerini ayır (Sistemin ARGB/BGRA olduğuna göre kaydırmaları ayarla)
+    // ✅ arka planı origin'li koordinattan oku
+    fb_color_t bg_color = fb_getpixel(sx, sy);
+
     uint8_t bg_r = (bg_color >> 16) & 0xFF;
     uint8_t bg_g = (bg_color >> 8) & 0xFF;
     uint8_t bg_b = bg_color & 0xFF;
 
-    // 3. Harmanlama (Blending) işlemi
     uint8_t out_r = ((r * a) + (bg_r * (255 - a))) / 255;
     uint8_t out_g = ((g * a) + (bg_g * (255 - a))) / 255;
     uint8_t out_b = ((b * a) + (bg_b * (255 - a))) / 255;
 
-    // 4. Yeni rengi birleştir ve yaz
     uint32_t final_color = (out_r << 16) | (out_g << 8) | out_b;
-    fb_putpixel(x, y, final_color);
+
+    // ✅ origin'li koordinata yaz
+    fb_putpixel(sx, sy, final_color);
 }
 
 // İstediğin özel parametre sıralamasıyla Alpha Rect

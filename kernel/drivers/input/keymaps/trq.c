@@ -123,8 +123,68 @@ static const uint8_t trq_shift[128] = {
     [0x39] = ' ',
 };
 
+static const uint8_t trq_altgr[128] = {
+    [0x01] = '<',
+    [0x02] = '>',
+    [0x03] = '£',
+    [0x04] = '#',
+    [0x05] = '$',
+    [0x06] = '½',
+    [0x07] = '¾',
+    [0x08] = '{',     // ✅ SHIFT+7 => '/'
+    [0x09] = '[',
+    [0x0A] = ']',
+    [0x0B] = '}',
+    [0x0C] = '?',
+    [0x0D] = '_',
+    [0x0E] = '\b',
+    [0x0F] = '\t',
+
+    [0x10] = '@',
+    [0x11] = 'w',
+    [0x12] = '€',
+    [0x13] = '¶',
+    [0x14] = '₺',
+    [0x15] = '←',
+    [0x16] = 'û',
+    [0x17] = 'î',
+    [0x18] = 'ô',
+    [0x19] = 'p',
+    [0x1A] = 0xD0,       // (senin özel kodun)
+    [0x1B] = 0xDC,      // (senin özel kodun)
+    [0x1C] = '\n',
+
+    [0x1E] = 'â',
+    [0x1F] = 'ß',
+    [0x20] = 'd',
+    [0x21] = 'f',
+    [0x22] = 'g',
+    [0x23] = 'h',
+    [0x24] = 'j',
+    [0x25] = 'k',
+    [0x26] = 'l',
+    [0x27] = 0xDE,       // (senin özel kodun)
+    [0x28] = 0xDD,     // burada 'İ' gibi özel istersen kendi kodunu koy
+    [0x29] = 0xE9,       // istersen SHIFT+" için başka bir şey koy
+
+    [0x2B] = ';',
+    [0x2C] = 'Z',
+    [0x2D] = 'X',
+    [0x2E] = 'C',
+    [0x2F] = 'V',
+    [0x30] = 'B',
+    [0x31] = 'N',
+    [0x32] = 'M',
+    [0x33] = 0xD6,      // (senin özel kodun)
+    [0x34] = 0xC7,      // (senin özel kodun)
+    [0x35] = ':',
+
+    [0x39] = ' ',
+};
+
 kbd_layout_t layout_trq = {
     .name   = "trq",
     .normal = trq_norm,
     .shift  = trq_shift,
+    .altgr  = trq_altgr
 };
