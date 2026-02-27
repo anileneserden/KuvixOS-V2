@@ -17,6 +17,7 @@
 #include <ui/apps/kuvix_store.h>
 #include <ui/apps/settings.h>
 #include <ui/apps/designer.h>
+#include <ui/apps/kuvix_browser.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -33,6 +34,7 @@ extern const app_vtbl_t scroll_demo_vtbl;
 extern const app_vtbl_t kuvix_store_vtbl;
 extern const app_vtbl_t settings_vtbl;
 extern const app_vtbl_t designer_vtbl;
+extern const app_vtbl_t kuvix_browser_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -61,6 +63,7 @@ static app_definition_t app_registry[] = {
     { 12, "KuvixStore",   &kuvix_store_vtbl,    160, 120, 720, 420, sizeof(kuvix_store_t)    },
     { 13, "Settings",     &settings_vtbl,       170, 120, 640, 420, sizeof(settings_t)       },
     { 14, "Designer",     &designer_vtbl,       170, 120, 640, 420, sizeof(designer_t)       },
+    { 15, "Kuvix Browser", &kuvix_browser_vtbl, 160, 120, 820, 520, sizeof(kuvix_browser_t) },
     { 0,  NULL,                        NULL,      0,   0,   0,   0,                        0 }
 };
 

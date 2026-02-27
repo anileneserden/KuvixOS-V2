@@ -1,9 +1,13 @@
+// kernel/ui/window/window.c  (veya ui_window_draw nerede ise)
+
 #include <ui/window/window.h>
+#include <ui/window_chrome.h>
 #include <ui/theme.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <app/app.h>
 
 // ------------------------------------------------------------
 // helpers
@@ -56,6 +60,53 @@ static int text_width8(const char* s) {
     int w = 0;
     while (*s++) w += 8;
     return w;
+}
+
+// ------------------------------------------------------------
+// Tabs drawing helpers (titlebar)
+// ------------------------------------------------------------
+typedef struct { int x, y, w, h; } chrome_rect_t;
+static chrome_rect_t cr(int x, int y, int w, int h) { chrome_rect_t r = {x,y,w,h}; return r; }
+
+static void draw_tab(int x, int y, int w, int h, const char* text, int active) {
+    uint32_t bg = active ? 0x2A2A2A : 0x1C1C1C;
+    uint32_t bd = active ? 0xFF6A00 : 0x404040;
+    uint32_t fg = 0xFFFFFF;
+
+    gfx_fill_rect(x, y, w, h, bg);
+    gfx_draw_rect(x, y, w, h, bd);
+
+    int tx = x + 8;
+    int ty = y + (h - 16) / 2; // 8x16 varsayımı
+    gfx_draw_text_utf8(tx, ty, fg, text ? text : "");
+}
+
+static void draw_tab_add(int x, int y, int w, int h) {
+    gfx_fill_rect(x, y, w, h, 0x1C1C1C);
+    gfx_draw_rect(x, y, w, h, 0x404040);
+    gfx_draw_text_utf8(x + 9, y + (h - 16) / 2, 0xFFFFFF, "+");
+}
+
+// titlebar içinde: text_x ile buton bloğu arası strip
+static chrome_rect_t chrome_tabstrip_rect(const ui_window_t* win, const ui_chrome_layout_t* L) {
+    int gap = 6;
+
+    // min button pencerenin sağ yarısındaysa right layout varsay
+    int right_layout = (L->btn_min_x > (win->x + win->w / 2)) ? 1 : 0;
+
+    int left  = L->text_x;
+    int right = win->x + win->w - 4;
+
+    if (right_layout) {
+        right = L->btn_min_x - gap;
+    } else {
+        left  = L->btn_min_x + L->btn_size + gap;
+    }
+
+    int w = right - left;
+    if (w < 0) w = 0;
+
+    return cr(left, win->y, w, L->title_h);
 }
 
 // ------------------------------------------------------------
@@ -145,7 +196,7 @@ void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
     bool hover_max   = pt_in_rect(mx, my, btn_x[1], by, btn, btn);
     bool hover_min   = pt_in_rect(mx, my, btn_x[2], by, btn, btn);
 
-    // Press şimdilik yok (WM ile bağlanınca gerçek pressed yaparsın)
+    // Press şimdilik yok
     bool press_close = false, press_max = false, press_min = false;
 
     // --- Draw buttons
@@ -166,12 +217,10 @@ void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
         fb_draw_rect(btn_x[1], by, btn, btn, c_max);
         fb_draw_rect(btn_x[2], by, btn, btn, c_min);
 
-        // traffic'te bile outline eklemek hoş durur
         fb_draw_rect_outline(btn_x[0], by, btn, btn, col_border);
         fb_draw_rect_outline(btn_x[1], by, btn, btn, col_border);
         fb_draw_rect_outline(btn_x[2], by, btn, btn, col_border);
     } else {
-        // CLASSIC: titlebar'dan biraz koyu yap ki görünür olsun
         uint32_t base = darken_rgb(col_title_bg, 10);
 
         uint32_t b_close = base;
@@ -193,16 +242,11 @@ void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
         fb_draw_rect_outline(btn_x[0], by, btn, btn, col_border);
         fb_draw_rect_outline(btn_x[1], by, btn, btn, col_border);
         fb_draw_rect_outline(btn_x[2], by, btn, btn, col_border);
-
-        // Basit ikon (monospace 8px)
-        // int ix = btn / 2 - 4;
-        // int iy = btn / 2 - 4;
-        // gfx_draw_text_utf8(btn_x[0] + ix, by + iy, col_title_text, "X");
-        // gfx_draw_text_utf8(btn_x[1] + ix, by + iy, col_title_text, "□");
-        // gfx_draw_text_utf8(btn_x[2] + ix, by + iy, col_title_text, "_");
     }
 
-    // --- Title text safe area (butonlarla çakışmasın)
+    // ------------------------------------------------------------
+    // Title area safe rect (butonlarla çakışmasın)
+    // ------------------------------------------------------------
     int safe_x = win->x + pad_l;
     int safe_w = win->w - (pad_l + pad_r);
 
@@ -217,17 +261,70 @@ void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
 
     if (safe_w < 0) safe_w = 0;
 
-    // --- Draw title text
-    if (win->title && win->title[0]) {
-        int text_px_w = text_width8(win->title);
+    // ------------------------------------------------------------
+    // Tabs: title text yerine tab strip çiz
+    // (WM: wm_add_window -> win->user_data = owner app)
+    // ------------------------------------------------------------
+    int drew_tabs = 0;
 
-        int tx = calc_title_x(th, safe_x, safe_w, text_px_w);
+    app_t* app = (app_t*)win->user_data;
+    if (app && app->v &&
+        app->v->tabs_count && app->v->tabs_title &&
+        app->v->tabs_active && app->v->tabs_set_active) {
 
-        // Font height: sende 8 ise 8 yap. (gfx fontun 16 ise 16)
-        const int font_h = 16;
-        int ty = win->y + (title_h - font_h) / 2;
-        if (ty < win->y) ty = win->y;
+        int n = app->v->tabs_count(app);
+        if (n > 0) {
+            ui_chrome_layout_t L = ui_chrome_layout(win);
+            chrome_rect_t strip = chrome_tabstrip_rect(win, &L);
 
-        gfx_draw_text_utf8(tx, ty, col_title_text, win->title);
+            // strip genişliği yoksa geç
+            if (strip.w > 30) {
+                int tab_h = L.btn_size;
+                if (tab_h < 14) tab_h = 14;
+
+                int tab_w = 90;
+                int tab_gap = 6;
+
+                int max_tabs = (n < 3) ? n : 3;
+
+                int y = strip.y + (strip.h - tab_h) / 2;
+                int x0 = strip.x;
+
+                for (int i = 0; i < max_tabs; i++) {
+                    // strip dışına taşmasın
+                    if (x0 + tab_w > strip.x + strip.w) break;
+
+                    const char* tt = app->v->tabs_title(app, i);
+                    int active = (app->v->tabs_active(app) == i) ? 1 : 0;
+
+                    draw_tab(x0, y, tab_w, tab_h, tt, active);
+                    x0 += tab_w + tab_gap;
+                }
+
+                // [+]
+                int add_w = 28;
+                if (x0 + add_w <= strip.x + strip.w) {
+                    draw_tab_add(x0, y, add_w, tab_h);
+                }
+
+                drew_tabs = 1;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Title text (tabs yoksa)
+    // ------------------------------------------------------------
+    if (!drew_tabs) {
+        if (win->title && win->title[0]) {
+            int text_px_w = text_width8(win->title);
+            int tx = calc_title_x(th, safe_x, safe_w, text_px_w);
+
+            const int font_h = 16;
+            int ty = win->y + (title_h - font_h) / 2;
+            if (ty < win->y) ty = win->y;
+
+            gfx_draw_text_utf8(tx, ty, col_title_text, win->title);
+        }
     }
 }

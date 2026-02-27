@@ -1,5 +1,5 @@
-// kernel/ui/window_chrome.c  (veya senin path'in)
-// theme destekli, clamp'li layout
+// kernel/ui/window_chrome.c
+// Theme destekli, clamp'li layout
 
 #include <ui/window_chrome.h>
 #include <ui/window/window.h>
@@ -14,17 +14,18 @@ static int clampi(int v, int lo, int hi) {
 
 ui_chrome_layout_t ui_chrome_layout(const ui_window_t* win) {
     ui_chrome_layout_t L;
-    // default sıfırla (garanti)
-    L.title_h = 24;
-    L.btn_size = 16;
-    L.pad = 4;
-    L.btn_y = win->y + 4;
-    L.btn_close_x = win->x + win->w - 16 - 4;
-    L.btn_max_x   = L.btn_close_x - 16 - 4;
-    L.btn_min_x   = L.btn_max_x   - 16 - 4;
-    L.icon_x = win->x + 4;
-    L.text_x = win->x + 8;
-    L.grip = 10;
+
+    // default güvenli başlangıç (win NULL olsa da)
+    L.title_h     = 24;
+    L.btn_size    = 16;
+    L.pad         = 4;
+    L.btn_y       = 4;
+    L.btn_close_x = 0;
+    L.btn_max_x   = 0;
+    L.btn_min_x   = 0;
+    L.icon_x      = 4;
+    L.text_x      = 8;
+    L.grip        = 10;
 
     if (!win) return L;
 
@@ -36,11 +37,9 @@ ui_chrome_layout_t ui_chrome_layout(const ui_window_t* win) {
     border_px = clampi(border_px, 1, 16);
 
     int title_h = (th ? th->window_title_h : 24);
-    // title bar çok küçük olmasın, pencere yüksekliğini aşmasın
     title_h = clampi(title_h, 18, (win->h > 18 ? win->h : 18));
 
     int btn_size = (th ? th->window_btn_size : 16);
-    // buton titlebar içine sığmalı
     btn_size = clampi(btn_size, 10, title_h - 4);
 
     int btn_gap = (th ? th->window_btn_gap : 4);
@@ -54,8 +53,7 @@ ui_chrome_layout_t ui_chrome_layout(const ui_window_t* win) {
     pad_l = clampi(pad_l, 2, 64);
     pad_r = clampi(pad_r, 2, 64);
 
-    // eski struct'taki pad alanını "genel chrome padding" gibi kullanacağız
-    // (butonların Y hizası, icon başlangıcı vs)
+    // genel chrome padding
     int pad = (th ? th->window_btn_margin : 4);
     pad = clampi(pad, 2, 64);
 
@@ -68,8 +66,6 @@ ui_chrome_layout_t ui_chrome_layout(const ui_window_t* win) {
     L.btn_y = win->y + (title_h - btn_size) / 2;
 
     // --- Button layout: left/right ---
-    // right: [min][max][close] sağda
-    // left : solda
     int right = 1;
     if (th && th->window_btn_layout == UI_BTN_LAYOUT_LEFT) right = 0;
 
@@ -82,19 +78,15 @@ ui_chrome_layout_t ui_chrome_layout(const ui_window_t* win) {
         x -= (btn_size + btn_gap);
         L.btn_min_x = x;
 
-        // Text soldan başlar, sağda butonlara kadar boşluk bırak
+        // Soldan icon + text
         L.icon_x = win->x + border_px + pad_l;
 
-        // icon varsa (icon alanını btn_size kabul ediyoruz)
         if (win->icon != (void*)0) {
             L.text_x = L.icon_x + btn_size + pad_l;
         } else {
             L.text_x = L.icon_x;
         }
 
-        // burada L.text_w yok ama çakışmayı azaltmak için
-        // text_x'i solda tutuyoruz; çizimde istersen clip eklenir.
-        // İstersen struct'a text_right sınırı ekleriz.
         (void)pad_r;
     } else {
         int x = win->x + border_px + btn_margin;

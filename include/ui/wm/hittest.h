@@ -1,6 +1,5 @@
+// ui/wm/hittest.h
 #pragma once
-
-#include <ui/window/window.h>
 
 typedef enum {
     HT_NONE = 0,
@@ -18,8 +17,11 @@ typedef enum {
     HT_RESIZE_TOP_RIGHT,
     HT_RESIZE_BOTTOM_LEFT,
     HT_RESIZE_BOTTOM_RIGHT,
-    HT_RESIZE_RIGHT_BOTTOM = 10 // Manuel atama çakışma yapmasın diye kontrol et
-} wm_hittest_t;
+    HT_RESIZE_RIGHT_BOTTOM,
 
-// Bu satırı ekle (Eğer yoksa):
-wm_hittest_t ui_chrome_hittest(const ui_window_t* win, int mx, int my);
+    // Titlebar tab hitleri (şimdilik wm.c'de kullanıyoruz)
+    HT_TAB0 = 100,
+    HT_TAB1 = 101,
+    HT_TAB2 = 102,
+    HT_TAB_ADD = 110
+} wm_hittest_t;

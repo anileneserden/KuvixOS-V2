@@ -30,7 +30,6 @@ static wm_entry_t g_wins[WM_MAX_WINDOWS];
 static uint8_t g_used[WM_MAX_WINDOWS];
 
 // ✅ z-order listesi (sadece alive id’ler)
-// g_count = z listesi uzunluğu
 static int g_z[WM_MAX_WINDOWS];
 static int g_count = 0;
 
@@ -51,6 +50,56 @@ static int g_mouse_consumed = 0;
 static uint8_t g_buttons_state = 0;
 
 extern uint32_t g_ticks_ms;
+
+// ------------------------------------------------------------
+// Local rect helpers (tabs hit-test için)
+// ------------------------------------------------------------
+typedef struct { int x, y, w, h; } wm_recti_t;
+
+static wm_recti_t wm_recti(int x, int y, int w, int h) {
+    wm_recti_t r = { x, y, w, h };
+    return r;
+}
+
+static int wm_pt_in_rect(int px, int py, wm_recti_t r) {
+    return (px >= r.x && py >= r.y && px < (r.x + r.w) && py < (r.y + r.h));
+}
+
+// Titlebar içinde: text_x ile buton bloğu arası
+static wm_recti_t wm_chrome_tabstrip_rect(const ui_window_t* win, const ui_chrome_layout_t* L) {
+    int gap = 6;
+
+    // min button pencerenin sağ yarısındaysa right layout varsay
+    int right_layout = (L->btn_min_x > (win->x + win->w / 2)) ? 1 : 0;
+
+    int left  = L->text_x;
+    int right = win->x + win->w - 4;
+
+    if (right_layout) {
+        right = L->btn_min_x - gap;
+        left  = L->text_x;
+    } else {
+        left  = L->btn_min_x + L->btn_size + gap;
+        right = win->x + win->w - 4;
+    }
+
+    int w = right - left;
+    if (w < 0) w = 0;
+
+    return wm_recti(left, win->y, w, L->title_h);
+}
+
+static wm_recti_t wm_tab_rect(wm_recti_t strip, int i, int tab_w, int tab_h, int gap) {
+    int x = strip.x + i * (tab_w + gap);
+    int y = strip.y + (strip.h - tab_h) / 2;
+    return wm_recti(x, y, tab_w, tab_h);
+}
+
+static wm_recti_t wm_tab_add_rect(wm_recti_t strip, int tab_count, int tab_w, int tab_h, int gap) {
+    int x = strip.x + tab_count * (tab_w + gap);
+    int y = strip.y + (strip.h - tab_h) / 2;
+    return wm_recti(x, y, tab_w, tab_h);
+}
 
 // ------------------------------------------------------------
 // Helpers
@@ -183,7 +232,7 @@ int wm_add_window(int x, int y, int w, int h, const char* title, app_t* owner) {
     win->title = title ? title : "Window";
     win->state = WIN_NORMAL;
     win->is_closed = 0;
-    win->user_data = 0;
+    win->user_data = owner;
 
     g_wins[id].owner = owner;
 
@@ -206,7 +255,6 @@ void wm_close_window(int win_id) {
     }
 
     // ✅ App cleanup TEK yerde: AppManager
-    // (on_destroy + free + slot boşaltma app side)
     appmgr_on_window_closed(win_id);
 
     // ✅ WM slot boşalt
@@ -306,7 +354,7 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
     g_buttons_state = buttons;
     g_mouse_consumed = 0;
 
-    // 1) Modal save dialog (istersen open dialog da ekle)
+    // 1) Modal save dialog
     if (save_dialog_is_active()) {
         save_dialog_handle_mouse(mx, my, (pressed & 0x01));
         if (pressed & 0x01) g_mouse_consumed = 1;
@@ -349,6 +397,52 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
         if (hit == HT_BTN_MIN) { wm_minimize(idx); return; }
 
         if (hit == HT_TITLE) {
+
+            // ✅ Tabs provider titlebar click
+            app_t* app = g_wins[idx].owner;
+            if (app && app->v &&
+                app->v->tabs_count && app->v->tabs_title &&
+                app->v->tabs_active && app->v->tabs_set_active) {
+
+                int n = app->v->tabs_count(app);
+                if (n > 0) {
+                    ui_chrome_layout_t L = ui_chrome_layout(w);
+
+                    int tab_h = L.btn_size;
+                    if (tab_h < 14) tab_h = 14;
+
+                    int tab_w = 90;
+                    int gap   = 6;
+
+                    wm_recti_t strip = wm_chrome_tabstrip_rect(w, &L);
+
+                    if (strip.w > 10) {
+                        int max_tabs = (n < 3) ? n : 3;
+
+                        for (int i = 0; i < max_tabs; i++) {
+                            wm_recti_t tr = wm_tab_rect(strip, i, tab_w, tab_h, gap);
+
+                            if (wm_pt_in_rect(mx, my, tr)) {
+                                app->v->tabs_set_active(app, i);
+                                desktop_invalidate_full();
+                                return;
+                            }
+                        }
+
+                        // [+] butonu
+                        wm_recti_t ar = wm_tab_add_rect(strip, max_tabs, 28, tab_h, gap);
+                        if (wm_pt_in_rect(mx, my, ar)) {
+                            int last = n - 1;
+                            if (last < 0) last = 0;
+                            app->v->tabs_set_active(app, last);
+                            desktop_invalidate_full();
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Tab’a basılmadıysa normal drag
             g_mouse_down = 1;
             g_drag_idx = idx;
             g_down_x = mx;
@@ -369,7 +463,6 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
             int cx = mx - cr.x;
             int cy = my - cr.y;
 
-            // ✅ param sıra: pressed, released, buttons
             app->v->on_mouse(app, cx, cy, pressed, released, buttons);
         }
     }
@@ -420,9 +513,8 @@ void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons) {
     g_mouse_x = mx;
     g_mouse_y = my;
 
-    // 1) modal varsa önce ona ver (istersen)
+    // 1) modal varsa önce ona ver
     if (save_dialog_is_active()) {
-        // save dialog wheel desteklemiyorsa direkt return edebilirsin
         return;
     }
 
@@ -436,10 +528,6 @@ void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons) {
 
     // minimized’a wheel verme
     if (g_wins[idx].win.state == WIN_MINIMIZED) return;
-
-    // wheel genelde focus/active window’a gider, ama biz hover+fallback yaptık
-    // eğer hover pencereyi aktifleştirmek istersen:
-    // bring_to_front(idx);
 
     app_t* app = g_wins[idx].owner;
     if (app && app->v && app->v->on_wheel) {
@@ -521,11 +609,10 @@ int wm_get_mouse_x(void) { return g_mouse_x; }
 int wm_get_mouse_y(void) { return g_mouse_y; }
 
 int wm_get_count(void) {
-    return g_count; // z-list count (alive windows)
+    return g_count;
 }
 
 const ui_window_t* wm_get_window_ptr(int idx) {
-    // ⚠️ burada idx "win_id" olarak kullanılıyor
     if (!is_alive_id(idx)) return 0;
     return &g_wins[idx].win;
 }
