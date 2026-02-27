@@ -1,3 +1,4 @@
+#include <kernel/memory/kmalloc.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/ramfs.h>
 #include <kernel/fs/kvxfs.h>
@@ -545,4 +546,47 @@ int vfs_rename(const char* old_path, const char* new_path) {
 
     // ToyFS read-only
     return 0;
+}
+
+int vfs_read_all_alloc(const char* path, uint8_t** out_buf, uint32_t* out_size) {
+    if (out_size) *out_size = 0;
+    if (out_buf) *out_buf = 0;
+    if (!path || !out_buf) return 0;
+
+    vfs_file_t* f = 0;
+    if (!vfs_open(path, VFS_O_RDONLY, &f)) return 0;
+
+    uint32_t cap = 1024;
+    uint8_t* buf = (uint8_t*)kmalloc(cap + 1);
+    if (!buf) { vfs_close(f); return 0; }
+
+    uint32_t total = 0;
+
+    while (1) {
+        if (total == cap) {
+            uint32_t newcap = cap * 2;
+            uint8_t* nb = (uint8_t*)kmalloc(newcap + 1);
+            if (!nb) break;
+            memcpy(nb, buf, cap);
+            kfree(buf);
+            buf = nb;
+            cap = newcap;
+        }
+
+        uint32_t got = 0;
+        if (!vfs_read(f, buf + total, cap - total, &got)) break;
+        if (got == 0) break;
+        total += got;
+    }
+
+    vfs_close(f);
+
+    buf[total] = 0;
+    *out_buf = buf;
+    if (out_size) *out_size = total;
+    return 1;
+}
+
+void vfs_free_alloc(void* p) {
+    if (p) kfree(p);
 }

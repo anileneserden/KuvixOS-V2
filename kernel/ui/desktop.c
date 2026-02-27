@@ -39,6 +39,8 @@
 
 #include <kernel/system/removable.h>
 
+#include <kernel/memory/kmalloc.h>
+
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -251,6 +253,66 @@ void seed_store_repo(void) {
                   strlen(terminal));
 }
 
+// basit KBI writer (ARGB8888)
+static void kbi_write_demo_terminal_icon(void) {
+    vfs_mkdir("/system");
+    vfs_mkdir("/system/icons");
+
+    const char* path = "/system/icons/terminal.kbi";
+
+    // varsa tekrar yazmak istemiyorsan stat check koyabilirsin
+    vfs_stat_t st;
+    if (vfs_stat(path, &st)) return; // zaten var
+
+    const int W = 32, H = 32;
+    const uint32_t MAGIC = 0x3149424B; // 'KBI1'
+    const uint32_t FLAGS = 1; // ARGB8888
+
+    // header + pixels
+    uint32_t total = (uint32_t)(sizeof(uint32_t)*1 + sizeof(uint16_t)*2 + sizeof(uint32_t)*2) + (uint32_t)(W*H*4);
+    // daha temiz: struct kullan
+    typedef struct __attribute__((packed)) {
+        uint32_t magic;
+        uint16_t w;
+        uint16_t h;
+        uint32_t flags;
+        uint32_t reserved;
+    } hdr_t;
+
+    uint32_t cap = (uint32_t)sizeof(hdr_t) + (uint32_t)(W*H*4);
+    uint8_t* buf = (uint8_t*)kmalloc(cap);
+    if (!buf) return;
+
+    hdr_t hdr;
+    hdr.magic = MAGIC;
+    hdr.w = (uint16_t)W;
+    hdr.h = (uint16_t)H;
+    hdr.flags = FLAGS;
+    hdr.reserved = 0;
+
+    memcpy(buf, &hdr, sizeof(hdr));
+
+    uint32_t* px = (uint32_t*)(buf + sizeof(hdr));
+    // default transparent
+    for (int i = 0; i < W*H; i++) px[i] = 0x00000000;
+
+    // basit ikon: siyah çerçeve + turuncu terminal ekranı
+    for (int y = 2; y < H-2; y++) {
+        for (int x = 2; x < W-2; x++) {
+            // frame
+            if (x == 2 || y == 2 || x == W-3 || y == H-3) px[y*W + x] = 0xFF000000;
+            else px[y*W + x] = 0xFF101010; // inside
+        }
+    }
+    // prompt çizgisi (turuncu)
+    for (int x = 6; x < 20; x++) px[18*W + x] = 0xFFFF6A00;
+    // cursor
+    px[18*W + 21] = 0xFFFFFFFF;
+
+    vfs_write_all(path, buf, cap);
+    kfree(buf);
+}
+
 // ============================================================
 // Desktop Handlers
 // ============================================================
@@ -375,6 +437,9 @@ void ui_desktop_init(void) {
     topbar_init();
 
     seed_store_repo();
+    kbi_write_demo_terminal_icon();
+    
+    desktop_seed_html_pages();
     desktop_seed_default_shortcuts(false);
 
     desktop_icons_init();

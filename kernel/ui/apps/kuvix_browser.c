@@ -5,10 +5,21 @@
 #include <app/app.h>
 #include <ui/wm.h>
 
+#include <ui/html/html_parser.h>
+#include <ui/html/html_render.h>
+#include <kernel/fs/vfs.h>
+
 #include <kernel/drivers/video/gfx.h>
 #include <lib/string.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+#include <kernel/user.h>
+
+// ------------------------------------------------------------
+// config
+// ------------------------------------------------------------
+#define KBROWSER_ENABLE_TABS 0
 
 // terminal'deki gibi
 extern char kbd_scancode_to_ascii(uint8_t scancode);
@@ -65,7 +76,53 @@ static void br_navigate(kuvix_browser_t* b, const char* url) {
     if (!b) return;
     br_set_url(b, url);
     br_push_history(b, url);
+    b->scroll_y = 0; // ✅ yeni sayfada scroll reset
     br_set_status(b, "Ready");
+}
+
+// local:... -> VFS path (MVP)
+static const char* local_to_path(const char* url) {
+    // fallback her zaman masaüstündeki home.html
+    if (!url || !url[0]) return USER_DESKTOP_PATH "/home.html";
+
+    if (strncmp(url, "local:", 6) == 0) {
+        const char* p = url + 6;
+
+        if (strcmp(p, "home") == 0) return USER_DESKTOP_PATH "/home.html";
+        if (strcmp(p, "docs") == 0) return USER_DESKTOP_PATH "/docs.html";
+        if (strcmp(p, "new")  == 0) return USER_DESKTOP_PATH "/new.html";
+
+        return USER_DESKTOP_PATH "/home.html";
+    }
+
+    // Bonus: adres çubuğuna direkt path yazarsan çalışsın
+    // örnek: /home/anil/desktop/home.html (KuvixOS içindeki path!)
+    if (url[0] == '/') return url;
+
+    // şimdilik başka protokol yok
+    return USER_DESKTOP_PATH "/home.html";
+}
+
+static bool browser_load_file(kuvix_browser_t* b, const char* path) {
+    uint8_t* data = NULL;
+    uint32_t size = 0;
+
+    if (vfs_read_all(path, &data, &size) != 1) {
+        br_set_status(b, "HTML load failed");
+        return false;
+    }
+
+    // buffer içine kopyala
+    if (size >= sizeof(b->html_buffer))
+        size = sizeof(b->html_buffer) - 1;
+
+    memcpy(b->html_buffer, data, size);
+    b->html_buffer[size] = '\0';
+
+    kfree(data);
+
+    br_set_status(b, "Loaded");
+    return true;
 }
 
 // ------------------------------------------------------------
@@ -151,9 +208,46 @@ static void draw_statusbar(rect_t r, const char* status) {
     gfx_draw_text_utf8(8, r.y + 6, 0xC0C0C0, status ? status : "");
 }
 
-// Tab başlıklarını titlebar'dan da gösteriyoruz ama content placeholder burada da yazsın
+// HTML content draw (MVP local)
+static void draw_content_html(rect_t r, const char* url, int scroll_y) {
+    gfx_fill_rect(r.x, r.y, r.w, r.h, 0x1A1A1A);
+
+    const char* path = local_to_path(url);
+
+    uint8_t* buf = 0;
+    uint32_t sz = 0;
+
+    if (!vfs_read_all_alloc(path, &buf, &sz)) {
+        gfx_draw_text_utf8(r.x + 14, r.y + 14, 0xFF4444, "HTML load failed:");
+        gfx_draw_text_utf8(r.x + 14, r.y + 30, 0xAAAAAA, path);
+        return;
+    }
+
+    html_doc_t doc;
+    if (!html_parse(&doc, (const char*)buf, sz)) {
+        gfx_draw_text_utf8(r.x + 14, r.y + 14, 0xFF4444, "HTML parse failed");
+        vfs_free_alloc(buf);
+        return;
+    }
+
+    // scroll -> y'yi kaydır
+    int pad = 12;
+    int draw_x = r.x + pad;
+    int draw_y = r.y + pad - scroll_y;
+    int draw_w = r.w - pad * 2;
+
+    html_render_doc(&doc, draw_x, draw_y, draw_w);
+
+    vfs_free_alloc(buf);
+}
+
+#if KBROWSER_ENABLE_TABS
+// ------------------------------------------------------------
+// Tabs provider callbacks (WM titlebar uses these)
+// ------------------------------------------------------------
+
+// Tab başlıklarını titlebar'dan da gösteriyoruz
 static const char* kb_tab_title(int idx) {
-    // şimdilik sabit
     switch (idx) {
         case 0: return "Home";
         case 1: return "Docs";
@@ -162,30 +256,9 @@ static const char* kb_tab_title(int idx) {
     }
 }
 
-static void draw_content_placeholder(rect_t r, const char* url, int tab) {
-    gfx_fill_rect(r.x, r.y, r.w, r.h, 0x1A1A1A);
-
-    gfx_draw_text_utf8(r.x + 14, r.y + 14, 0xFFFFFF, "Kuvix Browser (template)");
-    gfx_draw_text_utf8(r.x + 14, r.y + 32, 0xAAAAAA, "Engine: not implemented yet.");
-
-    char line[220];
-    line[0] = 0;
-    strcat(line, "Tab: ");
-    strcat(line, kb_tab_title(tab));
-    strcat(line, "    URL: ");
-    strcat(line, (url && url[0]) ? url : "(empty)");
-    gfx_draw_text_utf8(r.x + 14, r.y + 54, 0xFF6A00, line);
-
-    gfx_draw_text_utf8(r.x + 14, r.y + 78, 0x888888, "Tabs are on WINDOW TITLEBAR now (WM-driven).");
-    gfx_draw_text_utf8(r.x + 14, r.y + 94, 0x666666, "Next: local: pages from VFS + simple text renderer + scroll.");
-}
-
-// ------------------------------------------------------------
-// Tabs provider callbacks (WM titlebar uses these)
-// ------------------------------------------------------------
 static int kb_tabs_count(app_t* app) {
     (void)app;
-    return 3; // şimdilik 3 tab
+    return 3;
 }
 
 static const char* kb_tabs_title(app_t* app, int idx) {
@@ -207,8 +280,14 @@ static void kb_tabs_set_active(app_t* app, int idx) {
     if (idx >= n) idx = n - 1;
 
     b->active_tab = idx;
+
+    if (idx == 0) br_navigate(b, "local:home");
+    else if (idx == 1) br_navigate(b, "local:docs");
+    else br_navigate(b, "local:new");
+
     br_set_status(b, "Tab switched (titlebar)");
 }
+#endif
 
 // ------------------------------------------------------------
 // vtbl callbacks
@@ -221,6 +300,7 @@ static void browser_on_create(app_t* app) {
 
     b->active_tab = 0;
     b->addr_edit_mode = 0;
+    b->scroll_y = 0;
 
     br_set_url(b, "local:home");
     br_push_history(b, "local:home");
@@ -237,7 +317,7 @@ static void browser_on_draw(app_t* app) {
 
     gfx_fill_rect(0, 0, client.w, client.h, 0x0B0B0B);
 
-    // toolbar (tabs artık titlebar'da)
+    // toolbar
     draw_toolbar_bg(client.w);
 
     // toolbar buttons
@@ -248,9 +328,9 @@ static void browser_on_draw(app_t* app) {
     // address bar
     draw_addrbar(r_addr_bar(client.w), b->url, (b->addr_edit_mode != 0));
 
-    // content
+    // content (HTML)
     rect_t rc = r_content(client.w, client.h);
-    draw_content_placeholder(rc, b->url, b->active_tab);
+    draw_content_html(rc, b->url, b->scroll_y);
 
     // status
     rect_t rs = r_status_bar(client.w, client.h);
@@ -270,6 +350,7 @@ static void browser_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_
         if (b->history_count > 0 && b->history_index > 0) {
             b->history_index--;
             br_set_url(b, b->history[b->history_index]);
+            b->scroll_y = 0;
             br_set_status(b, "Back");
         }
         return;
@@ -280,6 +361,7 @@ static void browser_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_
         if (b->history_count > 0 && b->history_index < b->history_count - 1) {
             b->history_index++;
             br_set_url(b, b->history[b->history_index]);
+            b->scroll_y = 0;
             br_set_status(b, "Forward");
         }
         return;
@@ -287,6 +369,7 @@ static void browser_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_
 
     // reload
     if (pt_in_rect(mx, my, r_btn_reload())) {
+        b->scroll_y = 0;
         br_set_status(b, "Reload");
         return;
     }
@@ -312,8 +395,40 @@ static void browser_on_key(app_t* app, uint16_t key) {
     uint8_t sc = (uint8_t)(key & 0xFF);
     if (sc & 0x80) return; // break ignore
 
-    // edit mode değilse ignore
-    if (!b->addr_edit_mode) return;
+    // ------------------------------------------------
+    // Scroll keys (edit mode OFF iken çalışsın)
+    // Up: 0x48, Down: 0x50, PgUp: 0x49, PgDn: 0x51
+    // (E0 prefix'li gelirse setin farklıdır; terminal debug ile bakıp düzeltiriz)
+    // ------------------------------------------------
+    if (!b->addr_edit_mode) {
+        int step = 16 * 2; // 2 satır
+
+        if (sc == 0x48) { // Up
+            b->scroll_y -= step;
+            if (b->scroll_y < 0) b->scroll_y = 0;
+            return;
+        }
+        if (sc == 0x50) { // Down
+            b->scroll_y += step;
+            return;
+        }
+        if (sc == 0x49) { // PgUp
+            b->scroll_y -= step * 6;
+            if (b->scroll_y < 0) b->scroll_y = 0;
+            return;
+        }
+        if (sc == 0x51) { // PgDn
+            b->scroll_y += step * 6;
+            return;
+        }
+
+        // edit mode değilken diğer tuşlar: şimdilik yok
+        return;
+    }
+
+    // ------------------------------
+    // Address bar edit mode
+    // ------------------------------
 
     // Enter
     if (sc == 0x1C) {
@@ -360,9 +475,11 @@ const app_vtbl_t kuvix_browser_vtbl = {
     .on_key     = browser_on_key,
     .on_destroy = browser_on_destroy,
 
-    // ✅ titlebar tabs provider
+#if KBROWSER_ENABLE_TABS
+    // titlebar tabs provider
     .tabs_count      = kb_tabs_count,
     .tabs_title      = kb_tabs_title,
     .tabs_active     = kb_tabs_active,
     .tabs_set_active = kb_tabs_set_active
+#endif
 };

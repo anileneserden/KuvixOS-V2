@@ -7,6 +7,7 @@ void fb_init(uint32_t lfb_addr, uint32_t width, uint32_t height, uint32_t pitch_
 
 void fb_putpixel(int x, int y, uint32_t color);
 uint32_t fb_getpixel(int x, int y);
+uint32_t* fb_backbuffer_ptr(void);
 
 void fb_clear(uint32_t color);
 void fb_present(void);

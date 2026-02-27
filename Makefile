@@ -70,6 +70,7 @@ SRC_C = \
     kernel/ui/apps/demo_font.c \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/grid_demo.c \
+    kernel/ui/apps/kbi_viewer.c \
     kernel/ui/apps/kuvix_browser.c \
     kernel/ui/apps/kuvix_store.c \
     kernel/ui/apps/memmon.c \
@@ -94,6 +95,10 @@ SRC_C = \
     kernel/ui/dialogs/messagebox.c \
     kernel/ui/font/font8x8_basic.c \
     kernel/ui/font/font8x16_basic.c \
+    kernel/ui/html/html_dom.c \
+    kernel/ui/html/html_parser.c \
+    kernel/ui/html/html_render.c \
+    kernel/ui/html/html_tokenizer.c \
     kernel/ui/wm/hittest.c \
     kernel/ui/app_manager.c \
     kernel/ui/context_menu.c \

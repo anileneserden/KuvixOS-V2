@@ -18,6 +18,7 @@
 #include <ui/apps/settings.h>
 #include <ui/apps/designer.h>
 #include <ui/apps/kuvix_browser.h>
+#include <ui/apps/kbi_viewer.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -35,6 +36,7 @@ extern const app_vtbl_t kuvix_store_vtbl;
 extern const app_vtbl_t settings_vtbl;
 extern const app_vtbl_t designer_vtbl;
 extern const app_vtbl_t kuvix_browser_vtbl;
+extern const app_vtbl_t kbi_viewer_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -49,22 +51,23 @@ typedef struct {
 } app_definition_t;
 
 static app_definition_t app_registry[] = {
-    {  1, "Terminal",     &terminal_vtbl,       120,  90, 520, 320, sizeof(terminal_t)       },
-    {  2, "File Manager", &file_manager_vtbl,    40,  60, 420, 260, sizeof(file_mgr_t)       },
-    {  3, "Notepad",      &notepad_vtbl,        150, 100, 450, 350, sizeof(notepad_t)        },
-    {  4, "Setup Wizard", &setup_wizard_vtbl,   140,  90, 520, 320,                     1024 },
-    {  5, "Demo",         &demo_app_vtbl,       160, 120, 520, 240,                        0 },
-    {  6, "Calculator",   &calculator_vtbl,     160, 120, 300, 380,                        0 },
-    {  7, "Run",          &run_vtbl,            200, 140, 420, 140,                      256 },
-    {  8, "Grid Demo",    &grid_demo_app_vtbl,  120,  80, 720, 540,                       16 },
-    {  9, "Pixel Draw",   &pixel_draw_app_vtbl, 120,  80, 900, 650, sizeof(pixel_draw_app_t) },
-    { 10, "Font Demo",    &demo_font_vtbl,      140,  90, 700, 500, sizeof(demo_font_t)      },
-    { 11, "Scroll Demo",  &scroll_demo_vtbl,    120,  90, 520, 320, sizeof(scroll_demo_t)    },
-    { 12, "KuvixStore",   &kuvix_store_vtbl,    160, 120, 720, 420, sizeof(kuvix_store_t)    },
-    { 13, "Settings",     &settings_vtbl,       170, 120, 640, 420, sizeof(settings_t)       },
-    { 14, "Designer",     &designer_vtbl,       170, 120, 640, 420, sizeof(designer_t)       },
-    { 15, "Kuvix Browser", &kuvix_browser_vtbl, 160, 120, 820, 520, sizeof(kuvix_browser_t) },
-    { 0,  NULL,                        NULL,      0,   0,   0,   0,                        0 }
+    {  1, "Terminal",      &terminal_vtbl,       120,  90, 520, 320, sizeof(terminal_t)       },
+    {  2, "File Manager",  &file_manager_vtbl,    40,  60, 420, 260, sizeof(file_mgr_t)       },
+    {  3, "Notepad",       &notepad_vtbl,        150, 100, 450, 350, sizeof(notepad_t)        },
+    {  4, "Setup Wizard",  &setup_wizard_vtbl,   140,  90, 520, 320,                     1024 },
+    {  5, "Demo",          &demo_app_vtbl,       160, 120, 520, 240,                        0 },
+    {  6, "Calculator",    &calculator_vtbl,     160, 120, 300, 380,                        0 },
+    {  7, "Run",           &run_vtbl,            200, 140, 420, 140,                      256 },
+    {  8, "Grid Demo",     &grid_demo_app_vtbl,  120,  80, 720, 540,                       16 },
+    {  9, "Pixel Draw",    &pixel_draw_app_vtbl, 120,  80, 900, 650, sizeof(pixel_draw_app_t) },
+    { 10, "Font Demo",     &demo_font_vtbl,      140,  90, 700, 500, sizeof(demo_font_t)      },
+    { 11, "Scroll Demo",   &scroll_demo_vtbl,    120,  90, 520, 320, sizeof(scroll_demo_t)    },
+    { 12, "KuvixStore",    &kuvix_store_vtbl,    160, 120, 720, 420, sizeof(kuvix_store_t)    },
+    { 13, "Settings",      &settings_vtbl,       170, 120, 640, 420, sizeof(settings_t)       },
+    { 14, "Designer",      &designer_vtbl,       170, 120, 640, 420, sizeof(designer_t)       },
+    { 15, "Kuvix Browser", &kuvix_browser_vtbl,  160, 120, 820, 520, sizeof(kuvix_browser_t)  },
+    { 16, "KBI Viewer",    &kbi_viewer_vtbl,     160, 120, 820, 520, sizeof(kbi_viewer_t)     },
+    { 0,  NULL,                        NULL,       0,   0,   0,   0,                       0  }
 };
 
 #define APP_MAX 16

@@ -69,6 +69,38 @@ static bool filename_has_extension(const char* name) {
     return true;
 }
 
+static bool filename_has_dot_ext(const char* name) {
+    if (!name || !name[0]) return false;
+
+    // sağdan: boşlukları kırp (kullanıcı "deneme.html " yazarsa)
+    int len = (int)strlen(name);
+    while (len > 0 && (name[len - 1] == ' ' || name[len - 1] == '\t')) len--;
+    if (len <= 0) return false;
+
+    // son '/' sonrası
+    const char* base = strrchr(name, '/');
+    base = base ? base + 1 : name;
+
+    // base'in sonunda boşluk kırpılmış len'e göre bakmak zor,
+    // pratik: base pointer'ı al, base_len hesapla
+    int base_len = (int)strlen(base);
+    while (base_len > 0 && (base[base_len - 1] == ' ' || base[base_len - 1] == '\t')) base_len--;
+    if (base_len <= 0) return false;
+
+    // base içinde son '.' var mı?
+    // - dot ilk karakter olmasın (".bashrc" gibi) -> uzantı sayma
+    // - dot en sonda olmasın ("file.") -> uzantı değil
+    int last_dot = -1;
+    for (int i = 0; i < base_len; i++) {
+        if (base[i] == '.') last_dot = i;
+    }
+
+    if (last_dot <= 0) return false;
+    if (last_dot >= base_len - 1) return false;
+
+    return true;
+}
+
 // ------------------------------------------------------------
 // VFS Tarama Callback
 // ------------------------------------------------------------
@@ -112,15 +144,17 @@ static void perform_save_action(void) {
         return;
     }
 
-    // Save-as-type: sadece uzantı yoksa ve seçili type ext'si varsa ekle
-    if (!filename_has_extension(current_dialog.buffer)) {
-        const char* ext = g_types[selected_type].ext; // NULL olabilir
-        if (ext) {
-            size_t bl = strlen(current_dialog.buffer);
-            size_t el = strlen(ext);
-            if (bl + el < sizeof(current_dialog.buffer)) {
-                strcat(current_dialog.buffer, ext);
-            }
+    // Save-as-type uzantı ekleme kuralları:
+    // 1) Kullanıcı zaten ".ext" yazdıysa ASLA ekleme.
+    // 2) Type "Tum Dosyalar" ise ASLA ekleme.
+    // 3) Aksi halde seçilen ext'i ekle.
+    const char* ext = g_types[selected_type].ext; // NULL => Tum Dosyalar
+
+    if (ext && !filename_has_dot_ext(current_dialog.buffer)) {
+        size_t bl = strlen(current_dialog.buffer);
+        size_t el = strlen(ext);
+        if (bl + el < sizeof(current_dialog.buffer)) {
+            strcat(current_dialog.buffer, ext);
         }
     }
 

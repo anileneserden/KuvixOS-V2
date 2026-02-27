@@ -23,6 +23,7 @@ void gfx_init(void);
 // --- Temizleme ve Temel Çizim ---
 void gfx_clear(uint32_t color);
 void gfx_putpixel(int x, int y, uint32_t color);
+void gfx_putpixel_alpha(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
 // İçi Dolu Dikdörtgen
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color);

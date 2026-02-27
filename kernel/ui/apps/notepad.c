@@ -682,6 +682,8 @@ static void notepad_on_draw(app_t* self) {
             }
         }
     }
+
+    gfx_draw_text(10, 10, 0xFFFFFF, "<>");
 }
 
 // ------------------------------------------------------------
