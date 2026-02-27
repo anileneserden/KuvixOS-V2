@@ -69,11 +69,12 @@ typedef struct {
 } sc_t;
 
 static const sc_t k_defaults[] = {
-  { "Terminal.ksf", "Terminal",       1, "/system/icons/terminal.kbi"  },
-  { "Files.ksf",    "File Manager",   2, "/system/icons/files.kbi"     },
-  { "Notepad.ksf",  "Notepad",        3, "/system/icons/notepad.kbi"   },
-  { "Settings.ksf", "Settings",      13, "/system/icons/settings.kbi"  },
-  { "Browser.ksf",  "Kuvix Browser", 15, "/system/icons/browser.kbi"  },
+  { "Terminal.ksf",  "Terminal",       1, "/system/icons/terminal.kbi"  },
+  { "Files.ksf",     "File Manager",   2, "/system/icons/files.kbi"     },
+  { "Notepad.ksf",   "Notepad",        3, "/system/icons/notepad.kbi"   },
+  { "Settings.ksf",  "Settings",      13, "/system/icons/settings.kbi"  },
+  { "Browser.ksf",   "Kuvix Browser", 15, "/system/icons/browser.kbi"   },
+  { "Controls.ksf",  "Controls",      17, "/system/icons/controls.kbi"  },
 };
 
 static int exists_file(const char* path) {

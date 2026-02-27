@@ -65,6 +65,7 @@ SRC_C = \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
     kernel/ui/apps/calculator.c \
+    kernel/ui/apps/controls_test.c \
     kernel/ui/apps/demo.c \
     kernel/ui/apps/designer.c \
     kernel/ui/apps/demo_font.c \
@@ -89,6 +90,7 @@ SRC_C = \
     kernel/ui/controls/control.c \
     kernel/ui/controls/label2.c \
     kernel/ui/controls/panel2.c \
+    kernel/ui/controls/textbox2.c \
     kernel/ui/controls/ui_context.c \
     kernel/ui/dialogs/open_dialog.c \
     kernel/ui/dialogs/save_dialog.c \

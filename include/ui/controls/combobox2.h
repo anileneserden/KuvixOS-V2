@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <ui/controls/control.h>
 
 typedef void (*ui_combobox2_on_change_t)(void* user, int index, const char* text);
 
@@ -33,6 +34,7 @@ typedef struct {
     // layout
     int item_h;            // dropdown item height (default 22)
     int max_visible;       // default 8 (scroll yoksa)
+    ui_control_t base;
 } ui_combobox2_t;
 
 void ui_combobox2_init(ui_combobox2_t* cb, int x, int y, int w, int h);

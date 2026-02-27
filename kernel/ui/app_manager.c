@@ -19,6 +19,7 @@
 #include <ui/apps/designer.h>
 #include <ui/apps/kuvix_browser.h>
 #include <ui/apps/kbi_viewer.h>
+#include <ui/apps/controls_test.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -37,6 +38,7 @@ extern const app_vtbl_t settings_vtbl;
 extern const app_vtbl_t designer_vtbl;
 extern const app_vtbl_t kuvix_browser_vtbl;
 extern const app_vtbl_t kbi_viewer_vtbl;
+extern const app_vtbl_t controls_test_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -67,6 +69,7 @@ static app_definition_t app_registry[] = {
     { 14, "Designer",      &designer_vtbl,       170, 120, 640, 420, sizeof(designer_t)       },
     { 15, "Kuvix Browser", &kuvix_browser_vtbl,  160, 120, 820, 520, sizeof(kuvix_browser_t)  },
     { 16, "KBI Viewer",    &kbi_viewer_vtbl,     160, 120, 820, 520, sizeof(kbi_viewer_t)     },
+    { 17, "Controls test", &controls_test_vtbl,  160, 120, 820, 520, sizeof(controls_test_t)  },
     { 0,  NULL,                        NULL,       0,   0,   0,   0,                       0  }
 };
 

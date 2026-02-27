@@ -80,49 +80,27 @@ static void br_navigate(kuvix_browser_t* b, const char* url) {
     br_set_status(b, "Ready");
 }
 
-// local:... -> VFS path (MVP)
+static int is_abs_path(const char* s) {
+    return (s && s[0] == '/');
+}
+
 static const char* local_to_path(const char* url) {
-    // fallback her zaman masaüstündeki home.html
     if (!url || !url[0]) return USER_DESKTOP_PATH "/home.html";
 
+    // 1) direkt path
+    if (is_abs_path(url)) return url;
+
+    // 2) local:
     if (strncmp(url, "local:", 6) == 0) {
         const char* p = url + 6;
-
         if (strcmp(p, "home") == 0) return USER_DESKTOP_PATH "/home.html";
         if (strcmp(p, "docs") == 0) return USER_DESKTOP_PATH "/docs.html";
         if (strcmp(p, "new")  == 0) return USER_DESKTOP_PATH "/new.html";
-
         return USER_DESKTOP_PATH "/home.html";
     }
 
-    // Bonus: adres çubuğuna direkt path yazarsan çalışsın
-    // örnek: /home/anil/desktop/home.html (KuvixOS içindeki path!)
-    if (url[0] == '/') return url;
-
-    // şimdilik başka protokol yok
-    return USER_DESKTOP_PATH "/home.html";
-}
-
-static bool browser_load_file(kuvix_browser_t* b, const char* path) {
-    uint8_t* data = NULL;
-    uint32_t size = 0;
-
-    if (vfs_read_all(path, &data, &size) != 1) {
-        br_set_status(b, "HTML load failed");
-        return false;
-    }
-
-    // buffer içine kopyala
-    if (size >= sizeof(b->html_buffer))
-        size = sizeof(b->html_buffer) - 1;
-
-    memcpy(b->html_buffer, data, size);
-    b->html_buffer[size] = '\0';
-
-    kfree(data);
-
-    br_set_status(b, "Loaded");
-    return true;
+    // 3) şimdilik unsupported
+    return 0;
 }
 
 // ------------------------------------------------------------
@@ -213,6 +191,11 @@ static void draw_content_html(rect_t r, const char* url, int scroll_y) {
     gfx_fill_rect(r.x, r.y, r.w, r.h, 0x1A1A1A);
 
     const char* path = local_to_path(url);
+    if (!path) {
+        gfx_draw_text_utf8(r.x + 14, r.y + 14, 0xFF4444, "Unsupported URL");
+        gfx_draw_text_utf8(r.x + 14, r.y + 30, 0xAAAAAA, url ? url : "(null)");
+        return;
+    }
 
     uint8_t* buf = 0;
     uint32_t sz = 0;
@@ -392,16 +375,20 @@ static void browser_on_key(app_t* app, uint16_t key) {
     kuvix_browser_t* b = br(app);
     if (!b) return;
 
+    // Bazı yerlerde key = scancode, bazı yerlerde key = ascii olabiliyor.
     uint8_t sc = (uint8_t)(key & 0xFF);
-    if (sc & 0x80) return; // break ignore
+
+    // break ignore (scancode ise çalışır)
+    if (sc & 0x80) return;
+
+    // ASCII üret (scancode değilse bile sc == ascii olur)
+    char c = kbd_scancode_to_ascii(sc);
 
     // ------------------------------------------------
-    // Scroll keys (edit mode OFF iken çalışsın)
-    // Up: 0x48, Down: 0x50, PgUp: 0x49, PgDn: 0x51
-    // (E0 prefix'li gelirse setin farklıdır; terminal debug ile bakıp düzeltiriz)
+    // Edit mode OFF: sadece scroll
     // ------------------------------------------------
     if (!b->addr_edit_mode) {
-        int step = 16 * 2; // 2 satır
+        int step = 32;
 
         if (sc == 0x48) { // Up
             b->scroll_y -= step;
@@ -422,16 +409,15 @@ static void browser_on_key(app_t* app, uint16_t key) {
             return;
         }
 
-        // edit mode değilken diğer tuşlar: şimdilik yok
         return;
     }
 
-    // ------------------------------
-    // Address bar edit mode
-    // ------------------------------
+    // ------------------------------------------------
+    // Edit mode ON: sadece buffer edit, Enter'da navigate
+    // ------------------------------------------------
 
-    // Enter
-    if (sc == 0x1C) {
+    // ✅ Enter: scancode 0x1C veya ascii '\n' '\r'
+    if (sc == 0x1C || c == '\n' || c == '\r') {
         b->addr_edit_mode = 0;
         br_navigate(b, b->url[0] ? b->url : "local:home");
         return;
@@ -443,8 +429,6 @@ static void browser_on_key(app_t* app, uint16_t key) {
         br_set_status(b, "Ready");
         return;
     }
-
-    char c = kbd_scancode_to_ascii(sc);
 
     // Backspace
     if (c == '\b' || (uint8_t)c == 127) {
@@ -461,7 +445,10 @@ static void browser_on_key(app_t* app, uint16_t key) {
             b->url[b->url_len++] = c;
             b->url[b->url_len] = '\0';
         }
+        return;
     }
+
+    // Diğer tuşlar -> ignore
 }
 
 static void browser_on_destroy(app_t* app) {
