@@ -61,6 +61,33 @@ void desktop_seed_html_pages(void) {
     seed_write_if_missing(p3, newtab);
 }
 
+void seed_hosts(void) {
+    vfs_mkdir("/etc");
+
+    // varsa dokunma
+    vfs_stat_t st;
+    if (vfs_stat("/etc/hosts", &st) == 1 && st.type == VFS_T_FILE) return;
+
+    char hosts[512];
+    hosts[0] = 0;
+
+    strcat(hosts, "# KuvixOS hosts\n");
+
+    strcat(hosts, "home.local=");
+    strcat(hosts, USER_DESKTOP_PATH);
+    strcat(hosts, "/home.html\n");
+
+    strcat(hosts, "docs.local=");
+    strcat(hosts, USER_DESKTOP_PATH);
+    strcat(hosts, "/docs.html\n");
+
+    strcat(hosts, "new.local=");
+    strcat(hosts, USER_DESKTOP_PATH);
+    strcat(hosts, "/new.html\n");
+
+    vfs_write_all("/etc/hosts", (const uint8_t*)hosts, (uint32_t)strlen(hosts));
+}
+
 typedef struct {
   const char* file;
   const char* title;

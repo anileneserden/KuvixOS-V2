@@ -7,9 +7,11 @@
 
 #include <ui/html/html_parser.h>
 #include <ui/html/html_render.h>
-#include <kernel/fs/vfs.h>
+#include <ui/html/url_resolver.h>
 
+#include <kernel/fs/vfs.h>
 #include <kernel/drivers/video/gfx.h>
+
 #include <lib/string.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -43,6 +45,7 @@ static void br_set_url(kuvix_browser_t* b, const char* s) {
     if (!s) s = "";
     strncpy(b->url, s, sizeof(b->url) - 1);
     b->url[sizeof(b->url) - 1] = 0;
+
     b->url_len = (int)strlen(b->url);
     if (b->url_len < 0) b->url_len = 0;
     if (b->url_len >= KBROWSER_URL_MAX) b->url_len = KBROWSER_URL_MAX - 1;
@@ -76,7 +79,7 @@ static void br_navigate(kuvix_browser_t* b, const char* url) {
     if (!b) return;
     br_set_url(b, url);
     br_push_history(b, url);
-    b->scroll_y = 0; // ✅ yeni sayfada scroll reset
+    b->scroll_y = 0; // yeni sayfada scroll reset
     br_set_status(b, "Ready");
 }
 
@@ -84,6 +87,7 @@ static int is_abs_path(const char* s) {
     return (s && s[0] == '/');
 }
 
+// Fallback (resolver yoksa veya bulamazsa)
 static const char* local_to_path(const char* url) {
     if (!url || !url[0]) return USER_DESKTOP_PATH "/home.html";
 
@@ -99,12 +103,11 @@ static const char* local_to_path(const char* url) {
         return USER_DESKTOP_PATH "/home.html";
     }
 
-    // 3) şimdilik unsupported
     return 0;
 }
 
 // ------------------------------------------------------------
-// UI hitboxes (client coords)
+// UI hitboxes (CLIENT coords)
 // ------------------------------------------------------------
 typedef struct { int x, y, w, h; } rect_t;
 
@@ -147,9 +150,7 @@ static void draw_button(rect_t r, const char* text, bool active) {
     gfx_fill_rect(r.x, r.y, r.w, r.h, bg);
     gfx_draw_rect(r.x, r.y, r.w, r.h, bd);
 
-    int tx = r.x + 6;
-    int ty = r.y + 6;
-    gfx_draw_text_utf8(tx, ty, fg, text);
+    gfx_draw_text_utf8(r.x + 6, r.y + 6, fg, text);
 }
 
 static void draw_addrbar(rect_t r, const char* url, bool edit_mode) {
@@ -186,12 +187,47 @@ static void draw_statusbar(rect_t r, const char* status) {
     gfx_draw_text_utf8(8, r.y + 6, 0xC0C0C0, status ? status : "");
 }
 
-// HTML content draw (MVP local)
+// URL -> PATH resolve (hosts + local fallback)
+static bool resolve_url_to_path(const char* url, char* out, int cap) {
+    if (!out || cap <= 0) return false;
+    out[0] = 0;
+
+    if (!url || !url[0]) {
+        strncpy(out, USER_DESKTOP_PATH "/home.html", cap - 1);
+        out[cap - 1] = 0;
+        return true;
+    }
+
+    // 1) absolute path
+    if (is_abs_path(url)) {
+        strncpy(out, url, cap - 1);
+        out[cap - 1] = 0;
+        return true;
+    }
+
+    // 2) resolver (ör: home.local -> /.../home.html)
+    // Senin url_resolver API'n: bool url_resolve_to_path(const char* url, char* out, int cap)
+    if (url_resolve_to_path(url, out, cap)) {
+        return true;
+    }
+
+    // 3) fallback local:
+    const char* p = local_to_path(url);
+    if (p) {
+        strncpy(out, p, cap - 1);
+        out[cap - 1] = 0;
+        return true;
+    }
+
+    return false;
+}
+
+// HTML content draw (local/hosts)
 static void draw_content_html(rect_t r, const char* url, int scroll_y) {
     gfx_fill_rect(r.x, r.y, r.w, r.h, 0x1A1A1A);
 
-    const char* path = local_to_path(url);
-    if (!path) {
+    char path[256];
+    if (!resolve_url_to_path(url, path, (int)sizeof(path))) {
         gfx_draw_text_utf8(r.x + 14, r.y + 14, 0xFF4444, "Unsupported URL");
         gfx_draw_text_utf8(r.x + 14, r.y + 30, 0xAAAAAA, url ? url : "(null)");
         return;
@@ -213,7 +249,6 @@ static void draw_content_html(rect_t r, const char* url, int scroll_y) {
         return;
     }
 
-    // scroll -> y'yi kaydır
     int pad = 12;
     int draw_x = r.x + pad;
     int draw_y = r.y + pad - scroll_y;
@@ -226,10 +261,8 @@ static void draw_content_html(rect_t r, const char* url, int scroll_y) {
 
 #if KBROWSER_ENABLE_TABS
 // ------------------------------------------------------------
-// Tabs provider callbacks (WM titlebar uses these)
+// Tabs provider callbacks
 // ------------------------------------------------------------
-
-// Tab başlıklarını titlebar'dan da gösteriyoruz
 static const char* kb_tab_title(int idx) {
     switch (idx) {
         case 0: return "Home";
@@ -239,15 +272,8 @@ static const char* kb_tab_title(int idx) {
     }
 }
 
-static int kb_tabs_count(app_t* app) {
-    (void)app;
-    return 3;
-}
-
-static const char* kb_tabs_title(app_t* app, int idx) {
-    (void)app;
-    return kb_tab_title(idx);
-}
+static int kb_tabs_count(app_t* app) { (void)app; return 3; }
+static const char* kb_tabs_title(app_t* app, int idx) { (void)app; return kb_tab_title(idx); }
 
 static int kb_tabs_active(app_t* app) {
     kuvix_browser_t* b = br(app);
@@ -300,27 +326,24 @@ static void browser_on_draw(app_t* app) {
 
     gfx_fill_rect(0, 0, client.w, client.h, 0x0B0B0B);
 
-    // toolbar
     draw_toolbar_bg(client.w);
 
-    // toolbar buttons
     draw_button(r_btn_back(), "<", false);
     draw_button(r_btn_forward(), ">", false);
     draw_button(r_btn_reload(), "R", false);
 
-    // address bar
     draw_addrbar(r_addr_bar(client.w), b->url, (b->addr_edit_mode != 0));
 
-    // content (HTML)
     rect_t rc = r_content(client.w, client.h);
     draw_content_html(rc, b->url, b->scroll_y);
 
-    // status
     rect_t rs = r_status_bar(client.w, client.h);
     draw_statusbar(rs, b->status);
 }
 
-static void browser_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_t released, uint8_t buttons) {
+static void browser_on_mouse(app_t* app, int mx, int my,
+                            uint8_t pressed, uint8_t released, uint8_t buttons)
+{
     (void)released; (void)buttons;
 
     kuvix_browser_t* b = br(app);
@@ -328,8 +351,13 @@ static void browser_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_
 
     if (!(pressed & 0x01)) return; // sadece left press
 
+    // ✅ GLOBAL -> CLIENT coords
+    ui_rect_t client = wm_get_client_rect(app->win_id);
+    int lx = mx;
+    int ly = my;
+
     // back
-    if (pt_in_rect(mx, my, r_btn_back())) {
+    if (pt_in_rect(lx, ly, r_btn_back())) {
         if (b->history_count > 0 && b->history_index > 0) {
             b->history_index--;
             br_set_url(b, b->history[b->history_index]);
@@ -340,7 +368,7 @@ static void browser_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_
     }
 
     // forward
-    if (pt_in_rect(mx, my, r_btn_forward())) {
+    if (pt_in_rect(lx, ly, r_btn_forward())) {
         if (b->history_count > 0 && b->history_index < b->history_count - 1) {
             b->history_index++;
             br_set_url(b, b->history[b->history_index]);
@@ -351,14 +379,14 @@ static void browser_on_mouse(app_t* app, int mx, int my, uint8_t pressed, uint8_
     }
 
     // reload
-    if (pt_in_rect(mx, my, r_btn_reload())) {
+    if (pt_in_rect(lx, ly, r_btn_reload())) {
         b->scroll_y = 0;
         br_set_status(b, "Reload");
         return;
     }
 
     // address bar click -> edit mode
-    if (pt_in_rect(mx, my, r_addr_bar(b->cw))) {
+    if (pt_in_rect(lx, ly, r_addr_bar(b->cw))) {
         b->addr_edit_mode = 1;
         br_set_status(b, "Editing address (Enter=go, Esc=cancel)");
         return;
@@ -375,13 +403,12 @@ static void browser_on_key(app_t* app, uint16_t key) {
     kuvix_browser_t* b = br(app);
     if (!b) return;
 
-    // Bazı yerlerde key = scancode, bazı yerlerde key = ascii olabiliyor.
     uint8_t sc = (uint8_t)(key & 0xFF);
 
     // break ignore (scancode ise çalışır)
     if (sc & 0x80) return;
 
-    // ASCII üret (scancode değilse bile sc == ascii olur)
+    // ASCII üret (scancode değilse bile sc==ascii olabilir)
     char c = kbd_scancode_to_ascii(sc);
 
     // ------------------------------------------------
@@ -408,15 +435,12 @@ static void browser_on_key(app_t* app, uint16_t key) {
             b->scroll_y += step * 6;
             return;
         }
-
         return;
     }
 
     // ------------------------------------------------
-    // Edit mode ON: sadece buffer edit, Enter'da navigate
+    // Edit mode ON: buffer edit, Enter'da navigate
     // ------------------------------------------------
-
-    // ✅ Enter: scancode 0x1C veya ascii '\n' '\r'
     if (sc == 0x1C || c == '\n' || c == '\r') {
         b->addr_edit_mode = 0;
         br_navigate(b, b->url[0] ? b->url : "local:home");
@@ -447,8 +471,6 @@ static void browser_on_key(app_t* app, uint16_t key) {
         }
         return;
     }
-
-    // Diğer tuşlar -> ignore
 }
 
 static void browser_on_destroy(app_t* app) {
@@ -463,7 +485,6 @@ const app_vtbl_t kuvix_browser_vtbl = {
     .on_destroy = browser_on_destroy,
 
 #if KBROWSER_ENABLE_TABS
-    // titlebar tabs provider
     .tabs_count      = kb_tabs_count,
     .tabs_title      = kb_tabs_title,
     .tabs_active     = kb_tabs_active,

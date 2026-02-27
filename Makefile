@@ -101,6 +101,7 @@ SRC_C = \
     kernel/ui/html/html_parser.c \
     kernel/ui/html/html_render.c \
     kernel/ui/html/html_tokenizer.c \
+    kernel/ui/html/url_resolver.c \
     kernel/ui/wm/hittest.c \
     kernel/ui/app_manager.c \
     kernel/ui/context_menu.c \
