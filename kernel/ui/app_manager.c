@@ -14,6 +14,7 @@
 #include <ui/apps/file_manager.h>
 #include <ui/apps/terminal.h>
 #include <ui/apps/scroll_demo.h>
+#include <ui/apps/kef_host.h>
 #include <ui/apps/kuvix_store.h>
 #include <ui/apps/settings.h>
 #include <ui/apps/designer.h>
@@ -33,6 +34,7 @@ extern const app_vtbl_t scroll_demo_vtbl;
 extern const app_vtbl_t kuvix_store_vtbl;
 extern const app_vtbl_t settings_vtbl;
 extern const app_vtbl_t designer_vtbl;
+extern const app_vtbl_t kef_host_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -149,6 +151,47 @@ int appmgr_find_window_by_app_id(int app_id) {
     return -1;
 }
 
+app_t* appmgr_start_kef(const char* path) {
+    if (!path || !path[0]) return NULL;
+
+    int slot = appmgr_find_free_slot();
+    if (slot < 0) {
+        printk("[AppMgr] start_kef: limit dolu\n");
+        return NULL;
+    }
+
+    app_t* a = (app_t*)kmalloc(sizeof(app_t));
+    if (!a) return NULL;
+    memset(a, 0, sizeof(app_t));
+
+    a->id = 1000; // “kef host” pseudo id
+    a->v  = &kef_host_vtbl;
+    a->visible = 1;
+
+    a->user = kmalloc(sizeof(kef_host_t));
+    if (!a->user) {
+        kfree(a);
+        return NULL;
+    }
+    memset(a->user, 0, sizeof(kef_host_t));
+
+    kef_host_t* h = (kef_host_t*)a->user;
+    strncpy(h->path, path, sizeof(h->path) - 1);
+    h->path[sizeof(h->path) - 1] = 0;
+
+    int win_id = wm_add_window(200, 140, 420, 240, "KEF App", a);
+    a->win_id = win_id;
+
+    if (a->v && a->v->on_create) a->v->on_create(a);
+
+    g_apps[slot] = a;
+    wm_set_active(win_id);
+    desktop_invalidate_full();
+
+    printk("[AppMgr] start KEF path=%s -> win_id=%d user=%p\n", path, win_id, a->user);
+    return a;
+}
+
 // ------------------------------------------------------------
 // ENGINE: App instance başlatır
 // ------------------------------------------------------------
@@ -236,47 +279,99 @@ app_t* appmgr_open_path(const char* path) {
 
     vfs_stat_t st;
     if (vfs_stat(path, &st) == 1) {
-        // Klasör -> File Manager
         if (st.type == VFS_T_DIR) {
-            return appmgr_start_app(2);
+            return appmgr_start_app(2); // File Manager
         }
     }
 
-    // .txt -> Notepad (DOSYAYI AÇ)
+    // 🔥 Direkt KEF dosyası
+    if (ends_with(path, ".kef")) {
+        return appmgr_start_kef(path);
+    }
+
+    // TXT
     if (ends_with(path, ".txt") || ends_with(path, ".kth")) {
         app_t* a = appmgr_start_app(3);
         notepad_open_file(path);
         return a;
     }
 
-    // .ksf -> shortcut parse
+    // 🔹 KSF shortcut
     if (ends_with(path, ".ksf")) {
+
         uint8_t buf[256];
         uint32_t sz = 0;
 
         if (vfs_read_all(path, buf, sizeof(buf) - 1, &sz) == 1) {
             buf[sz] = 0;
 
-            printk("[AppMgr] ksf read ok: %u bytes\n", sz);
-            printk("[AppMgr] ksf content:\n%s\n", (char*)buf);
+            // -----------------------------
+            // 1️⃣ Yeni format: kef=
+            // -----------------------------
+            char* pkef = strstr((char*)buf, "kef=");
+            if (pkef) {
+                pkef += 4;
 
+                while (*pkef == ' ' || *pkef == '\t') pkef++;
+
+                char tmp[256];
+                int i = 0;
+
+                while (*pkef && *pkef != '\n' && *pkef != '\r' && i < 255) {
+                    tmp[i++] = *pkef++;
+                }
+
+                tmp[i] = 0;
+
+                if (tmp[0]) {
+                    return appmgr_start_kef(tmp);
+                }
+            }
+
+            // -----------------------------
+            // 2️⃣ Eski format: path=
+            // -----------------------------
+            char* ppath = strstr((char*)buf, "path=");
+            if (ppath) {
+                ppath += 5;
+
+                while (*ppath == ' ' || *ppath == '\t') ppath++;
+
+                char tmp[256];
+                int i = 0;
+
+                while (*ppath && *ppath != '\n' && *ppath != '\r' && i < 255) {
+                    tmp[i++] = *ppath++;
+                }
+
+                tmp[i] = 0;
+
+                return appmgr_open_path(tmp);
+            }
+
+            // -----------------------------
+            // 3️⃣ app_id=
+            // -----------------------------
             char* p = strstr((char*)buf, "app_id=");
-            printk("[AppMgr] find app_id=: %p\n", (void*)p);
-
             if (p) {
                 int id = 0;
                 p += 7;
-                while (*p >= '0' && *p <= '9') { id = id * 10 + (*p - '0'); p++; }
-                printk("[AppMgr] parsed id=%d\n", id);
 
-                if (id > 0) return appmgr_start_app(id);
+                while (*p >= '0' && *p <= '9') {
+                    id = id * 10 + (*p - '0');
+                    p++;
+                }
+
+                if (id > 0)
+                    return appmgr_start_app(id);
             }
-        } else {
-            printk("[AppMgr] ksf read FAILED: %s\n", path);
         }
+
+        printk("[AppMgr] invalid KSF: %s\n", path);
+        return NULL;
     }
 
-    printk("AppManager: bilinmeyen path: %s\n", path);
+    printk("[AppMgr] unknown file type: %s\n", path);
     return NULL;
 }
 

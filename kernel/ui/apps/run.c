@@ -9,9 +9,7 @@
 
 extern uint32_t g_ticks_ms;
 extern char kbd_scancode_to_ascii(uint8_t scancode);
-
-// KEF loader (ileride gerçek implementasyon gelecek)
-int kef_exec(const char* path);
+extern app_t* appmgr_start_kef(const char* path);
 
 typedef struct {
     int win_id;
@@ -143,13 +141,11 @@ static void run_execute(const char* s_in) {
 
     if (looks_like_path) {
 
-        // KEF dosyası mı?
+        // KEF dosyası mı?        
         if (str_ends_with(s, ".kef")) {
-            kef_exec(s);
+            appmgr_start_kef(s);
             return;
         }
-
-        // İleride: .kex, .kea, .exe vs
         return;
     }
 

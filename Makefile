@@ -56,7 +56,9 @@ SRC_C = \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
+    kernel/exec/kef/kef_api.c \
     kernel/exec/kef/kef_loader.c \
+    kernel/exec/kef/kef_runtime.c \
     kernel/exec/kef/kef_seed.c \
     kernel/fs/fs_init.c \
     kernel/fs/kvxfs.c \
@@ -72,6 +74,7 @@ SRC_C = \
     kernel/ui/apps/demo_font.c \
     kernel/ui/apps/file_manager.c \
     kernel/ui/apps/grid_demo.c \
+    kernel/ui/apps/kef_host.c \
     kernel/ui/apps/kuvix_store.c \
     kernel/ui/apps/memmon.c \
     kernel/ui/apps/notepad.c \
@@ -146,23 +149,27 @@ KEF_HELLO_KEF := $(KEF_HELLO_DIR)/hello.kef
 
 KEF_BLOB_OBJ  := $(BUILD)/kernel/exec/kef/hello_kef_blob.o
 
+KEF_APP_CFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra \
+	-fno-pie -fno-pic -fno-stack-protector \
+	-fno-asynchronous-unwind-tables -fno-unwind-tables \
+	-nostdlib -nostartfiles \
+	-Iinclude
+
+KEF_APP_LDFLAGS = -m32 -nostdlib -ffreestanding -fno-pie \
+	-Wl,-T,$(KEF_HELLO_DIR)/link.ld \
+	-Wl,--emit-relocs \
+	-Wl,--build-id=none
+
 $(KEF_HELLO_ELF): $(KEF_HELLO_DIR)/main.c $(KEF_HELLO_DIR)/link.ld
 	@mkdir -p $(KEF_HELLO_DIR)
-	$(CC) -m32 -ffreestanding -O2 -Wall -Wextra \
-		-fno-pie -fno-stack-protector \
-		-nostdlib -nostartfiles \
-		-Iinclude \
-		-c $(KEF_HELLO_DIR)/main.c -o $(KEF_HELLO_DIR)/main.o
-	$(LD) -m32 -nostdlib -ffreestanding -fno-pie \
-		-Wl,-T,$(KEF_HELLO_DIR)/link.ld \
-		-Wl,--emit-relocs \
-		-o $(KEF_HELLO_ELF) $(KEF_HELLO_DIR)/main.o
+	$(CC) $(KEF_APP_CFLAGS) -c $(KEF_HELLO_DIR)/main.c -o $(KEF_HELLO_DIR)/main.o
+	$(LD) $(KEF_APP_LDFLAGS) -o $(KEF_HELLO_ELF) $(KEF_HELLO_DIR)/main.o
 
 $(KEF_HELLO_BIN): $(KEF_HELLO_ELF)
 	objcopy -O binary $(KEF_HELLO_ELF) $(KEF_HELLO_BIN)
 
 $(KEF_HELLO_KEF): $(KEF_HELLO_BIN) $(KEF_HELLO_ELF) tools/mk_kef.py
-	python3 tools/mk_kef.py $(KEF_HELLO_ELF) $(KEF_HELLO_BIN) $(KEF_HELLO_KEF) 0 0
+	python3 tools/mk_kef.py $(KEF_HELLO_ELF) $(KEF_HELLO_BIN) $(KEF_HELLO_KEF) 0x80 0
 
 $(KEF_BLOB_OBJ): $(KEF_HELLO_KEF)
 	@mkdir -p $(dir $@)
@@ -175,7 +182,7 @@ OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
 
 # --- Kurallar ---
 
-all: $(KERNEL)
+all: $(KEF_BLOB_OBJ) $(KERNEL)
 
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)

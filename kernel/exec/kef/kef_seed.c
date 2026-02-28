@@ -4,9 +4,6 @@
 #include <lib/string.h>
 #include <stdint.h>
 
-#define VFS_OK(rc) ((rc) != 0)
-
-// objcopy -I binary ile gömülen hello.kef sembolleri
 extern const uint8_t _binary_apps_kef_hello_hello_kef_start[];
 extern const uint8_t _binary_apps_kef_hello_hello_kef_end[];
 
@@ -27,31 +24,23 @@ void kef_seed_files(void) {
     int orc = vfs_open(path, VFS_O_CREAT | VFS_O_WRONLY, &f);
     printk("[KEF] seed open rc=%d f=%p path=%s\n", orc, f, path);
 
-    if (VFS_OK(orc) && f) {
+    // ✅ Senin VFS’te OK = 1
+    if (orc == 1 && f) {
         uint32_t nw = 0;
         int wrc = vfs_write(f, _binary_apps_kef_hello_hello_kef_start, sz, &nw);
         printk("[KEF] seed write rc=%d nw=%u want=%u\n", wrc, (unsigned)nw, (unsigned)sz);
         vfs_close(f);
     } else {
-        printk("[KEF] seed open failed (orc=%d f=%p)\n", orc, f);
+        printk("[KEF] seed open failed\n");
     }
 
     vfs_stat_t st;
     int sr = vfs_stat(path, &st);
-    if (!VFS_OK(sr)) {
-        printk("[KEF] seed stat FAILED sr=%d path=%s\n", sr, path);
-    } else {
-        printk("[KEF] seed stat OK sr=%d type=%d size=%u backend=%d\n",
-               sr, st.type, (unsigned)st.size, st.backend);
-    }
+    printk("[KEF] seed stat sr=%d type=%d size=%u backend=%d\n",
+           sr, st.type, (unsigned)st.size, st.backend);
 
     uint8_t tmp[64];
     uint32_t out_sz = 0;
     int rr = vfs_read_all(path, tmp, sizeof(tmp), &out_sz);
-    if (!VFS_OK(rr)) {
-        printk("[KEF] seed read_all FAILED rr=%d out_sz=%u path=%s\n",
-               rr, (unsigned)out_sz, path);
-    } else {
-        printk("[KEF] seed read_all OK rr=%d out_sz=%u\n", rr, (unsigned)out_sz);
-    }
+    printk("[KEF] seed read_all rr=%d out_sz=%u\n", rr, (unsigned)out_sz);
 }
