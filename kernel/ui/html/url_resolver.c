@@ -224,6 +224,10 @@ static const urlr_entry_t* table_find(const char* host) {
     return NULL;
 }
 
+static int is_abs_path(const char* s) {
+    return (s && s[0] == '/');
+}
+
 // ------------------------------------------------------------
 // load config
 // ------------------------------------------------------------
