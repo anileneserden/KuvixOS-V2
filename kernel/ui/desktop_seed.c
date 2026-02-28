@@ -88,6 +88,27 @@ void seed_hosts(void) {
     vfs_write_all("/etc/hosts", (const uint8_t*)hosts, (uint32_t)strlen(hosts));
 }
 
+void seed_vhosts(void) {
+    vfs_mkdir("/etc");
+
+    static const char* conf =
+        "# vhosts.conf (KuvixOS)\n"
+        "server {\n"
+        "  host home.local;\n"
+        "  root " USER_DESKTOP_PATH ";\n"
+        "  index home.html;\n"
+        "}\n"
+        "\n"
+        "server {\n"
+        "  host deneme.local;\n"
+        "  root /home/anil/web/deneme;\n"
+        "  index index.html;\n"
+        "  autoindex on;\n"
+        "}\n";
+    
+    seed_write_if_missing("/etc/vhosts.conf", conf);
+}
+
 typedef struct {
   const char* file;
   const char* title;

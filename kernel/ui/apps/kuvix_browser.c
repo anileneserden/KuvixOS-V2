@@ -7,11 +7,10 @@
 
 #include <ui/html/html_parser.h>
 #include <ui/html/html_render.h>
-#include <ui/html/url_resolver.h>
-
+#include <ui/html/url_resolver.h>   // url_resolve_to_path(...)
 #include <kernel/fs/vfs.h>
-#include <kernel/drivers/video/gfx.h>
 
+#include <kernel/drivers/video/gfx.h>
 #include <lib/string.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -87,14 +86,12 @@ static int is_abs_path(const char* s) {
     return (s && s[0] == '/');
 }
 
-// Fallback (resolver yoksa veya bulamazsa)
+// local fallback (resolver bulamazsa)
 static const char* local_to_path(const char* url) {
     if (!url || !url[0]) return USER_DESKTOP_PATH "/home.html";
 
-    // 1) direkt path
     if (is_abs_path(url)) return url;
 
-    // 2) local:
     if (strncmp(url, "local:", 6) == 0) {
         const char* p = url + 6;
         if (strcmp(p, "home") == 0) return USER_DESKTOP_PATH "/home.html";
@@ -104,6 +101,41 @@ static const char* local_to_path(const char* url) {
     }
 
     return 0;
+}
+
+// URL -> PATH resolve (hosts + local fallback)
+static bool resolve_url_to_path(const char* url, char* out, int cap) {
+    if (!out || cap <= 0) return false;
+    out[0] = 0;
+
+    if (!url || !url[0]) {
+        strncpy(out, USER_DESKTOP_PATH "/home.html", cap - 1);
+        out[cap - 1] = 0;
+        return true;
+    }
+
+    // 1) absolute path
+    if (is_abs_path(url)) {
+        strncpy(out, url, cap - 1);
+        out[cap - 1] = 0;
+        return true;
+    }
+
+    // 2) resolver (home.local -> /.../home.html, deneme.local -> /.../index.html)
+    // url_resolve_to_path senin vhosts.conf / hosts sistemini kullanacak
+    if (url_resolve_to_path(url, out, cap)) {
+        return true;
+    }
+
+    // 3) fallback local:
+    const char* p = local_to_path(url);
+    if (p) {
+        strncpy(out, p, cap - 1);
+        out[cap - 1] = 0;
+        return true;
+    }
+
+    return false;
 }
 
 // ------------------------------------------------------------
@@ -132,7 +164,6 @@ static rect_t r_status_bar(int cw, int ch) {
 }
 
 static rect_t r_content(int cw, int ch) {
-    // top toolbar: 38px, bottom status: 20px
     int y = 38;
     int h = ch - y - 20;
     if (h < 40) h = 40;
@@ -149,7 +180,6 @@ static void draw_button(rect_t r, const char* text, bool active) {
 
     gfx_fill_rect(r.x, r.y, r.w, r.h, bg);
     gfx_draw_rect(r.x, r.y, r.w, r.h, bd);
-
     gfx_draw_text_utf8(r.x + 6, r.y + 6, fg, text);
 }
 
@@ -185,41 +215,6 @@ static void draw_statusbar(rect_t r, const char* status) {
     gfx_fill_rect(r.x, r.y, r.w, r.h, 0x101010);
     gfx_draw_rect(r.x, r.y, r.w, r.h, 0x303030);
     gfx_draw_text_utf8(8, r.y + 6, 0xC0C0C0, status ? status : "");
-}
-
-// URL -> PATH resolve (hosts + local fallback)
-static bool resolve_url_to_path(const char* url, char* out, int cap) {
-    if (!out || cap <= 0) return false;
-    out[0] = 0;
-
-    if (!url || !url[0]) {
-        strncpy(out, USER_DESKTOP_PATH "/home.html", cap - 1);
-        out[cap - 1] = 0;
-        return true;
-    }
-
-    // 1) absolute path
-    if (is_abs_path(url)) {
-        strncpy(out, url, cap - 1);
-        out[cap - 1] = 0;
-        return true;
-    }
-
-    // 2) resolver (ör: home.local -> /.../home.html)
-    // Senin url_resolver API'n: bool url_resolve_to_path(const char* url, char* out, int cap)
-    if (url_resolve_to_path(url, out, cap)) {
-        return true;
-    }
-
-    // 3) fallback local:
-    const char* p = local_to_path(url);
-    if (p) {
-        strncpy(out, p, cap - 1);
-        out[cap - 1] = 0;
-        return true;
-    }
-
-    return false;
 }
 
 // HTML content draw (local/hosts)
@@ -260,9 +255,6 @@ static void draw_content_html(rect_t r, const char* url, int scroll_y) {
 }
 
 #if KBROWSER_ENABLE_TABS
-// ------------------------------------------------------------
-// Tabs provider callbacks
-// ------------------------------------------------------------
 static const char* kb_tab_title(int idx) {
     switch (idx) {
         case 0: return "Home";
@@ -271,29 +263,19 @@ static const char* kb_tab_title(int idx) {
         default: return "Tab";
     }
 }
-
 static int kb_tabs_count(app_t* app) { (void)app; return 3; }
 static const char* kb_tabs_title(app_t* app, int idx) { (void)app; return kb_tab_title(idx); }
-
-static int kb_tabs_active(app_t* app) {
-    kuvix_browser_t* b = br(app);
-    return b ? b->active_tab : 0;
-}
-
+static int kb_tabs_active(app_t* app) { kuvix_browser_t* b = br(app); return b ? b->active_tab : 0; }
 static void kb_tabs_set_active(app_t* app, int idx) {
     kuvix_browser_t* b = br(app);
     if (!b) return;
-
-    int n = kb_tabs_count(app);
     if (idx < 0) idx = 0;
-    if (idx >= n) idx = n - 1;
+    if (idx >= 3) idx = 2;
 
     b->active_tab = idx;
-
     if (idx == 0) br_navigate(b, "local:home");
     else if (idx == 1) br_navigate(b, "local:docs");
     else br_navigate(b, "local:new");
-
     br_set_status(b, "Tab switched (titlebar)");
 }
 #endif
@@ -327,7 +309,6 @@ static void browser_on_draw(app_t* app) {
     gfx_fill_rect(0, 0, client.w, client.h, 0x0B0B0B);
 
     draw_toolbar_bg(client.w);
-
     draw_button(r_btn_back(), "<", false);
     draw_button(r_btn_forward(), ">", false);
     draw_button(r_btn_reload(), "R", false);
@@ -349,14 +330,13 @@ static void browser_on_mouse(app_t* app, int mx, int my,
     kuvix_browser_t* b = br(app);
     if (!b) return;
 
-    if (!(pressed & 0x01)) return; // sadece left press
+    if (!(pressed & 0x01)) return;
 
-    // ✅ GLOBAL -> CLIENT coords
+    // ✅ GLOBAL -> CLIENT
     ui_rect_t client = wm_get_client_rect(app->win_id);
     int lx = mx;
     int ly = my;
 
-    // back
     if (pt_in_rect(lx, ly, r_btn_back())) {
         if (b->history_count > 0 && b->history_index > 0) {
             b->history_index--;
@@ -367,7 +347,6 @@ static void browser_on_mouse(app_t* app, int mx, int my,
         return;
     }
 
-    // forward
     if (pt_in_rect(lx, ly, r_btn_forward())) {
         if (b->history_count > 0 && b->history_index < b->history_count - 1) {
             b->history_index++;
@@ -378,21 +357,18 @@ static void browser_on_mouse(app_t* app, int mx, int my,
         return;
     }
 
-    // reload
     if (pt_in_rect(lx, ly, r_btn_reload())) {
         b->scroll_y = 0;
         br_set_status(b, "Reload");
         return;
     }
 
-    // address bar click -> edit mode
     if (pt_in_rect(lx, ly, r_addr_bar(b->cw))) {
         b->addr_edit_mode = 1;
         br_set_status(b, "Editing address (Enter=go, Esc=cancel)");
         return;
     }
 
-    // click elsewhere exits edit mode
     if (b->addr_edit_mode) {
         b->addr_edit_mode = 0;
         br_set_status(b, "Ready");
@@ -404,57 +380,35 @@ static void browser_on_key(app_t* app, uint16_t key) {
     if (!b) return;
 
     uint8_t sc = (uint8_t)(key & 0xFF);
+    if (sc & 0x80) return; // break ignore
 
-    // break ignore (scancode ise çalışır)
-    if (sc & 0x80) return;
-
-    // ASCII üret (scancode değilse bile sc==ascii olabilir)
     char c = kbd_scancode_to_ascii(sc);
 
-    // ------------------------------------------------
-    // Edit mode OFF: sadece scroll
-    // ------------------------------------------------
+    // edit mode OFF => scroll only
     if (!b->addr_edit_mode) {
         int step = 32;
 
-        if (sc == 0x48) { // Up
-            b->scroll_y -= step;
-            if (b->scroll_y < 0) b->scroll_y = 0;
-            return;
-        }
-        if (sc == 0x50) { // Down
-            b->scroll_y += step;
-            return;
-        }
-        if (sc == 0x49) { // PgUp
-            b->scroll_y -= step * 6;
-            if (b->scroll_y < 0) b->scroll_y = 0;
-            return;
-        }
-        if (sc == 0x51) { // PgDn
-            b->scroll_y += step * 6;
-            return;
-        }
+        if (sc == 0x48) { b->scroll_y -= step; if (b->scroll_y < 0) b->scroll_y = 0; return; }
+        if (sc == 0x50) { b->scroll_y += step; return; }
+        if (sc == 0x49) { b->scroll_y -= step * 6; if (b->scroll_y < 0) b->scroll_y = 0; return; }
+        if (sc == 0x51) { b->scroll_y += step * 6; return; }
+
         return;
     }
 
-    // ------------------------------------------------
-    // Edit mode ON: buffer edit, Enter'da navigate
-    // ------------------------------------------------
+    // edit mode ON
     if (sc == 0x1C || c == '\n' || c == '\r') {
         b->addr_edit_mode = 0;
         br_navigate(b, b->url[0] ? b->url : "local:home");
         return;
     }
 
-    // Esc
-    if (sc == 0x01) {
+    if (sc == 0x01) { // Esc
         b->addr_edit_mode = 0;
         br_set_status(b, "Ready");
         return;
     }
 
-    // Backspace
     if (c == '\b' || (uint8_t)c == 127) {
         if (b->url_len > 0) {
             b->url_len--;
@@ -463,7 +417,6 @@ static void browser_on_key(app_t* app, uint16_t key) {
         return;
     }
 
-    // Printable
     if (c >= 32 && c <= 126) {
         if (b->url_len < KBROWSER_URL_MAX - 1) {
             b->url[b->url_len++] = c;
@@ -473,9 +426,7 @@ static void browser_on_key(app_t* app, uint16_t key) {
     }
 }
 
-static void browser_on_destroy(app_t* app) {
-    (void)app;
-}
+static void browser_on_destroy(app_t* app) { (void)app; }
 
 const app_vtbl_t kuvix_browser_vtbl = {
     .on_create  = browser_on_create,

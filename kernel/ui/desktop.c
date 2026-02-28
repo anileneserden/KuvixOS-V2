@@ -442,6 +442,7 @@ void ui_desktop_init(void) {
     desktop_seed_html_pages();
     desktop_seed_default_shortcuts(false);
     seed_hosts();
+    seed_vhosts();
 
     desktop_icons_init();
     desktop_icons_snap_all();
