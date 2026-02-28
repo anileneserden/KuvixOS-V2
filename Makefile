@@ -168,8 +168,11 @@ $(KEF_HELLO_ELF): $(KEF_HELLO_DIR)/main.c $(KEF_HELLO_DIR)/link.ld
 $(KEF_HELLO_BIN): $(KEF_HELLO_ELF)
 	objcopy -O binary $(KEF_HELLO_ELF) $(KEF_HELLO_BIN)
 
-$(KEF_HELLO_KEF): $(KEF_HELLO_BIN) $(KEF_HELLO_ELF) tools/mk_kef.py
-	python3 tools/mk_kef.py $(KEF_HELLO_ELF) $(KEF_HELLO_BIN) $(KEF_HELLO_KEF) 0x80 0
+$(KEF_HELLO_KEF): FORCE $(KEF_HELLO_BIN) $(KEF_HELLO_ELF) tools/mk_kef.py
+	@mkdir -p $(dir $(KEF_HELLO_KEF))
+	@ENTRY=$$(nm -n $(KEF_HELLO_ELF) | awk '/ _start$$/ {print "0x"$$1; exit}'); \
+	echo "[KEF] hello entry = $$ENTRY"; \
+	python3 tools/mk_kef.py $(KEF_HELLO_ELF) $(KEF_HELLO_BIN) $(KEF_HELLO_KEF) $$ENTRY 0
 
 $(KEF_BLOB_OBJ): $(KEF_HELLO_KEF)
 	@mkdir -p $(dir $@)
@@ -230,3 +233,5 @@ run: iso
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)
+
+.PHONY: FORCE clean run iso all

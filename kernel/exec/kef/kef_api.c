@@ -4,10 +4,14 @@
 #include <kernel/drivers/video/gfx.h>
 #include <ui/desktop.h>
 
+#include <ui/apps/kef_host.h>   // ✅ kef_host_get_active + widgets
+#include <lib/string.h>
+
 extern uint32_t g_ticks_ms;
 
 static int g_kef_active = 0;
 
+// ----------------- core api -----------------
 static void api_log_impl(const char* s) {
     if (!s) return;
     printk("%s", s);
@@ -23,20 +27,64 @@ static void api_text_impl(int x, int y, uint32_t color, const char* s) {
 }
 
 static void api_invalidate_impl(void) {
-    // aynı tick içinde spam engeli
     static uint32_t last = 0;
     uint32_t now = g_ticks_ms;
     if (now == last) return;
     last = now;
-
     desktop_invalidate_full();
 }
 
+// ----------------- widget create api -----------------
+static void api_create_label_impl(int x, int y, const char* text) {
+    kef_host_t* h = kef_host_get_active();
+    if (!h) return;
+    if (h->widget_count >= KEF_MAX_WIDGETS) return;
+
+    widget_t* w = &h->widgets[h->widget_count++];
+    memset(w, 0, sizeof(*w));
+
+    w->type = WIDGET_LABEL;
+    w->x = x;
+    w->y = y;
+    w->visible = 1;
+
+    if (text)
+        strncpy(w->text, text, sizeof(w->text) - 1);
+}
+
+static void api_create_button_impl(int x, int y, int w, int h,
+                                   const char* text,
+                                   void (*on_click)(void*),
+                                   void* user) {
+    kef_host_t* host = kef_host_get_active();
+    if (!host) return;
+    if (host->widget_count >= KEF_MAX_WIDGETS) return;
+
+    widget_t* wd = &host->widgets[host->widget_count++];
+    memset(wd, 0, sizeof(*wd));
+
+    wd->type = WIDGET_BUTTON;
+    wd->x = x;
+    wd->y = y;
+    wd->w = w;
+    wd->h = h;
+    wd->visible = 1;
+
+    if (text)
+        strncpy(wd->text, text, sizeof(wd->text) - 1);
+
+    wd->on_click = on_click;
+    wd->user = user;
+}
+
+// ----------------- export api -----------------
 const kvx_api_t g_kvx_api = {
-    .log        = api_log_impl,
-    .fill_rect  = api_fill_rect_impl,
-    .text       = api_text_impl,
-    .invalidate = api_invalidate_impl
+    .log          = api_log_impl,
+    .fill_rect    = api_fill_rect_impl,
+    .text         = api_text_impl,
+    .invalidate   = api_invalidate_impl,
+    .create_label = api_create_label_impl,
+    .create_button= api_create_button_impl,
 };
 
 void kef_api_set_active(int on) { g_kef_active = on ? 1 : 0; }

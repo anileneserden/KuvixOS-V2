@@ -7,6 +7,11 @@ typedef struct kvx_api {
     void (*fill_rect)(int x, int y, int w, int h, uint32_t color);
     void (*text)(int x, int y, uint32_t color, const char* s);
     void (*invalidate)(void);
+    void (*create_label)(int x, int y, const char* text);
+    void (*create_button)(int x, int y, int w, int h,
+                        const char* text,
+                        void (*on_click)(void*),
+                        void* user);
 } kvx_api_t;
 
 typedef struct kvx_kef_app {
