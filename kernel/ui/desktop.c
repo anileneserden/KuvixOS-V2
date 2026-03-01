@@ -379,6 +379,115 @@ static void draw_demo_icon_card(void) {
     gfx_draw_text_utf8(text_x, text_y, 0x00FFFFFF, label);
 }
 
+static void draw_side_button_right(int px, int py, int ph, int r, const char* text, bool active) {
+    // px,py: pencere sağ kenarına yapışık yer
+    // ph: buton yüksekliği (örn 44)
+    // r: sağ köşe radius (örn 12)
+
+    int bw = 44;  // buton genişliği
+    int bx = px - bw;  // sağa yapışık: px pencerenin sağ sınırı (x+w)
+    int by = py;
+
+    uint32_t shadow = 0x101010;
+    uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
+    uint32_t txt    = 0x00FFFFFF;
+
+    // shadow (sağa hafif)
+    gfx_fill_round_rect4(bx + 2, by + 2, bw, ph, 0, r, 0, r, shadow);
+
+    // buton gövdesi: TL=0, TR=r, BL=0, BR=r
+    gfx_fill_round_rect4(bx, by, bw, ph, 0, r, 0, r, bg);
+
+    // yazı ortala (basit)
+    if (!text) text = "";
+    int len = (int)strlen(text);
+    int tw = len * 8;
+    int tx = bx + (bw - tw) / 2;
+    int ty = by + (ph - 16) / 2;
+
+    gfx_draw_text_utf8(tx, ty, txt, text);
+}
+
+static void draw_header_right_chip(int x, int y, int w, int h, int r,
+                                   const char* text, bool active) {
+    uint32_t shadow = 0x101010;
+    uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
+
+    // ✅ shadow sadece sağa (alta kaydırma yok)
+    gfx_fill_round_rect4(x + 2, y, w, h, 0, r, 0, 0, shadow);
+
+    // body: sadece sağ-üst yuvarlak
+    gfx_fill_round_rect4(x, y, w, h, 0, r, 0, 0, bg);
+
+    // text ortala
+    if (!text) text = "";
+    int len = (int)strlen(text);
+    int tw  = len * 8;
+    int tx  = x + (w - tw) / 2;
+    int ty  = y + (h - 16) / 2;
+    gfx_draw_text_utf8(tx, ty, 0x00FFFFFF, text);
+}
+
+static void draw_header_flat_chip(int x, int y, int w, int h,
+                                  const char* text, bool active) {
+    uint32_t shadow = 0x101010;
+    uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
+
+    // ✅ shadow sadece sağa
+    gfx_fill_rect(x + 2, y, w, h, shadow);
+
+    // body düz
+    gfx_fill_rect(x, y, w, h, bg);
+
+    // text ortala
+    if (!text) text = "";
+    int len = (int)strlen(text);
+    int tw  = len * 8;
+    int tx  = x + (w - tw) / 2;
+    int ty  = y + (h - 16) / 2;
+    gfx_draw_text_utf8(tx, ty, 0x00FFFFFF, text);
+}
+
+static void demo_box_with_header(int x, int y, int w, int h) {
+    int r = 20;
+    int header_h = 28;
+
+    uint32_t shadow = 0x101010;
+    uint32_t body   = 0x2F2F2F;
+    uint32_t header = 0x252525;
+
+    // shadow (pencere): altta belli olsun
+    gfx_fill_round_rect(x + 2, y + 6, w, h, r, shadow);
+
+    // body (tüm köşeler yuvarlak)
+    gfx_fill_round_rect(x, y, w, h, r, body);
+
+    // header: sadece üst köşeler yuvarlak, alt köşeler düz
+    gfx_fill_round_rect4(x, y, w, header_h, r, r, 0, 0, header);
+
+    // başlık
+    gfx_draw_text_utf8(x + 14, y + 8, 0x00FFFFFF, "KuvixOS Demo");
+
+    // ---- header butonları (sağda 3'lü grup) ----
+    int chip_h = header_h;
+    int chip_w = 44;
+    int gap    = 0; // arada boşluk istemiyorsan 0
+
+    // en sağdaki: ">"
+    int x_right = x + w - chip_w;
+    // onun solu: "-"
+    int x_mid   = x_right - gap - chip_w;
+    // onun solu: "+"
+    int x_left  = x_mid   - gap - chip_w;
+
+    // iki düz chip
+    draw_header_flat_chip(x_left, y, chip_w, chip_h, "+", false);
+    draw_header_flat_chip(x_mid,  y, chip_w, chip_h, "-", false);
+
+    // sağ üst köşesi yuvarlak chip
+    draw_header_right_chip(x_right, y, chip_w, chip_h, 12, ">", false);
+}
+
 // ============================================================
 // Desktop Handlers
 // ============================================================
@@ -937,6 +1046,8 @@ void ui_desktop_tick(void) {
     // draw_demo_icon_card();
 
     topbar_draw();
+    // demo_simple_rounded_box(260, 120, 340, 220);
+    // demo_box_with_header(260, 120, 340, 220);
 
     if (is_selecting) {
         gfx_draw_alpha_rect(
