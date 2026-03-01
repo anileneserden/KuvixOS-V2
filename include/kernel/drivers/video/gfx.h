@@ -28,6 +28,10 @@ void gfx_putpixel_alpha(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a
 // İçi Dolu Dikdörtgen
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color);
 
+void gfx_fill_round_rect4(int x, int y, int w, int h,
+                          int rtl, int rtr, int rbl, int rbr,
+                          uint32_t color);
+
 // Sadece Kenarlık (Yeni eklediğimiz fonksiyon)
 void gfx_draw_rect(int x, int y, int w, int h, uint32_t color);
 
@@ -47,5 +51,7 @@ void gfx_draw_text_utf8(int x, int y, uint32_t color, const char* s);
 
 void gfx_set_origin(int x, int y);
 void gfx_reset_origin(void);
+
+void gfx_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key);
 
 #endif

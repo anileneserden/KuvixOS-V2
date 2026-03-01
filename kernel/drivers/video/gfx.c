@@ -6,6 +6,8 @@
 static int g_origin_x = 0;
 static int g_origin_y = 0;
 
+static uint32_t isqrt_u32(uint32_t n);
+
 void gfx_init(void) {
     // Ekranı başlangıç için siyahla temizle
     fb_clear(0x000000); 
@@ -62,6 +64,66 @@ void gfx_draw_alpha_rect(int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t 
 // Kare/Dikdörtgen çizimi
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color) {
     fb_draw_rect(x + g_origin_x, y + g_origin_y, w, h, color);
+}
+
+static int clampi(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+void gfx_fill_round_rect4(int x, int y, int w, int h,
+                          int rtl, int rtr, int rbl, int rbr,
+                          uint32_t color) {
+    if (w <= 0 || h <= 0) return;
+
+    int maxr = (w < h ? w : h) / 2;
+    rtl = clampi(rtl, 0, maxr);
+    rtr = clampi(rtr, 0, maxr);
+    rbl = clampi(rbl, 0, maxr);
+    rbr = clampi(rbr, 0, maxr);
+
+    for (int yy = 0; yy < h; yy++) {
+
+        int inset_l = 0;
+        int inset_r = 0;
+
+        // ---- LEFT side inset (TL or BL) ----
+        if (yy < rtl && rtl > 0) {
+            int r = rtl;
+            int dy = (r - 1) - yy;
+            int rr = r * r;
+            inset_l = r - (int)isqrt_u32((uint32_t)(rr - dy * dy));
+        } else if (yy >= h - rbl && rbl > 0) {
+            int r = rbl;
+            int dy = yy - (h - r);
+            int rr = r * r;
+            inset_l = r - (int)isqrt_u32((uint32_t)(rr - dy * dy));
+        }
+
+        // ---- RIGHT side inset (TR or BR) ----
+        if (yy < rtr && rtr > 0) {
+            int r = rtr;
+            int dy = (r - 1) - yy;
+            int rr = r * r;
+            inset_r = r - (int)isqrt_u32((uint32_t)(rr - dy * dy));
+        } else if (yy >= h - rbr && rbr > 0) {
+            int r = rbr;
+            int dy = yy - (h - r);
+            int rr = r * r;
+            inset_r = r - (int)isqrt_u32((uint32_t)(rr - dy * dy));
+        }
+
+        int x0 = x + inset_l;
+        int x1 = x + w - 1 - inset_r;
+
+        if (x1 < x0) continue;
+
+        // satırı doldur
+        for (int xx = x0; xx <= x1; xx++) {
+            gfx_putpixel(xx, y + yy, color);
+        }
+    }
 }
 
 #define abs(x) ((x) < 0 ? -(x) : (x))
@@ -247,6 +309,10 @@ void gfx_set_origin(int x, int y) {
 void gfx_reset_origin(void) {
     g_origin_x = 0;
     g_origin_y = 0;
+}
+
+void gfx_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key) {
+    fb_blit_argb_key(x + g_origin_x, y + g_origin_y, w, h, data, key);
 }
 
 // UTF-8 -> CP1254 (Türkçe subset) tek byte çevirir.
