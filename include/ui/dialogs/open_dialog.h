@@ -19,6 +19,8 @@ void open_dialog_show(const char* title, const char* initial_name, int owner_win
 void open_dialog_draw(void);
 void open_dialog_handle_mouse(int mx, int my, bool clicked);
 void open_dialog_handle_key(uint16_t scancode, char c);
+void open_dialog_handle_wheel(int step);
+void open_dialog_handle_mouse_move(int mx, int my, uint8_t btns);
 
 bool open_dialog_is_active(void);
 void open_dialog_refresh(void);

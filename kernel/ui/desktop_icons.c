@@ -267,8 +267,9 @@ void desktop_icons_draw_all(void) {
 
         // NOTE: icon->label içinde .ksf uzantısını kırpmıştın, o yüzden is_ksf label'dan çıkmayabilir.
         // Bu yüzden path'e de bakmak mantıklı:
-        bool is_txt = ends_with(icon->vfs_name, ".txt");
-        bool is_ksf = ends_with(icon->vfs_name, ".ksf");
+        bool is_txt  = ends_with(icon->vfs_name, ".txt");
+        bool is_ksf  = ends_with(icon->vfs_name, ".ksf");
+        bool is_html = ends_with(icon->vfs_name, ".html");
 
         if (icon->is_dir) bmp = folder_icon;
         else if (is_txt || is_ksf) bmp = text_file_icon;

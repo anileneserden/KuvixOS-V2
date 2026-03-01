@@ -1,4 +1,4 @@
-// kernel/ui/window/window.c  (veya ui_window_draw nerede ise)
+// kernel/ui/window/window.c  (ui_window_draw içi düzeltildi)
 
 #include <ui/window/window.h>
 #include <ui/window_chrome.h>
@@ -10,20 +10,19 @@
 #include <app/app.h>
 #include <lib/string.h>
 
+#include <ui/bitmaps/icons/icon_close_16.h>
+#include <ui/bitmaps/icons/icon_max_16.h>
+#include <ui/bitmaps/icons/icon_min_16.h>
+
 // ------------------------------------------------------------
 // helpers
 // ------------------------------------------------------------
-static inline bool pt_in_rect(int mx, int my, int x, int y, int w, int h) {
-    return (mx >= x && my >= y && mx < (x + w) && my < (y + h));
-}
-
 static inline int clampi(int v, int lo, int hi) {
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
 }
 
-// Darken: her kanalı amount kadar azalt (0..255)
 static inline uint32_t darken_rgb(uint32_t c, int amount) {
     amount = clampi(amount, 0, 255);
 
@@ -38,7 +37,6 @@ static inline uint32_t darken_rgb(uint32_t c, int amount) {
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-// Title align helper: safe area içinde x hesapla
 static int calc_title_x(const ui_theme_t* th, int safe_x, int safe_w, int text_px_w) {
     if (!th) return safe_x;
     if (safe_w < 0) safe_w = 0;
@@ -46,16 +44,12 @@ static int calc_title_x(const ui_theme_t* th, int safe_x, int safe_w, int text_p
 
     switch (th->window_title_align) {
         default:
-        case UI_ALIGN_LEFT:
-            return safe_x;
-        case UI_ALIGN_CENTER:
-            return safe_x + (safe_w - text_px_w) / 2;
-        case UI_ALIGN_RIGHT:
-            return safe_x + (safe_w - text_px_w);
+        case UI_ALIGN_LEFT:   return safe_x;
+        case UI_ALIGN_CENTER: return safe_x + (safe_w - text_px_w) / 2;
+        case UI_ALIGN_RIGHT:  return safe_x + (safe_w - text_px_w);
     }
 }
 
-// Basit text width hesabı (8px monospace varsayımı)
 static int text_width8(const char* s) {
     if (!s) return 0;
     int w = 0;
@@ -63,68 +57,48 @@ static int text_width8(const char* s) {
     return w;
 }
 
+static void draw_icon_center_key(int bx, int by, int bw, int bh,
+                                 int iw, int ih, const uint32_t* argb, uint32_t key)
+{
+    if (!argb) return;
+
+    int ix = bx + (bw - iw) / 2;
+    int iy = by + (bh - ih) / 2;
+
+    gfx_blit_argb_key(ix, iy, iw, ih, argb, key);
+}
+
 // ------------------------------------------------------------
-// Tabs drawing helpers (titlebar)
+// Header chip draw (dikdörtgen)
 // ------------------------------------------------------------
-typedef struct { int x, y, w, h; } chrome_rect_t;
-static chrome_rect_t cr(int x, int y, int w, int h) { chrome_rect_t r = {x,y,w,h}; return r; }
-
-static void draw_tab(int x, int y, int w, int h, const char* text, int active) {
-    uint32_t bg = active ? 0x2A2A2A : 0x1C1C1C;
-    uint32_t bd = active ? 0xFF6A00 : 0x404040;
-    uint32_t fg = 0xFFFFFF;
-
-    gfx_fill_rect(x, y, w, h, bg);
-    gfx_draw_rect(x, y, w, h, bd);
-
-    int tx = x + 8;
-    int ty = y + (h - 16) / 2; // 8x16 varsayımı
-    gfx_draw_text_utf8(tx, ty, fg, text ? text : "");
-}
-
-static void draw_tab_add(int x, int y, int w, int h) {
-    gfx_fill_rect(x, y, w, h, 0x1C1C1C);
-    gfx_draw_rect(x, y, w, h, 0x404040);
-    gfx_draw_text_utf8(x + 9, y + (h - 16) / 2, 0xFFFFFF, "+");
-}
-
-// titlebar içinde: text_x ile buton bloğu arası strip
-static chrome_rect_t chrome_tabstrip_rect(const ui_window_t* win, const ui_chrome_layout_t* L) {
-    int gap = 6;
-
-    // min button pencerenin sağ yarısındaysa right layout varsay
-    int right_layout = (L->btn_min_x > (win->x + win->w / 2)) ? 1 : 0;
-
-    int left  = L->text_x;
-    int right = win->x + win->w - 4;
-
-    if (right_layout) {
-        right = L->btn_min_x - gap;
-    } else {
-        left  = L->btn_min_x + L->btn_size + gap;
-    }
-
-    int w = right - left;
-    if (w < 0) w = 0;
-
-    return cr(left, win->y, w, L->title_h);
-}
-
 static void draw_header_right_chip(int x, int y, int w, int h, int r,
                                    const char* text, int active, int mx, int my) {
     uint32_t shadow = 0x101010;
     uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
 
-    // hover koymak istersen:
+    // hover
     if (mx >= x && mx < x+w && my >= y && my < y+h) bg = 0x3A3A3A;
 
-    // shadow sadece sağa (alta değil)
+    // shadow sadece sağa
     gfx_fill_round_rect4(x + 2, y, w, h, 0, r, 0, 0, shadow);
     gfx_fill_round_rect4(x, y, w, h, 0, r, 0, 0, bg);
 
-    int len = (int)strlen(text ? text : "");
+    if (!text) text = "";
+    int len = (int)strlen(text);
     int tw  = len * 8;
-    gfx_draw_text_utf8(x + (w - tw)/2, y + (h - 16)/2, 0x00FFFFFF, text ? text : "");
+    gfx_draw_text_utf8(x + (w - tw)/2, y + (h - 16)/2, 0x00FFFFFF, text);
+}
+
+static void draw_header_right_chip_transparent(
+    int x, int y, int w, int h, int r,
+    uint32_t title_bg, int mx, int my
+) {
+    if (mx >= x && mx < x+w && my >= y && my < y+h) {
+        gfx_fill_round_rect4(x, y, w, h, 0, r, 0, 0, darken_rgb(title_bg, 18));
+    }
+
+    // ayraç çizgisi (sol)
+    gfx_fill_rect(x, y, 2, h, 0x2A2A2A);
 }
 
 static void draw_header_flat_chip(int x, int y, int w, int h,
@@ -132,14 +106,29 @@ static void draw_header_flat_chip(int x, int y, int w, int h,
     uint32_t shadow = 0x101010;
     uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
 
+    // hover
     if (mx >= x && mx < x+w && my >= y && my < y+h) bg = 0x3A3A3A;
 
     gfx_fill_rect(x + 2, y, w, h, shadow);
     gfx_fill_rect(x, y, w, h, bg);
 
-    int len = (int)strlen(text ? text : "");
+    if (!text) text = "";
+    int len = (int)strlen(text);
     int tw  = len * 8;
-    gfx_draw_text_utf8(x + (w - tw)/2, y + (h - 16)/2, 0x00FFFFFF, text ? text : "");
+    gfx_draw_text_utf8(x + (w - tw)/2, y + (h - 16)/2, 0x00FFFFFF, text);
+}
+
+static void draw_header_flat_chip_transparent(
+    int x, int y, int w, int h,
+    uint32_t title_bg, int mx, int my
+) {
+    // hover overlay: title bg’yi az karart
+    if (mx >= x && mx < x+w && my >= y && my < y+h) {
+        gfx_fill_rect(x, y, w, h, darken_rgb(title_bg, 18));
+    }
+
+    // ayraç çizgisi (sol kenar)
+    gfx_fill_rect(x, y, 2, h, 0x2A2A2A);
 }
 
 // ------------------------------------------------------------
@@ -147,129 +136,102 @@ static void draw_header_flat_chip(int x, int y, int w, int h,
 // ------------------------------------------------------------
 void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
     (void)is_active;
-
     if (!win) return;
 
     const ui_theme_t* th = ui_get_theme();
     if (!th) return;
-
-    // --- Clamp theme values
-    int title_h = clampi(th->window_title_h, 18, (win->h > 18 ? win->h : 18));
+    
+    ui_chrome_layout_t L = ui_chrome_layout(win);
+    int title_h = L.title_h;
     int pad_l   = clampi(th->window_title_pad_l, 4, 64);
     int pad_r   = clampi(th->window_title_pad_r, 4, 64);
 
-    // --- Base colors from theme
     const uint32_t col_win_bg     = (uint32_t)th->window_bg;
     const uint32_t col_title_bg   = (uint32_t)th->window_title_bg;
     const uint32_t col_title_text = (uint32_t)th->window_title_text;
 
     // ------------------------------------------------------------
-    // ROUNDED WINDOW DRAW
+    // Rounded window
     // ------------------------------------------------------------
-    int r = 18; // 16-20 iyi
-    if (r > win->w / 2) r = win->w / 2;
-    if (r > win->h / 2) r = win->h / 2;
+    int rr = 18;
+    if (rr > win->w / 2) rr = win->w / 2;
+    if (rr > win->h / 2) rr = win->h / 2;
 
-    // shadow: altta belli olsun (demo gibi)
     uint32_t shadow = 0x101010;
-    gfx_fill_round_rect(win->x + 2, win->y + 6, win->w, win->h, r, shadow);
-
-    // body: tüm köşeler yuvarlak
-    gfx_fill_round_rect(win->x, win->y, win->w, win->h, r, col_win_bg);
-
-    // header: sadece üst köşeler yuvarlak (alt düz)
-    gfx_fill_round_rect4(win->x, win->y, win->w, title_h, r, r, 0, 0, col_title_bg);
+    gfx_fill_round_rect(win->x + 2, win->y + 6, win->w, win->h, rr, shadow);
+    gfx_fill_round_rect(win->x, win->y, win->w, win->h, rr, col_win_bg);
+    gfx_fill_round_rect4(win->x, win->y, win->w, title_h, rr, rr, 0, 0, col_title_bg);
 
     // ------------------------------------------------------------
-    // Header chips (3'lü grup): [+] [-] [>]
+    // Header chips: ✅ L’den çiz (dikdörtgen)
     // ------------------------------------------------------------
-    int chip_h = title_h;
-    int chip_w = 44;
-    int gap    = 0;
+    // İkon istemiyorsun: text boş bırakabilirsin
+    // İstersen sonra "X", "□", "_" koyarsın.
+    int chip_r = 12;
 
-    int x_right = win->x + win->w - chip_w;
-    int x_mid   = x_right - gap - chip_w;
-    int x_left  = x_mid   - gap - chip_w;
-    int y0      = win->y;
+    // arka planı titlebar’dan biraz koyu yap
+    uint32_t chip_bg   = darken_rgb(col_title_bg, 35);
+    uint32_t chip_bg_h = darken_rgb(col_title_bg, 55);
 
-    draw_header_flat_chip(x_left,  y0, chip_w, chip_h, "+", false, mx, my);
-    draw_header_flat_chip(x_mid,   y0, chip_w, chip_h, "-", false, mx, my);
-    draw_header_right_chip(x_right,y0, chip_w, chip_h, 12, ">", false, mx, my);
+    // MIN
+    gfx_fill_rect(L.btn_min_x, L.btn_y, L.btn_w, L.btn_h,
+                (mx>=L.btn_min_x && mx<L.btn_min_x+L.btn_w && my>=L.btn_y && my<L.btn_y+L.btn_h) ? chip_bg_h : chip_bg);
+
+    // MAX
+    gfx_fill_rect(L.btn_max_x, L.btn_y, L.btn_w, L.btn_h,
+                (mx>=L.btn_max_x && mx<L.btn_max_x+L.btn_w && my>=L.btn_y && my<L.btn_y+L.btn_h) ? chip_bg_h : chip_bg);
+
+    // CLOSE (sağ köşe yuvarlak kalsın)
+    int r = 12;
+    uint32_t cbg = (mx>=L.btn_close_x && mx<L.btn_close_x+L.btn_w && my>=L.btn_y && my<L.btn_y+L.btn_h) ? chip_bg_h : chip_bg;
+    gfx_fill_round_rect4(L.btn_close_x, L.btn_y, L.btn_w, L.btn_h, 0, r, 0, 0, cbg);
+
+    // Transparent key: 0x00000000 (senin palette[0] bu)
+    const uint32_t KEY = 0x00000000u;
+
+    // min/max ikonların da 16x16 ise:
+    draw_icon_center_key(L.btn_min_x,   L.btn_y, L.btn_w, L.btn_h,
+                        16, 16, g_icon_min_16, KEY);
+
+    draw_icon_center_key(L.btn_max_x,   L.btn_y, L.btn_w, L.btn_h,
+                        16, 16, g_icon_max_16, KEY);
+
+    draw_icon_center_key(L.btn_close_x, L.btn_y, L.btn_w, L.btn_h,
+                        16, 16, g_icon_close_16, KEY);
 
     // ------------------------------------------------------------
-    // Title safe area (chip’lere çarpmasın)
+    // Title safe area (buton bloğuna çarpmasın)
     // ------------------------------------------------------------
-    int right_block = chip_w * 3; // 3 chip alanı
+    int block_left  = L.btn_min_x;
+    int block_right = L.btn_close_x + L.btn_w;
+
     int safe_x = win->x + pad_l;
-    int safe_w = win->w - pad_l - pad_r - right_block;
+    int safe_w = block_left - safe_x;
+    if (safe_w < 0) safe_w = 0;
+
+    // butonlar sağdaysa: sağ blok title'ı daraltsın
+    int right_layout = (block_left > (win->x + win->w/2)) ? 1 : 0;
+
+    if (right_layout) {
+        safe_w = block_left - safe_x;
+    } else {
+        safe_x = block_right + pad_l;
+        safe_w = (win->x + win->w - pad_r) - safe_x;
+    }
+
     if (safe_w < 0) safe_w = 0;
 
     // ------------------------------------------------------------
-    // Tabs (şimdilik opsiyonel)
+    // Title text
     // ------------------------------------------------------------
-    int drew_tabs = 0;
+    if (win->title && win->title[0]) {
+        int text_px_w = text_width8(win->title);
+        int tx = calc_title_x(th, safe_x, safe_w, text_px_w);
 
-    // ⚠️ ui_chrome_layout() halen eski buton sistemine göre hesap yapıyorsa
-    // strip yanlış çıkabilir. Sorun çıkarıyorsa burayı geçici kapat:
-    /*
-    app_t* app = (app_t*)win->user_data;
-    if (app && app->v &&
-        app->v->tabs_count && app->v->tabs_title &&
-        app->v->tabs_active && app->v->tabs_set_active) {
+        const int font_h = 16;
+        int ty = win->y + (title_h - font_h) / 2;
+        if (ty < win->y) ty = win->y;
 
-        int n = app->v->tabs_count(app);
-        if (n > 0) {
-            ui_chrome_layout_t L = ui_chrome_layout(win);
-            chrome_rect_t strip = chrome_tabstrip_rect(win, &L);
-
-            if (strip.w > 30) {
-                int tab_h = L.btn_size;
-                if (tab_h < 14) tab_h = 14;
-
-                int tab_w = 90;
-                int tab_gap = 6;
-
-                int max_tabs = (n < 3) ? n : 3;
-
-                int yy = strip.y + (strip.h - tab_h) / 2;
-                int xx = strip.x;
-
-                for (int i = 0; i < max_tabs; i++) {
-                    if (xx + tab_w > strip.x + strip.w) break;
-
-                    const char* tt = app->v->tabs_title(app, i);
-                    int active = (app->v->tabs_active(app) == i) ? 1 : 0;
-
-                    draw_tab(xx, yy, tab_w, tab_h, tt, active);
-                    xx += tab_w + tab_gap;
-                }
-
-                int add_w = 28;
-                if (xx + add_w <= strip.x + strip.w) {
-                    draw_tab_add(xx, yy, add_w, tab_h);
-                }
-
-                drew_tabs = 1;
-            }
-        }
-    }
-    */
-
-    // ------------------------------------------------------------
-    // Title text (tabs yoksa)
-    // ------------------------------------------------------------
-    if (!drew_tabs) {
-        if (win->title && win->title[0]) {
-            int text_px_w = text_width8(win->title);
-
-            // Align: theme'den yararlan
-            int tx = calc_title_x(th, safe_x, safe_w, text_px_w);
-
-            const int font_h = 16;
-            int ty = win->y + (title_h - font_h) / 2;
-            if (ty < win->y) ty = win->y;
-
-            gfx_draw_text_utf8(tx, ty, col_title_text, win->title);
-        }
+        gfx_draw_text_utf8(tx, ty, col_title_text, win->title);
     }
 }

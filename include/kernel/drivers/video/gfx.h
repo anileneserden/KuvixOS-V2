@@ -52,4 +52,6 @@ void gfx_draw_text_utf8(int x, int y, uint32_t color, const char* s);
 void gfx_set_origin(int x, int y);
 void gfx_reset_origin(void);
 
+void gfx_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key);
+
 #endif

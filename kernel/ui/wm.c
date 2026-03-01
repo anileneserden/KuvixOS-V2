@@ -79,7 +79,7 @@ static wm_recti_t wm_chrome_tabstrip_rect(const ui_window_t* win, const ui_chrom
         right = L->btn_min_x - gap;
         left  = L->text_x;
     } else {
-        left  = L->btn_min_x + L->btn_size + gap;
+        left  = L->btn_min_x + L->btn_w + gap;
         right = win->x + win->w - 4;
     }
 
@@ -408,7 +408,7 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
                 if (n > 0) {
                     ui_chrome_layout_t L = ui_chrome_layout(w);
 
-                    int tab_h = L.btn_size;
+                    int tab_h = L.btn_h;
                     if (tab_h < 14) tab_h = 14;
 
                     int tab_w = 90;

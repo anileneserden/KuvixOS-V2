@@ -311,6 +311,10 @@ void gfx_reset_origin(void) {
     g_origin_y = 0;
 }
 
+void gfx_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key) {
+    fb_blit_argb_key(x + g_origin_x, y + g_origin_y, w, h, data, key);
+}
+
 // UTF-8 -> CP1254 (Türkçe subset) tek byte çevirir.
 // Dönen: 0..255 tek byte, '?' fallback
 static uint8_t utf8_to_cp1254_1(const char** ps) {
