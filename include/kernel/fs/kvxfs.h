@@ -11,5 +11,6 @@ int kvxfs_exists(const char* path);
 int kvxfs_force_format(void);
 int kvxfs_mkdir(const char* path);
 void kvxfs_list_all(const char* filter_path);
+int kvxfs_format(void);
 
 #endif

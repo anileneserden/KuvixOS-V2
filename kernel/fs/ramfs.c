@@ -246,5 +246,60 @@ int ramfs_read_all(const char* path, void* out, uint32_t cap, uint32_t* out_size
     return 1;
 }
 
-int ramfs_is_dir(const char* path) { (void)path; return 0; }
-int ramfs_mkdir(const char* path) { (void)path; return -1; }
+// ramfs_is_dir: Yolun bir dizin olup olmadığını kontrol et
+int ramfs_is_dir(const char* path) {
+    int idx = find_node(path);
+    if (idx >= 0 && g_nodes[idx].type == RAMFS_T_DIR) {
+        return 1;
+    }
+    return 0;
+}
+
+// ramfs_mkdir: Yeni bir dizin düğümü oluştur
+int ramfs_mkdir(const char* path) {
+    if (ramfs_exists(path)) return 0; 
+    int idx = alloc_node(path);
+    if (idx < 0) return -1;
+
+    g_nodes[idx].type = RAMFS_T_DIR; // Burası çok önemli!
+    g_nodes[idx].size = 0;
+    return 1;
+}
+
+// ramfs_remove: Bir dosya veya dizini tamamen siler
+int ramfs_remove(const char* path) {
+    int idx = find_node(path);
+    if (idx < 0) return 0; // Dosya bulunamadı
+
+    // 1. Eğer bu bir dizinse, içindeki dosyaları kontrol etmek gerekebilir.
+    // Ancak basit ramfs yapısında sadece node'u serbest bırakıyoruz.
+    
+    // 2. Node'u serbest bırak
+    g_nodes[idx].used = 0;
+    g_nodes[idx].path[0] = '\0';
+    g_nodes[idx].size = 0;
+    g_nodes[idx].off = 0;
+    g_nodes[idx].cap = 0;
+
+    // Not: Havuzdaki (g_pool) veriyi gerçekten silmiyoruz (memory leak),
+    // ama node silindiği için artık erişilemez olur. 
+    return 1;
+}
+
+// ramfs_rename: Dosya veya dizinin yolunu/ismini değiştirir
+int ramfs_rename(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return 0;
+
+    // 1. Eski isimle dosyayı bul
+    int idx = find_node(old_path);
+    if (idx < 0) return 0; // Dosya yoksa başarısız
+
+    // 2. Yeni isim zaten kullanımda mı?
+    if (find_node(new_path) >= 0) return 0; // Hedef isimde zaten bir dosya var
+
+    // 3. Node içindeki path alanını güncelle
+    // strlcpy0 fonksiyonun zaten yukarıda mevcut, onu kullanıyoruz.
+    strlcpy0(g_nodes[idx].path, new_path, RAMFS_PATH_MAX);
+
+    return 1;
+}

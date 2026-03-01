@@ -27,8 +27,8 @@ void cmd_sysinfo(int argc, char** argv) {
     (void)argv;
 
     // Başlık ve Sürüm Bilgisi
-    printk("KuvixOS V2 (Development Build)\n");
-    printk("------------------------------\n");
+    commands_puts("KuvixOS V2 (Development Build)\n");
+    commands_puts("------------------------------\n");
 
     // CPU Vendor String (Leaf 0) okuma
     uint32_t eax, ebx, ecx, edx;
@@ -53,17 +53,17 @@ void cmd_sysinfo(int argc, char** argv) {
     vendor[12] = '\0';
 
     // printk ile formatlı yazdırma
-    printk("CPU Vendor : %s\n", vendor);
-    printk("CPU Mode   : 32-bit (Protected Mode)\n");
+    commands_printf("CPU Vendor : %s\n", vendor);
+    commands_puts("CPU Mode   : 32-bit (Protected Mode)\n");
 
     // Grafik çözünürlük bilgilerini çek (fb.c/gfx.c içinde tanımlıdır)
     uint32_t width = fb_get_width();
     uint32_t height = fb_get_height();
-    printk("Display    : %ux%u (LFB)\n", width, height);
+    commands_printf("Display    : %ux%u (LFB)\n", width, height);
 
     // Zamanlayıcı bilgisi (time.c içinden)
     extern uint32_t g_ticks_ms;
-    printk("Kernel Ticks: %u ms\n", g_ticks_ms);
+    commands_printf("Kernel Ticks: %u ms\n", g_ticks_ms);
 }
 
 REGISTER_COMMAND(sysinfo, cmd_sysinfo, "Sistem ve donanım bilgilerini gösterir");

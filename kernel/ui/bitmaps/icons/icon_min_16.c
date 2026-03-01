@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <kernel/drivers/video/fb.h>
-#include "icon_min_16.h"
+#include <ui/bitmaps/icons/icon_min_16.h>
 
 static const uint8_t min_bitmap[ICON_MIN_H][ICON_MIN_W] = {
     {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},

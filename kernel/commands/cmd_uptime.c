@@ -44,9 +44,9 @@ void cmd_uptime(int argc, char** argv) {
     // ucuncu -> 10 ...
     u32_to_dec(fake_uptime_seconds, buf);
 
-    printk("Uptime: ");
-    printk(buf);
-    printk(" seconds (fake)\n");
+    commands_puts("Uptime: ");
+    commands_printf(buf);
+    commands_puts(" seconds (fake)\n");
 
     fake_uptime_seconds += 5;
 }

@@ -1,6 +1,7 @@
 #include <kernel/printk.h>
 #include <kernel/vga.h>
 #include <kernel/serial.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <kernel/drivers/video/fb_console.h>
@@ -44,6 +45,21 @@ static void print_int(int value, int base) {
 
     while (--i >= 0)
         outc(buf[i]);
+}
+
+static void print_uint(unsigned int value, int base) {
+    char buf[32];
+    int i = 0;
+    char *digits = "0123456789ABCDEF";
+
+    if (value == 0) { outc('0'); return; }
+
+    while (value > 0) {
+        buf[i++] = digits[value % (unsigned)base];
+        value /= (unsigned)base;
+    }
+
+    while (i--) outc(buf[i]);
 }
 
 void printk(const char* fmt, ...) {
@@ -109,8 +125,7 @@ void printk(const char* fmt, ...) {
             case 's': {
                 char* s = va_arg(args, char*);
                 if (!s) s = "(null)";
-                while (*s)
-                    printk("%c", *s++);
+                while (*s) outc(*s++);
                 break;
             }
 
@@ -120,12 +135,25 @@ void printk(const char* fmt, ...) {
 
             case 'x':
                 outc('0'); outc('x');
-                print_int(va_arg(args, int), 16);
+                print_uint(va_arg(args, unsigned int), 16);
                 break;
 
             case 'c':
                 outc((char)va_arg(args, int));
                 break;
+
+            case 'u': {
+                unsigned int v = va_arg(args, unsigned int);
+                print_uint(v, 10);   // yoksa print_int benzeri unsigned versiyon yaz
+                break;
+            }
+
+            case 'p': {
+                uintptr_t pv = (uintptr_t)va_arg(args, void*);
+                outc('0'); outc('x');
+                print_uint((uint32_t)pv, 16);
+                break;
+            }
 
             case '%':
                 outc('%');

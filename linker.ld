@@ -16,11 +16,10 @@ SECTIONS
     }
 
     /* TEK VE TEMİZ KOMUT BÖLÜMÜ */
-    .cmd_section BLOCK(4K) : ALIGN(4K)
+    .cmd_section : ALIGN(4)
     {
         _cmd_start = .;
         KEEP(*(.cmd_section))
-        KEEP(*(.commands))
         _cmd_end = .;
     }
 

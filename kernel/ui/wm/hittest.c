@@ -1,56 +1,28 @@
-#include <ui/wm/hittest.h>
-#include <ui/window/window.h>
+#include <ui/window/window.h>  // Önce temel tip
+#include <ui/wm/hittest.h>     // Sonra hittest
+#include <ui/window_chrome.h>
 
-/**
- * Pencerenin hangi bölgesine tıklandığını tespit eder.
- */
-wm_hittest_t ui_chrome_hittest(ui_window_t* win, int mx, int my) {
+wm_hittest_t ui_chrome_hittest(const ui_window_t* win, int mx, int my) {
     if (!win) return HT_NONE;
+    
+    ui_chrome_layout_t L = ui_chrome_layout(win);
 
-    int border = 5; // Kenarları yakalamak için hassasiyet payı
+    if (mx < win->x || mx >= win->x + win->w || my < win->y || my >= win->y + win->h)
+        return HT_NONE;
 
-    // 1. KÖŞELER (Önce köşeleri kontrol etmeliyiz)
-    // Sol Üst
-    if (mx >= win->x && mx <= win->x + border && my >= win->y && my <= win->y + border)
-        return HT_RESIZE_TOP_LEFT;
-    // Sağ Üst
-    if (mx >= win->x + win->w - border && mx <= win->x + win->w && my >= win->y && my <= win->y + border)
-        return HT_RESIZE_TOP_RIGHT;
-    // Sol Alt
-    if (mx >= win->x && mx <= win->x + border && my >= win->y + win->h - border && my <= win->y + win->h)
-        return HT_RESIZE_BOTTOM_LEFT;
-    // Sağ Alt (Senin orijinal alanın: 15px biraz daha geniş bırakılmış, kalsın)
-    if (mx >= (win->x + win->w - 15) && mx <= (win->x + win->w) &&
-        my >= (win->y + win->h - 15) && my <= (win->y + win->h)) {
-        return HT_RESIZE_RIGHT_BOTTOM; 
-    }
-
-    // 2. KENARLAR
-    if (mx >= win->x && mx <= win->x + border && my >= win->y && my <= win->y + win->h)
-        return HT_RESIZE_LEFT;
-    if (mx >= win->x + win->w - border && mx <= win->x + win->w && my >= win->y && my <= win->y + win->h)
-        return HT_RESIZE_RIGHT;
-    if (my >= win->y && my <= win->y + border && mx >= win->x && mx <= win->x + win->w)
-        return HT_RESIZE_TOP;
-    if (my >= win->y + win->h - border && my <= win->y + win->h && mx >= win->x && mx <= win->x + win->w)
-        return HT_RESIZE_BOTTOM;
-
-    // 3. BUTONLAR VE BAŞLIK (Senin orijinal kodun)
-    if (mx >= (win->x + win->w - 24) && mx <= (win->x + win->w - 4) &&
-        my >= (win->y + 4) && my <= (win->y + 20)) {
+    if (mx >= L.btn_close_x && mx < L.btn_close_x + L.btn_size && my >= L.btn_y && my < L.btn_y + L.btn_size)
         return HT_BTN_CLOSE;
-    }
+    
+    if (mx >= L.btn_max_x && mx < L.btn_max_x + L.btn_size && my >= L.btn_y && my < L.btn_y + L.btn_size)
+        return HT_BTN_MAX;
+        
+    if (mx >= L.btn_min_x && mx < L.btn_min_x + L.btn_size && my >= L.btn_y && my < L.btn_y + L.btn_size)
+        return HT_BTN_MIN;
 
-    if (mx >= win->x && mx <= (win->x + win->w) &&
-        my >= win->y && my <= (win->y + 24)) {
-        return HT_TITLE;
-    }
+    if (my < win->y + L.title_h) return HT_TITLE;
 
-    // 4. İÇERİK
-    if (mx >= win->x && mx <= (win->x + win->w) &&
-        my >= win->y && my <= (win->y + win->h)) {
-        return HT_CLIENT;
-    }
+    if (mx >= win->x + win->w - L.grip && my >= win->y + win->h - L.grip) 
+        return HT_RESIZE_RIGHT_BOTTOM;
 
-    return HT_NONE;
+    return HT_CLIENT;
 }

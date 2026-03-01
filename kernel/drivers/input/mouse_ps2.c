@@ -1,26 +1,33 @@
+// kernel/drivers/input/mouse_ps2.c
 #include <kernel/drivers/input/mouse_ps2.h>
 #include <arch/x86/io.h>
 #include <stdint.h>
 #include <ui/wm.h>
 
-// Eğer yoksa, dosyanın en üstüne (include'lardan sonra) ekle:
-int mouse_x = 400; // Ekran genişliğine göre (örn: 1024 / 2)
-int mouse_y = 300; // Ekran yüksekliğine göre (örn: 768 / 2)
+// Telemetri (debug_screen'den okunacak)
+volatile int32_t g_mouse_last_dx = 0;
+volatile int32_t g_mouse_last_dy = 0;
+volatile int32_t g_mouse_last_wheel = 0;
+volatile uint32_t g_mouse_irq_count = 0;
+
+// Eski global koordinatlar
+int mouse_x = 400;
+int mouse_y = 300;
 
 static int ps2_wait_write(void) {
     uint32_t timeout = 100000;
     while (timeout--) {
-        if (!(inb(0x64) & 0x02)) return 1; // Yazmaya hazır
+        if (!(inb(0x64) & 0x02)) return 1;
     }
-    return 0; // Zaman aşımı
+    return 0;
 }
 
 static int ps2_wait_read(void) {
     uint32_t timeout = 100000;
     while (timeout--) {
-        if (inb(0x64) & 0x01) return 1; // Okumaya hazır
+        if (inb(0x64) & 0x01) return 1;
     }
-    return 0; // Zaman aşımı
+    return 0;
 }
 
 static int sign_extend_8(uint8_t v, int sign_bit_set) {
@@ -29,139 +36,68 @@ static int sign_extend_8(uint8_t v, int sign_bit_set) {
 }
 
 static void ps2_mouse_write(uint8_t data) {
-    // Fareye veri göndermek için önce 0x64 portuna 0xD4 yazılır
-    // Bu, klavye denetleyicisine "sonraki veriyi fareye (AUX) ilet" der.
     ps2_wait_write();
     outb(0x64, 0xD4);
-    
-    // Ardından asıl veri 0x60 portuna yazılır
     ps2_wait_write();
     outb(0x60, data);
 }
 
-void ps2_mouse_update(void) {
-    int dx, dy;
-    uint8_t buttons;
-    static uint8_t last_buttons = 0;
-
-    while (ps2_mouse_pop(&dx, &dy, &buttons)) {
-        mouse_x += dx;
-        mouse_y += dy;
-
-        // Ekran sınırları (KuvixOS çözünürlüğüne göre ayarla)
-        if (mouse_x < 0) mouse_x = 0;
-        if (mouse_y < 0) mouse_y = 0;
-        if (mouse_x > 1023) mouse_x = 1023; // Örnek 1024x768
-        if (mouse_y > 767) mouse_y = 767;
-
-        // Window Manager'a hareketi bildir
-        wm_handle_mouse_move(mouse_x, mouse_y);
-
-        uint8_t pressed = buttons & ~last_buttons;
-        uint8_t released = last_buttons & ~buttons;
-
-        if (pressed || released) {
-            wm_handle_mouse(mouse_x, mouse_y, pressed, released, buttons);
-        }
-
-        last_buttons = buttons;
-    }
+static uint8_t ps2_mouse_read_byte(void) {
+    ps2_wait_read();
+    return inb(0x60);
 }
 
-void ps2_mouse_init(void) {
-    // A. Önce her şeyi bir temizle (Flush)
-    for(int i = 0; i < 10; i++) {
-        if(inb(0x64) & 0x01) inb(0x60);
-    }
-
-    // B. Fareyi Devre Dışı Bırak (Güvenli başlangıç için)
-    ps2_wait_write();
-    outb(0x64, 0xA7); 
-
-    // C. Fareyi Tekrar Aktif Et
-    ps2_wait_write();
-    outb(0x64, 0xA8);
-
-    // D. Komut Byte'ını Ayarla
-    ps2_wait_write();
-    outb(0x64, 0x20); // Oku
-    ps2_wait_read();
-    uint8_t status = inb(0x60);
-    status |= 0x02;   // IRQ12 aktif
-    status &= ~0x20;  // Mouse disable bitini kaldır
-
-    ps2_wait_write();
-    outb(0x64, 0x60); // Yaz
-    ps2_wait_write();
-    outb(0x60, status);
-
-    // E. Fareye "Varsayılanları Yükle" de (ACK beklemeli)
-    ps2_mouse_write(0xF6);
-    ps2_wait_read();
-    inb(0x60); // ACK oku
-
-    // F. Veri Raporlamayı Aç
-    ps2_mouse_write(0xF4);
-    ps2_wait_read();
-    inb(0x60); // ACK oku
-    
-    // G. Son bir temizlik
-    while(inb(0x64) & 0x01) inb(0x60);
+static uint8_t ps2_mouse_read_ack(void) {
+    // Mouse komutlarına ACK genelde 0xFA döner.
+    // Çok sıkı kontrol etmek istemezsen direkt oku geç.
+    return ps2_mouse_read_byte();
 }
 
-// 3-byte packet assembly
-static uint8_t packet[3];
+static void ps2_mouse_set_sample_rate(uint8_t rate) {
+    ps2_mouse_write(0xF3);      // Set Sample Rate
+    (void)ps2_mouse_read_ack(); // ACK
+    ps2_mouse_write(rate);
+    (void)ps2_mouse_read_ack(); // ACK
+}
+
+static uint8_t ps2_mouse_get_device_id(void) {
+    ps2_mouse_write(0xF2);      // Get Device ID
+    (void)ps2_mouse_read_ack(); // ACK
+    return ps2_mouse_read_byte(); // ID
+}
+
+// ------------------------------------------------------------
+// Packet assembly (3-byte default, 4-byte if wheel enabled)
+// ------------------------------------------------------------
+static uint8_t packet[4];
 static int packet_index = 0;
+static int packet_size  = 3; // 3 = standart, 4 = wheel (IntelliMouse)
 
-// küçük event kuyruğu
+// Event queue
 typedef struct {
     int dx, dy;
-    uint8_t buttons;
+    int wheel;          // 0 normally, +/- on wheel
+    uint8_t buttons;    // bit0 L, bit1 R, bit2 M
 } mouse_ev_t;
 
 #define MOUSE_QSIZE 32
 static mouse_ev_t q[MOUSE_QSIZE];
 static int q_r = 0, q_w = 0;
 
-static void q_push(int dx, int dy, uint8_t buttons) {
+static void q_push(int dx, int dy, int wheel, uint8_t buttons) {
     int next = (q_w + 1) % MOUSE_QSIZE;
     if (next == q_r) {
-        // dolu -> en eskiyi ez (istersen drop da edebilirsin)
+        // dolu -> en eskiyi ez
         q_r = (q_r + 1) % MOUSE_QSIZE;
     }
     q[q_w].dx = dx;
     q[q_w].dy = dy;
+    q[q_w].wheel = wheel;
     q[q_w].buttons = buttons;
     q_w = next;
 }
 
-// drivers/input/mouse_ps2.c
-
-void ps2_mouse_handle_byte(uint8_t data)
-{
-    if (packet_index == 0) {
-        if ((data & 0x08) == 0) return;
-        if (data & 0xC0) return;
-    }
-
-    packet[packet_index++] = data;
-    if (packet_index < 3) return;
-
-    packet_index = 0;
-
-    uint8_t b = packet[0];
-    int dx = sign_extend_8(packet[1], (b & 0x10) != 0);
-    int dy = sign_extend_8(packet[2], (b & 0x20) != 0);
-    dy = -dy; 
-
-    // --- DEBUG: Seri Porta Yaz (Loglar için) ---
-    // printk("Mouse Raw: dx=%d, dy=%d, btn=%d\n", dx, dy, b & 0x07);
-
-    q_push(dx, dy, b & 0x07);
-}
-
-int ps2_mouse_pop(int* dx, int* dy, uint8_t* buttons)
-{
+int ps2_mouse_pop(int* dx, int* dy, int* wheel, uint8_t* buttons) {
     if (q_r == q_w) return 0;
 
     mouse_ev_t ev = q[q_r];
@@ -169,44 +105,179 @@ int ps2_mouse_pop(int* dx, int* dy, uint8_t* buttons)
 
     if (dx) *dx = ev.dx;
     if (dy) *dy = ev.dy;
+    if (wheel) *wheel = ev.wheel;
     if (buttons) *buttons = ev.buttons;
     return 1;
 }
 
+// ------------------------------------------------------------
+// Init
+// ------------------------------------------------------------
+void ps2_mouse_init(void) {
+    // A. Flush
+    for (int i = 0; i < 32; i++) {
+        if (inb(0x64) & 0x01) (void)inb(0x60);
+    }
+
+    // B. AUX disable
+    ps2_wait_write();
+    outb(0x64, 0xA7);
+
+    // C. AUX enable
+    ps2_wait_write();
+    outb(0x64, 0xA8);
+
+    // D. Command byte ayarla
+    ps2_wait_write();
+    outb(0x64, 0x20);
+    ps2_wait_read();
+    uint8_t status = inb(0x60);
+
+    status |= 0x02;   // IRQ12 enable
+    status &= ~0x20;  // Mouse disable bitini kaldır
+
+    ps2_wait_write();
+    outb(0x64, 0x60);
+    ps2_wait_write();
+    outb(0x60, status);
+
+    // E. defaults
+    ps2_mouse_write(0xF6);
+    (void)ps2_mouse_read_ack(); // ACK
+
+    // --- Wheel enable (IntelliMouse) ---
+    // Set sample rate sequence: 200, 100, 80 then Get ID
+    ps2_mouse_set_sample_rate(200);
+    ps2_mouse_set_sample_rate(100);
+    ps2_mouse_set_sample_rate(80);
+
+    uint8_t id = ps2_mouse_get_device_id();
+    packet_size = (id == 3) ? 4 : 3;
+
+    // F. enable reporting
+    ps2_mouse_write(0xF4);
+    (void)ps2_mouse_read_ack(); // ACK
+
+    // G. Flush
+    while (inb(0x64) & 0x01) (void)inb(0x60);
+
+    // reset assembly
+    packet_index = 0;
+    g_mouse_last_wheel = 0;
+}
+
+// ------------------------------------------------------------
+// Byte handler (called from IRQ / poll)
+// ------------------------------------------------------------
+void ps2_mouse_handle_byte(uint8_t data) {
+    if (packet_index == 0) {
+        // sync bit (bit3) şart
+        if ((data & 0x08) == 0) return;
+        // overflow bayrakları set ise discard
+        if (data & 0xC0) return;
+    }
+
+    packet[packet_index++] = data;
+    if (packet_index < packet_size) return;
+
+    packet_index = 0;
+
+    uint8_t b = packet[0];
+
+    int dx = sign_extend_8(packet[1], (b & 0x10) != 0);
+    int dy = sign_extend_8(packet[2], (b & 0x20) != 0);
+    dy = -dy;
+
+    int wheel = 0;
+    if (packet_size == 4) {
+        wheel = (int)(int8_t)packet[3]; // genelde -1/+1
+        g_mouse_last_wheel = wheel;
+    } else {
+        g_mouse_last_wheel = 0;
+    }
+
+    // Telemetri
+    g_mouse_last_dx = dx;
+    g_mouse_last_dy = dy;
+
+    // buttons: low 3 bits
+    q_push(dx, dy, wheel, (uint8_t)(b & 0x07));
+}
+
+// ------------------------------------------------------------
+// Update -> WM
+// ------------------------------------------------------------
+void ps2_mouse_update(void) {
+    int dx, dy, wheel;
+    uint8_t buttons;
+    static uint8_t last_buttons = 0;
+
+    while (ps2_mouse_pop(&dx, &dy, &wheel, &buttons)) {
+        mouse_x += dx;
+        mouse_y += dy;
+
+        if (mouse_x < 0) mouse_x = 0;
+        if (mouse_y < 0) mouse_y = 0;
+        if (mouse_x > 1023) mouse_x = 1023;
+        if (mouse_y > 767)  mouse_y = 767;
+
+#ifndef DEBUG_SELFTEST
+        wm_handle_mouse_move(mouse_x, mouse_y);
+
+        uint8_t pressed  = (uint8_t)(buttons & ~last_buttons);
+        uint8_t released = (uint8_t)(last_buttons & ~buttons);
+
+        if (pressed || released) {
+            wm_handle_mouse(mouse_x, mouse_y, pressed, released, buttons);
+        }
+
+        // WHEEL event:
+        // WM tarafına wheel route etmek için 2 seçeneğin var:
+        // 1) wm_handle_mouse_wheel(...) diye yeni fonksiyon ekle
+        // 2) wm_handle_mouse(...) imzasını genişlet (e1/e2 gibi)
+        //
+        // Şimdilik sadece telemetri olarak duruyor.
+        // Eğer WM'e eklemek istersen örnek:
+        // if (wheel != 0) wm_handle_mouse_wheel(mouse_x, mouse_y, wheel, buttons);
+#endif
+
+        last_buttons = buttons;
+    }
+}
+
+// ------------------------------------------------------------
+// Poll (test mode)
+// ------------------------------------------------------------
 void ps2_mouse_poll(void) {
-    // 0x64 portu durum portudur. Bit 0 (0x01) veri olduğunu gösterir.
     while (inb(0x64) & 0x01) {
         uint8_t status = inb(0x64);
-        uint8_t data = inb(0x60);
-        
-        // Eğer status bit 5 (0x20) set edilmişse bu veri MOUSE'a aittir
+        uint8_t data   = inb(0x60);
         if (status & 0x20) {
             ps2_mouse_handle_byte(data);
+        } else {
+            // klavye byte'ı -> drop
         }
     }
 }
 
-// Bunu time.c veya başka bir yerden silip buraya taşıyoruz
+// ------------------------------------------------------------
+// IRQ12 handler
+// ------------------------------------------------------------
 void mouse_handler(void) {
-    uint8_t status = inb(0x64);
+    g_mouse_irq_count++;
 
-    // 1. Kural: Veri var mı? (Bit 0)
-    // 2. Kural: Veri fareye (AUX) mi ait? (Bit 5)
-    while (status & 0x01) {
+    while (inb(0x64) & 0x01) {
+        uint8_t status = inb(0x64);
+        uint8_t data   = inb(0x60);
+
         if (status & 0x20) {
-            // Bu gerçek bir fare verisidir
-            uint8_t data = inb(0x60);
             ps2_mouse_handle_byte(data);
         } else {
-            // Bu klavye verisidir! 
-            // BURASI ÇOK KRİTİK: Eğer burada okuma yaparsak klavye çalışır ama fare bozulmaz.
-            // Ancak en doğrusu klavye sürücüsünün bunu okumasıdır.
-            // Şimdilik sadece fareyi korumak için:
-            break; 
+            // klavye byte'ı -> drop
         }
-        status = inb(0x64);
     }
 
+    // EOI
     outb(0xA0, 0x20);
     outb(0x20, 0x20);
 }

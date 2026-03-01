@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <kernel/drivers/video/fb.h>  // sadece include path bozulmasın diye, şart değil
-#include "icon_close_16.h"
+#include <ui/bitmaps/icons/icon_close_16.h>
 
 // 0 = transparent, 1 = red, 2 = black (istersen değiştir)
 static const uint8_t close_bitmap[ICON_CLOSE_H][ICON_CLOSE_W] = {

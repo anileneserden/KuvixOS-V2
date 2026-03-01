@@ -44,9 +44,89 @@ void* memset(void* s, int c, size_t n) {
     return s;
 }
 
+void* memmove(void* dest, const void* src, size_t n)
+{
+    if (dest == src || n == 0)
+        return dest;
+
+    unsigned char* d = (unsigned char*)dest;
+    const unsigned char* s = (const unsigned char*)src;
+
+    // Eğer dest < src ise normal ileri kopyalayabiliriz
+    if (d < s) {
+        for (size_t i = 0; i < n; i++)
+            d[i] = s[i];
+    }
+    else {
+        // Overlap olabilir → sondan başa kopyala
+        for (size_t i = n; i > 0; i--)
+            d[i - 1] = s[i - 1];
+    }
+
+    return dest;
+}
+
 void* memcpy(void* dest, const void* src, size_t n) {
     unsigned char* d = (unsigned char*)dest;
     const unsigned char* s = (const unsigned char*)src;
     while (n--) *d++ = *s++;
     return dest;
+}
+
+// Belirli bir karakterin dizideki ilk konumunu bulur
+char* strchr(const char* s, int c) {
+    while (*s != (char)c) {
+        if (!*s++) return 0;
+    }
+    return (char*)s;
+}
+
+// Belirli bir karakterin dizideki SON konumunu bulur (Dosya yolları için çok kritiktir)
+char* strrchr(const char* s, int c) {
+    char* last = 0;
+    do {
+        if (*s == (char)c) last = (char*)s;
+    } while (*s++);
+    return last;
+}
+
+char* strcat(char* dest, const char* src) {
+    char* rd = dest;
+    // Önce dest dizisinin sonuna (null karakterine) kadar git
+    while (*rd) rd++;
+    // Sonra src'yi oradan itibaren kopyalamaya başla
+    while ((*rd++ = *src++));
+    return dest;
+}
+
+char* strncat(char* dest, const char* src, size_t n) {
+    char* d = dest;
+
+    // dest'in sonuna git
+    while (*d) d++;
+
+    // src'den en fazla n karakter ekle
+    while (*src && n--) {
+        *d++ = *src++;
+    }
+
+    // null terminator koy
+    *d = '\0';
+
+    return dest;
+}
+
+// Bir string içinde başka bir string arar
+char* strstr(const char* haystack, const char* needle) {
+    if (!*needle) return (char*)haystack;
+    for (; *haystack; haystack++) {
+        if (*haystack == *needle) {
+            const char *h = haystack, *n = needle;
+            while (*h && *n && *h == *n) {
+                h++; n++;
+            }
+            if (!*n) return (char*)haystack;
+        }
+    }
+    return 0;
 }

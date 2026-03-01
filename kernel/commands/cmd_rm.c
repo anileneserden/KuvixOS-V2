@@ -4,13 +4,13 @@
 
 void cmd_rm(int argc, char** argv) {
     if (argc < 2) {
-        printk("Kullanım: rm <dosya/dizin>\n");
+        commands_puts("Kullanım: rm <dosya/dizin>\n");
         return;
     }
 
     // vfs_remove fonksiyonunun var olduğunu varsayıyoruz
     // Eğer yoksa sadece printk mesajı bırakabilirsin
-    printk("Siliniyor: %s...\n", argv[1]);
+    commands_printf("Siliniyor: %s...\n", argv[1]);
     // vfs_remove(argv[1]); 
 }
 

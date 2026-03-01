@@ -1,26 +1,43 @@
+// include/kernel/drivers/input/keyboard.h
 #pragma once
 #include <stdint.h>
 
-// Özel event formatı: 0xFF00 | KEY
-enum {
-    KBD_NONE = 0,
-    KBD_F1 = 0x01,
-    KBD_F2 = 0x02,
-    KBD_F3 = 0x03,
-    KBD_F4 = 0x04,
-    KBD_F5 = 0x05,
-    KBD_F6 = 0x06,
-};
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Mod bits: bit0=shift, bit1=ctrl, bit2=alt
+uint8_t  kbd_mods(void);
+
+int      kbd_is_ctrl_pressed(void);
+int      kbd_is_shift_pressed(void);
+
+int      kbd_is_super_pressed(void);
+int      kbd_is_altgr_pressed(void);
 
 void     kbd_init(void);
-void     kbd_set_layout_trq(void);   // şimdilik TRQ
-void     kbd_handle_byte(uint8_t sc);
-uint16_t kbd_pop_event(void);
-int      kbd_get_key(void);          // 0 yoksa, aksi halde char veya 0xFF00|KBD_Fn
-void     kbd_debug_set(int enabled);
-int      kbd_debug_get(void);
+void     kbd_poll(void);
+void     kbd_handler(void);
 
-// Debug (istersen kullan)
-extern volatile uint8_t g_kbd_last_sc;
-extern volatile uint8_t g_kbd_last_is_break;
-extern volatile uint8_t g_kbd_last_e0;
+/*
+ * Raw Set1 event:
+ *  - Normal tuşlar: 0x00..0xFF (make/break)
+ *  - E0 prefix tuşlar: 0xE000 | sc (ör: LeftWin make=0xE05B, break=0xE0DB)
+ */
+uint16_t kbd_pop_event(void);
+
+int      kbd_has_character(void);
+
+/*
+ * Layout + shift ile ASCII üretir.
+ * Break event'leri ve E0 event'leri yok sayar.
+ */
+char     kbd_get_char(void);
+
+// Eski kodlar kırılmasın diye geçici uyumluluk
+// (Sadece normal Set1 make scancode için; E0 ile çalışmaz)
+char     kbd_scancode_to_ascii(uint8_t sc);
+
+#ifdef __cplusplus
+}
+#endif
