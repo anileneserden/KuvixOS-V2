@@ -41,6 +41,9 @@
 
 #include <kernel/memory/kmalloc.h>
 
+#include <ui/desktop_icons/folder_icon.h>
+
+
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -311,6 +314,69 @@ static void kbi_write_demo_terminal_icon(void) {
 
     vfs_write_all(path, buf, cap);
     kfree(buf);
+}
+
+static void draw_demo_icon_card(void) {
+    int x = 80;
+    int y = 90;
+    int w = 72;
+    int h = 72;
+    int r = 12;
+
+    // shadow
+    gfx_fill_round_rect(x + 2, y + 2, w, h, r, 0x101010);
+
+    // mavi kart
+    gfx_fill_round_rect(x, y, w, h, r, 0x0078D7);
+
+    // --- ikon üstte (2x scale) ---
+    int scale = 2;
+    int base_icon_size = 20;
+    int icon_w = base_icon_size * scale;
+    int icon_h = base_icon_size * scale;
+
+    int pad_top = 8;
+
+    int ix = x + (w - icon_w) / 2;
+    int iy = y + pad_top;
+
+    for (int rr = 0; rr < base_icon_size; rr++) {
+        for (int cc = 0; cc < base_icon_size; cc++) {
+
+            uint8_t p = folder_icon[rr][cc];
+
+            uint32_t col = 0;
+            if (p == 1)      col = 0x000000;
+            else if (p == 2) col = 0xFFFFFF;
+            else if (p == 3) col = 0xE6E6E6;
+            else if (p == 4) col = 0xFFFFFF;
+
+            if (p != 0) {
+                // 2x2 büyütme
+                for (int sy = 0; sy < scale; sy++) {
+                    for (int sx = 0; sx < scale; sx++) {
+                        gfx_putpixel(
+                            ix + cc * scale + sx,
+                            iy + rr * scale + sy,
+                            col
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // --- yazı kartın içinde altta ---
+    const char* label = "Demo";
+    int label_len = (int)strlen(label);
+    int label_w = label_len * 8;
+    int label_h = 16;
+    int pad_bottom = 6;
+
+    int text_x = x + (w - label_w) / 2;
+    int text_y = y + h - label_h - pad_bottom;
+
+    gfx_draw_text_utf8(text_x, text_y, 0x00FFFFFF, label);
 }
 
 // ============================================================
@@ -587,6 +653,7 @@ void ui_desktop_tick(void) {
     static bool prev_selecting = false;
     static int prev_sel_start_x = 0, prev_sel_start_y = 0;
     static int prev_sel_end_x = 0, prev_sel_end_y = 0;
+    static int prev_hover_hit = -2;
 
     bool need_full_present = false;
 
@@ -768,7 +835,12 @@ void ui_desktop_tick(void) {
 
                     uint32_t now = g_ticks_ms;
                     if (g_last_click_hit == hit && (now - g_last_click_ms) < DBLCLICK_MS) {
+
                         desktop_icons_process_click(hit);
+
+                        // ✅ uygulama açıldıktan sonra seçimi kapat
+                        desktop_icons_deselect_all();
+                        desktop_invalidate_full();   // (opsiyonel ama iyi: hemen refresh)
 
                         g_last_click_hit = -1;
                         g_last_click_ms = 0;
@@ -800,7 +872,7 @@ void ui_desktop_tick(void) {
                     if ((ddx * ddx + ddy * ddy) >= (DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX)) {
                         need_full_present = true;
                         g_dragging = 1;
-                        desktop_icons_set_dragging(g_down_hit, true);
+                        desktop_icons_set_dragging(g_down_hit, true, mouse_x, mouse_y);
                         is_selecting = false;
                     }
                 }
@@ -840,6 +912,12 @@ void ui_desktop_tick(void) {
         g_last_btn = btn;
     }
 
+    int now_hover = desktop_icons_get_hit(mouse_x, mouse_y);
+    if (now_hover != prev_hover_hit) {
+        need_full_present = true;
+        prev_hover_hit = now_hover;
+    }
+
     // ---------- Render ----------
     // ✅ Klavye/hotkey ile UI değiştiyse bu frame full present zorla
     if (g_force_full_present) {
@@ -856,6 +934,8 @@ void ui_desktop_tick(void) {
 
     fb_clear(ui_get_desktop_bg());
     desktop_icons_draw_all();
+    // draw_demo_icon_card();
+
     topbar_draw();
 
     if (is_selecting) {
