@@ -78,7 +78,6 @@ static void render_node(html_render_ctx_t* ctx, const html_node_t* n, bool in_li
         return;
     }
 
-    // element
     bool block_start = false;
     bool block_end = false;
 
@@ -114,6 +113,18 @@ static void render_node(html_render_ctx_t* ctx, const html_node_t* n, bool in_li
 void html_render_doc(const html_doc_t* doc, int x, int y, int w){
     if (!doc || !doc->root) return;
 
+    const html_node_t* start = doc->root;
+
+    if (doc->has_body && doc->body) {
+        start = doc->body;
+    }
+
+    html_render_node(start, x, y, w);
+}
+
+void html_render_node(const html_node_t* node, int x, int y, int w){
+    if (!node) return;
+
     html_render_ctx_t ctx;
     ctx.start_x = x;
     ctx.x = x;
@@ -122,5 +133,5 @@ void html_render_doc(const html_doc_t* doc, int x, int y, int w){
     ctx.color_text = 0xFFFFFF;
     ctx.color_link = 0x33A0FF;
 
-    render_node(&ctx, doc->root, false);
+    render_node(&ctx, node, false);
 }

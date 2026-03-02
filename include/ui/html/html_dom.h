@@ -28,6 +28,12 @@ typedef struct html_node {
 
 typedef struct {
     html_node_t* root;
+
+    html_node_t* body;
+    bool has_body;
+
+    const char* title;
+    uint16_t title_len;
 } html_doc_t;
 
 html_node_t* html_new_element(const char* tag, uint16_t tag_len);

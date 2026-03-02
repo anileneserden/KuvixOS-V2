@@ -1,5 +1,3 @@
-// kernel/ui/apps/kuvix_browser.c
-
 #include <ui/apps/kuvix_browser.h>
 
 #include <app/app.h>
@@ -325,7 +323,7 @@ static void draw_statusbar(rect_t r, const char* status) {
 }
 
 // HTML content draw (local/hosts)
-static void draw_content_html(rect_t r, const char* url, int scroll_y) {
+static void draw_content_html(kuvix_browser_t* b, rect_t r, const char* url, int scroll_y) {
     gfx_fill_rect(r.x, r.y, r.w, r.h, 0x1A1A1A);
 
     char path[VFS_PATH_MAX];
@@ -379,6 +377,14 @@ static void draw_content_html(rect_t r, const char* url, int scroll_y) {
         gfx_draw_text_utf8(r.x + 14, r.y + 14, 0xFF4444, "HTML parse failed");
         vfs_free_alloc(buf);
         return;
+    }
+
+    if (doc.title && doc.title_len) {
+        char tbuf[64];
+        int n = (doc.title_len < 63) ? (int)doc.title_len : 63;
+        memcpy(tbuf, doc.title, n);
+        tbuf[n] = 0;
+        br_set_status(b, tbuf);
     }
 
     int pad = 12;
@@ -467,7 +473,7 @@ static void browser_on_draw(app_t* app) {
 
     rect_t rc = r_content(client.w, client.h);
     // content HER ZAMAN committed url ile çizilir
-    draw_content_html(rc, b->url, b->scroll_y);
+    draw_content_html(b, rc, b->url, b->scroll_y);
 
     rect_t rs = r_status_bar(client.w, client.h);
     draw_statusbar(rs, b->status);
@@ -604,7 +610,6 @@ const app_vtbl_t kuvix_browser_vtbl = {
     .on_mouse   = browser_on_mouse,
     .on_key     = browser_on_key,
     .on_destroy = browser_on_destroy,
-
 #if KBROWSER_ENABLE_TABS
     .tabs_count      = kb_tabs_count,
     .tabs_title      = kb_tabs_title,
