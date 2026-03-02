@@ -4,6 +4,7 @@
 #include <kernel/drivers/video/gfx.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <kernel/printk.h>
 
 // ------------------------------------------------------------
 // helpers
@@ -230,4 +231,12 @@ void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
 
         gfx_draw_text_utf8(tx, ty, col_title_text, win->title);
     }
+
+    static int once = 0;
+    if (!once) {
+        once = 1;
+        //printk("[WIN] draw w=%d h=%d title_h=%d border=%d\n", win->w, win->h, title_h, border);
+    }
+
+    //printk("[WIN] draw w=%d h=%d title_h=%d border=%d\n", win->w, win->h, title_h, border);
 }

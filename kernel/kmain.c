@@ -126,6 +126,10 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     ui_theme_bootstrap_default();
 
+    const ui_theme_t* th = ui_get_theme();
+    /*printk("[THEME] title_h=%d border_px=%d btn_layout=%d btn_style=%d\n",
+        th->window_title_h, th->window_border_px, th->window_btn_layout, th->window_btn_style);*/
+
     // UI
     ui_session_init();
     ui_session_switch(UI_SESSION_DESKTOP);

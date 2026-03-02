@@ -9,14 +9,12 @@
 typedef struct kef_host {
     char path[256];
 
-    // loaded image base
-    uint8_t* img;
+    int win_id;
 
-    // vtbl kernel tarafında tutulur
+    uint8_t* img;
     kvx_kef_app_t vtbl;
     int vtbl_ready;
 
-    // ✅ Widget state (her pencere için ayrı)
     widget_t widgets[KEF_MAX_WIDGETS];
     int widget_count;
 } kef_host_t;

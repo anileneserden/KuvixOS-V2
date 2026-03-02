@@ -12,6 +12,7 @@ typedef struct kvx_api {
                         const char* text,
                         void (*on_click)(void*),
                         void* user);
+    void (*set_window_size)(int w, int h);
 } kvx_api_t;
 
 typedef struct kvx_kef_app {

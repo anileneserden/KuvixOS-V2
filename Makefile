@@ -160,10 +160,13 @@ KEF_APP_LDFLAGS = -m32 -nostdlib -ffreestanding -fno-pie \
 	-Wl,--emit-relocs \
 	-Wl,--build-id=none
 
-$(KEF_HELLO_ELF): $(KEF_HELLO_DIR)/main.c $(KEF_HELLO_DIR)/link.ld
+$(KEF_HELLO_ELF): $(KEF_HELLO_DIR)/main.c $(KEF_HELLO_DIR)/main.designer.c $(KEF_HELLO_DIR)/kefstring.c $(KEF_HELLO_DIR)/link.ld
 	@mkdir -p $(KEF_HELLO_DIR)
 	$(CC) $(KEF_APP_CFLAGS) -c $(KEF_HELLO_DIR)/main.c -o $(KEF_HELLO_DIR)/main.o
-	$(LD) $(KEF_APP_LDFLAGS) -o $(KEF_HELLO_ELF) $(KEF_HELLO_DIR)/main.o
+	$(CC) $(KEF_APP_CFLAGS) -c $(KEF_HELLO_DIR)/main.designer.c -o $(KEF_HELLO_DIR)/main.designer.o
+	$(CC) $(KEF_APP_CFLAGS) -c $(KEF_HELLO_DIR)/kefstring.c -o $(KEF_HELLO_DIR)/kef_string.o
+	$(LD) $(KEF_APP_LDFLAGS) -o $(KEF_HELLO_ELF) \
+		$(KEF_HELLO_DIR)/main.o $(KEF_HELLO_DIR)/main.designer.o $(KEF_HELLO_DIR)/kef_string.o
 
 $(KEF_HELLO_BIN): $(KEF_HELLO_ELF)
 	objcopy -O binary $(KEF_HELLO_ELF) $(KEF_HELLO_BIN)
@@ -171,6 +174,7 @@ $(KEF_HELLO_BIN): $(KEF_HELLO_ELF)
 $(KEF_HELLO_KEF): FORCE $(KEF_HELLO_BIN) $(KEF_HELLO_ELF) tools/mk_kef.py
 	@mkdir -p $(dir $(KEF_HELLO_KEF))
 	@ENTRY=$$(nm -n $(KEF_HELLO_ELF) | awk '/ _start$$/ {print "0x"$$1; exit}'); \
+	if [ -z "$$ENTRY" ]; then echo "[KEF] ERROR: _start not found in $(KEF_HELLO_ELF)"; exit 1; fi; \
 	echo "[KEF] hello entry = $$ENTRY"; \
 	python3 tools/mk_kef.py $(KEF_HELLO_ELF) $(KEF_HELLO_BIN) $(KEF_HELLO_KEF) $$ENTRY 0
 

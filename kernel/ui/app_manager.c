@@ -181,6 +181,7 @@ app_t* appmgr_start_kef(const char* path) {
 
     int win_id = wm_add_window(200, 140, 420, 240, "KEF App", a);
     a->win_id = win_id;
+    h->win_id = win_id;
 
     if (a->v && a->v->on_create) a->v->on_create(a);
 

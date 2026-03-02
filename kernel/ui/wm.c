@@ -7,6 +7,7 @@
 #include <ui/window/window.h>
 #include <ui/wm/hittest.h>
 #include <ui/window_chrome.h>
+#include <ui/theme.h>              // ✅ eklendi (ui_get_theme)
 
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
@@ -16,6 +17,8 @@
 
 #include <ui/dialogs/save_dialog.h>
 #include <ui/desktop.h>
+
+#include <kernel/printk.h>
 
 #define WM_MAX_WINDOWS 20
 
@@ -195,6 +198,50 @@ int wm_add_window(int x, int y, int w, int h, const char* title, app_t* owner) {
     return id;
 }
 
+static ui_rect_t rect_union(ui_rect_t a, ui_rect_t b) {
+    int x1 = (a.x < b.x) ? a.x : b.x;
+    int y1 = (a.y < b.y) ? a.y : b.y;
+    int x2 = ((a.x + a.w) > (b.x + b.w)) ? (a.x + a.w) : (b.x + b.w);
+    int y2 = ((a.y + a.h) > (b.y + b.h)) ? (a.y + a.h) : (b.y + b.h);
+    ui_rect_t r = { x1, y1, x2 - x1, y2 - y1 };
+    return r;
+}
+
+void wm_set_window_size(int win_id, int w, int h) {
+    if (!is_alive_id(win_id)) return;
+
+    if (w < 80) w = 80;
+    if (h < 60) h = 60;
+
+    ui_window_t* win = &g_wins[win_id].win;
+    if (win->state != WIN_NORMAL) return;
+
+    // OLD outer
+    ui_rect_t oldr = { win->x, win->y, win->w, win->h };
+
+    // apply new size
+    win->w = w;
+    win->h = h;
+    win->prev_w = w;
+    win->prev_h = h;
+
+    // NEW outer
+    ui_rect_t newr = { win->x, win->y, win->w, win->h };
+
+    ui_rect_t dirty = rect_union(oldr, newr);
+
+    // Eğer varsa:
+    // desktop_invalidate_rect(dirty.x, dirty.y, dirty.w, dirty.h);
+
+    printk("[WM] set_window_size id=%d -> %dx%d\n", win_id, w, h);
+
+    // Yoksa şimdilik en azından full:
+    desktop_invalidate_full();
+
+    printk("[WM] resize win_id=%d old=%dx%d new=%dx%d dirty=%d,%d %dx%d\n",
+           win_id, oldr.w, oldr.h, newr.w, newr.h, dirty.x, dirty.y, dirty.w, dirty.h);
+}
+
 void wm_close_window(int win_id) {
     if (!is_alive_id(win_id)) return;
 
@@ -206,7 +253,6 @@ void wm_close_window(int win_id) {
     }
 
     // ✅ App cleanup TEK yerde: AppManager
-    // (on_destroy + free + slot boşaltma app side)
     appmgr_on_window_closed(win_id);
 
     // ✅ WM slot boşalt
@@ -286,6 +332,7 @@ void wm_toggle_maximize(int win_id) {
         w->prev_x = w->x; w->prev_y = w->y;
         w->prev_w = w->w; w->prev_h = w->h;
 
+        // NOTE: topbar 24 sabit sende; istersen bunu da theme’den alırsın
         w->x = 0;
         w->y = 24;
         w->w = (int)fb_get_width();
@@ -306,7 +353,7 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
     g_buttons_state = buttons;
     g_mouse_consumed = 0;
 
-    // 1) Modal save dialog (istersen open dialog da ekle)
+    // 1) Modal save dialog
     if (save_dialog_is_active()) {
         save_dialog_handle_mouse(mx, my, (pressed & 0x01));
         if (pressed & 0x01) g_mouse_consumed = 1;
@@ -369,7 +416,7 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
             int cx = mx - cr.x;
             int cy = my - cr.y;
 
-            // ✅ param sıra: pressed, released, buttons
+            // param sıra: pressed, released, buttons
             app->v->on_mouse(app, cx, cy, pressed, released, buttons);
         }
     }
@@ -420,9 +467,8 @@ void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons) {
     g_mouse_x = mx;
     g_mouse_y = my;
 
-    // 1) modal varsa önce ona ver (istersen)
+    // 1) modal varsa önce ona ver
     if (save_dialog_is_active()) {
-        // save dialog wheel desteklemiyorsa direkt return edebilirsin
         return;
     }
 
@@ -436,10 +482,6 @@ void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons) {
 
     // minimized’a wheel verme
     if (g_wins[idx].win.state == WIN_MINIMIZED) return;
-
-    // wheel genelde focus/active window’a gider, ama biz hover+fallback yaptık
-    // eğer hover pencereyi aktifleştirmek istersen:
-    // bring_to_front(idx);
 
     app_t* app = g_wins[idx].owner;
     if (app && app->v && app->v->on_wheel) {
@@ -506,10 +548,25 @@ ui_rect_t wm_get_client_rect(int win_id) {
     if (!is_alive_id(win_id)) return r;
 
     ui_window_t* w = &g_wins[win_id].win;
-    r.x = w->x + 2;
-    r.y = w->y + 24;
-    r.w = w->w - 4;
-    r.h = w->h - 26;
+
+    const ui_theme_t* th = ui_get_theme();
+    int border  = 2;
+    int title_h = 24;
+
+    if (th) {
+        border  = th->window_border_px;
+        title_h = th->window_title_h;
+    }
+    if (border < 1) border = 1;
+    if (title_h < 18) title_h = 18;
+
+    r.x = w->x + border;
+    r.y = w->y + title_h;
+    r.w = w->w - (border * 2);
+    r.h = w->h - title_h - border;
+
+    if (r.w < 0) r.w = 0;
+    if (r.h < 0) r.h = 0;
     return r;
 }
 
@@ -525,7 +582,7 @@ int wm_get_count(void) {
 }
 
 const ui_window_t* wm_get_window_ptr(int idx) {
-    // ⚠️ burada idx "win_id" olarak kullanılıyor
+    // burada idx "win_id" olarak kullanılıyor
     if (!is_alive_id(idx)) return 0;
     return &g_wins[idx].win;
 }

@@ -1,4 +1,6 @@
 #include <ui/apps/kef_host.h>
+#include <ui/window/window.h>
+#include <ui/wm.h>
 
 #include <kernel/printk.h>
 #include <kernel/memory/kmalloc.h>
@@ -33,11 +35,24 @@ static void kef_widgets_draw(kef_host_t* h) {
             if (g_kvx_api.text)
                 g_kvx_api.text(w->x, w->y, 0x000000, w->text);
         } else if (w->type == WIDGET_BUTTON) {
-            if (g_kvx_api.fill_rect)
-                g_kvx_api.fill_rect(w->x, w->y, w->w, w->h, 0xCCCCCC);
+            uint32_t bg = 0xD0D0D0;
+            uint32_t border = 0x808080;
+            uint32_t textc = 0x000000;
 
-            if (g_kvx_api.text)
-                g_kvx_api.text(w->x + 4, w->y + 6, 0x000000, w->text);
+            if (w->hovered) bg = 0xC8C8C8;
+            if (w->pressed) bg = 0xB8B8B8;
+
+            // background
+            g_kvx_api.fill_rect(w->x, w->y, w->w, w->h, bg);
+
+            // border (1px)
+            g_kvx_api.fill_rect(w->x, w->y, w->w, 1, border);
+            g_kvx_api.fill_rect(w->x, w->y + w->h - 1, w->w, 1, border);
+            g_kvx_api.fill_rect(w->x, w->y, 1, w->h, border);
+            g_kvx_api.fill_rect(w->x + w->w - 1, w->y, 1, w->h, border);
+
+            // text padding
+            g_kvx_api.text(w->x + 8, w->y + 8, textc, w->text);
         }
     }
 }
@@ -63,6 +78,54 @@ static void kef_widgets_mouse_down(kef_host_t* h, int mx, int my) {
             return;
         }
     }
+}
+
+static int kef_widgets_update_hover(kef_host_t* h, int mx, int my) {
+    int changed = 0;
+
+    for (int i = 0; i < h->widget_count; i++) {
+        widget_t* w = &h->widgets[i];
+        if (!w->visible) continue;
+        if (w->type != WIDGET_BUTTON) continue;
+
+        int inside = (mx >= w->x && mx <= w->x + w->w &&
+                      my >= w->y && my <= w->y + w->h);
+
+        int nh = inside ? 1 : 0;
+        if (w->hovered != nh) {
+            w->hovered = nh;
+            changed = 1;
+        }
+    }
+
+    return changed;
+}
+
+static int kef_widgets_mouse_event(kef_host_t* h, int mx, int my, uint8_t pr, uint8_t rel) {
+    if (!h) return 0;
+
+    int changed = kef_widgets_update_hover(h, mx, my);
+
+    for (int i = 0; i < h->widget_count; i++) {
+        widget_t* w = &h->widgets[i];
+        if (!w->visible) continue;
+        if (w->type != WIDGET_BUTTON) continue;
+
+        int inside = w->hovered;
+
+        if (pr & 0x01) {
+            int np = inside ? 1 : 0;
+            if (w->pressed != np) { w->pressed = np; changed = 1; }
+        }
+
+        if (rel & 0x01) {
+            int fire = (w->pressed && inside);
+            if (w->pressed) { w->pressed = 0; changed = 1; }
+            if (fire && w->on_click) w->on_click(w->user);
+        }
+    }
+
+    return changed;
 }
 
 // ------------------------------------------------------------
@@ -117,25 +180,27 @@ static void host_on_create(app_t* a) {
 
 static void host_on_draw(app_t* a) {
     kef_host_t* h = (kef_host_t*)a->user;
-    if (!h) { printk("[KEF-HOST] draw: user NULL\n"); return; }
-    if (!h->vtbl_ready) { printk("[KEF-HOST] no vtbl (path=%s)\n", h->path); return; }
+    if (!h || !h->vtbl_ready) return;
 
-    static int once = 0;
-    if (!once) {
-        once = 1;
-        printk("[KEF-HOST] draw: on_draw=%p widget_count=%d\n", h->vtbl.on_draw, h->widget_count);
-    }
+    // ✅ client rect'i al
+    ui_rect_t cr = wm_get_client_rect(a->win_id);
 
     g_active_host = h;
 
-    // 1) app draw (isterse background çizsin)
+    // ✅ önce client arka planını temizle (window_bg gibi)
+    // Not: burada renk sabit, istersen theme'den al
+    if (g_kvx_api.fill_rect) {
+        g_kvx_api.fill_rect(0, 0, cr.w, cr.h, 0xE8E8E8);
+    }
+
+    // sonra app draw
     if (h->vtbl.on_draw) {
         kef_api_set_active(1);
         h->vtbl.on_draw(&g_kvx_api);
         kef_api_set_active(0);
     }
 
-    // 2) widget overlay draw (label/button burada çizilir)
+    // widget overlay
     kef_widgets_draw(h);
 
     g_active_host = 0;
@@ -157,7 +222,7 @@ static void host_on_key(app_t* a, uint16_t keyev) {
 }
 
 static void host_on_mouse(app_t* a, int mx, int my, uint8_t pr, uint8_t rel, uint8_t btn) {
-    (void)rel; (void)btn;
+    (void)btn;
 
     kef_host_t* h = (kef_host_t*)a->user;
     if (!h || !h->vtbl_ready) return;
@@ -171,9 +236,10 @@ static void host_on_mouse(app_t* a, int mx, int my, uint8_t pr, uint8_t rel, uin
         kef_api_set_active(0);
     }
 
-    // sonra widget hit-test (sol tık pressed)
-    if (pr & 0x01) {
-        kef_widgets_mouse_down(h, mx, my);
+    int changed = kef_widgets_mouse_event(h, mx, my, pr, rel);
+
+    // hover değişimi veya click/release olunca repaint
+    if (changed || (pr & 0x01) || (rel & 0x01)) {
         if (g_kvx_api.invalidate) g_kvx_api.invalidate();
     }
 
