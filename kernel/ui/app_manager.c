@@ -20,6 +20,7 @@
 #include <ui/apps/kuvix_browser.h>
 #include <ui/apps/kbi_viewer.h>
 #include <ui/apps/controls_test.h>
+#include <ui/apps/fileman_v2.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -70,6 +71,7 @@ static app_definition_t app_registry[] = {
     { 15, "Kuvix Browser", &kuvix_browser_vtbl,  160, 120, 820, 520, sizeof(kuvix_browser_t)  },
     { 16, "KBI Viewer",    &kbi_viewer_vtbl,     160, 120, 820, 520, sizeof(kbi_viewer_t)     },
     { 17, "Controls test", &controls_test_vtbl,  160, 120, 820, 520, sizeof(controls_test_t)  },
+    { 18, "Fileman V2",    &fileman_v2_vtbl,     160, 120, 820, 520, sizeof(fileman_v2_t)  },
     { 0,  NULL,                        NULL,       0,   0,   0,   0,                       0  }
 };
 
@@ -283,6 +285,25 @@ app_t* appmgr_open_path(const char* path) {
         } else {
             printk("[AppMgr] ksf read FAILED: %s\n", path);
         }
+    }
+
+    // ✅ HTML -> Browser
+    if (ends_with(path, ".html") || ends_with(path, ".htm")) {
+        char url[VFS_PATH_MAX + 8];
+        url[0] = 0;
+        strncpy(url, "file:", sizeof(url) - 1);
+        url[sizeof(url) - 1] = 0;
+        strncat(url, path, sizeof(url) - strlen(url) - 1);
+
+        // Browser app id sende kaçsa onu koy (15 demiştik)
+        app_t* bapp = appmgr_start_app(15);
+        if (bapp) {
+            kuvix_browser_open_url(bapp, url);
+            return bapp;          // ✅ int değil, app pointer
+        }
+
+        printk("[AppMgr] Browser start failed\n");
+        return NULL;              // ✅ fail
     }
 
     printk("AppManager: bilinmeyen path: %s\n", path);

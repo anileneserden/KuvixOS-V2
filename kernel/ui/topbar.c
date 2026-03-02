@@ -65,7 +65,7 @@ void topbar_handle_mouse(int mx, int my) {
             if (w->state == WIN_MINIMIZED) {
                 wm_restore(id);
             } else if (id == active) {
-                wm_minimize(id);   // ✅ aktif olana tıklayınca minimize
+                wm_minimize(id);
             } else {
                 wm_set_active(id);
             }

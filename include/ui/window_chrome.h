@@ -6,17 +6,21 @@
 
 typedef struct {
     int title_h;
-    int btn_size;
-    int pad;
+
     int btn_y;
+    int btn_w;
+    int btn_h;
+
     int btn_close_x;
     int btn_max_x;
     int btn_min_x;
+
+    int pad;
+
+    int icon_x;
+    int text_x;
+
     int grip;
-    
-    // Yeni eklenenler:
-    int icon_x;    // İkonun çizileceği X
-    int text_x;    // Başlık metninin başlayacağı X
 } ui_chrome_layout_t;
 
 ui_chrome_layout_t ui_chrome_layout(const ui_window_t* win);

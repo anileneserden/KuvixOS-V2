@@ -1,3 +1,5 @@
+// kernel/ui/dialogs/open_dialog.c
+
 #include <ui/dialogs/open_dialog.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
@@ -11,7 +13,6 @@
 
 extern void desktop_icons_reset_selection(void);
 extern void desktop_reset_selection_state(void);
-
 extern uint32_t g_ticks_ms;
 
 static uint32_t g_last_click_ms = 0;
@@ -36,22 +37,35 @@ static dialog_item_t g_items[MAX_ITEMS];
 static int g_item_count = 0;
 static int g_selected = -1;
 
-// ✅ klasör seçici modu
+// klasör seçici modu
 static bool g_pick_dir_mode = false;
 
-// yeni klasör mini modal
+// yeni klasör mini modal (şimdilik kullanılmıyor ama durabilir)
 static bool g_newdir_mode = false;
 static char g_newdir_buf[32];
+
+// scroll state
+static int g_scroll = 0;               // pixel
+static const int g_row_h = 18;         // satır yüksekliği
+static bool g_scroll_drag = false;
+static int  g_scroll_drag_off = 0;
 
 static bool hit(int mx, int my, int x, int y, int w, int h) {
     return (mx >= x && mx <= x + w && my >= y && my <= y + h);
 }
 
+static int clampi(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
 static void draw_btn(int x, int y, int w, int h, const char* t, bool hov, bool enabled) {
+    (void)hov;
     uint32_t bg = enabled ? 0xAAAAAA : 0x888888;
     gfx_fill_rect(x, y, w, h, bg);
-    gfx_draw_rect(x, y, w, h, hov ? 0xFFFFFF : 0x444444);
-    gfx_draw_text_utf8(x + 6, y + 4, 0x000000, t);
+    gfx_draw_rect(x, y, w, h, enabled ? 0x444444 : 0x666666);
+    gfx_draw_text_utf8(x + 6, y + 4, 0x000000, t ? t : "");
 }
 
 static bool selected_is_dir(void) {
@@ -59,9 +73,71 @@ static bool selected_is_dir(void) {
     return g_items[g_selected].is_dir;
 }
 
+static void list_metrics(int* out_dx, int* out_dy, int* out_dw, int* out_dh,
+                         int* out_lx, int* out_ly, int* out_lw, int* out_lh) {
+    int dw = 400, dh = 310;
+    int dx = (fb_get_width() - dw) / 2;
+    int dy = (fb_get_height() - dh) / 2;
+
+    int list_y = dy + 60;
+    int list_h = 130;
+
+    int lx = dx + 15;
+    int ly = list_y;
+    int lw = dw - 30;
+    int lh = list_h;
+
+    if (out_dx) *out_dx = dx;
+    if (out_dy) *out_dy = dy;
+    if (out_dw) *out_dw = dw;
+    if (out_dh) *out_dh = dh;
+
+    if (out_lx) *out_lx = lx;
+    if (out_ly) *out_ly = ly;
+    if (out_lw) *out_lw = lw;
+    if (out_lh) *out_lh = lh;
+}
+
+static int get_scroll_max(int list_h) {
+    int content_h = g_item_count * g_row_h;
+    int max = content_h - list_h;
+    if (max < 0) max = 0;
+    return max;
+}
+
+static void scroll_clamp(int list_h) {
+    g_scroll = clampi(g_scroll, 0, get_scroll_max(list_h));
+}
+
+static void draw_scrollbar(int lx, int ly, int lw, int lh) {
+    int content_h = g_item_count * g_row_h;
+    if (content_h <= lh) return; // scroll yok
+
+    int track_w = 8;
+    int track_x = lx + lw - track_w - 2;
+    int track_y = ly + 2;
+    int track_h = lh - 4;
+
+    gfx_fill_rect(track_x, track_y, track_w, track_h, 0xE0E0E0);
+
+    int knob_h = (track_h * lh) / content_h;
+    if (knob_h < 14) knob_h = 14;
+
+    int max_scroll = get_scroll_max(lh);
+    int knob_y = track_y;
+
+    if (max_scroll > 0) {
+        int travel = track_h - knob_h;
+        if (travel < 1) travel = 1;
+        knob_y = track_y + (g_scroll * travel) / max_scroll;
+    }
+
+    gfx_fill_rect(track_x, knob_y, track_w, knob_h, 0xA0A0A0);
+}
+
 // ------------------------------------------------------------
 // VFS list callback: sadece g_path içindeki 1 seviye
-// DIR tespiti: size==0 && '.' yok => dir
+// DIR tespiti: size==0 && '.' yok => dir (stat yokken idare)
 // ------------------------------------------------------------
 static int open_dialog_vfs_cb(const char* path, uint32_t size, void* u) {
     (void)u;
@@ -91,7 +167,6 @@ static int open_dialog_vfs_cb(const char* path, uint32_t size, void* u) {
     strncpy(g_items[g_item_count].name, rel, 31);
     g_items[g_item_count].name[31] = '\0';
 
-    // ✅ DIR tespiti (stat yok!)
     bool has_dot = (strchr(rel, '.') != NULL);
     g_items[g_item_count].is_dir = (size == 0 && !has_dot);
 
@@ -108,6 +183,10 @@ void open_dialog_refresh(void) {
 
     g_last_click_idx = -1;
     g_last_click_ms = 0;
+
+    g_scroll = 0;
+    g_scroll_drag = false;
+    g_scroll_drag_off = 0;
 }
 
 static void open_dialog_enter_dir(const char* name) {
@@ -130,7 +209,6 @@ static void open_dialog_enter_dir(const char* name) {
     strncpy(g_path, newp, sizeof(g_path) - 1);
     g_path[sizeof(g_path) - 1] = '\0';
 
-    // klasöre girince seçim temizle
     g_selected = -1;
     g_dlg.buffer[0] = '\0';
 
@@ -199,20 +277,79 @@ static void open_dialog_do_pick_dir(void) {
 }
 
 // ------------------------------------------------------------
-// INPUT
+// Wheel API (desktop tick'ten çağır)
+// step: +1/-1
+// ------------------------------------------------------------
+void open_dialog_handle_wheel(int step) {
+    if (!g_active) return;
+
+    int dx, dy, dw, dh, lx, ly, lw, lh;
+    list_metrics(&dx, &dy, &dw, &dh, &lx, &ly, &lw, &lh);
+
+    // 2 satır gibi
+    g_scroll += step * 36;
+    scroll_clamp(lh);
+}
+
+// ------------------------------------------------------------
+// Mouse move API (drag scroll için)
+// ------------------------------------------------------------
+void open_dialog_handle_mouse_move(int mx, int my, uint8_t btns) {
+    if (!g_active) return;
+
+    int dx, dy, dw, dh, lx, ly, lw, lh;
+    list_metrics(&dx, &dy, &dw, &dh, &lx, &ly, &lw, &lh);
+
+    int content_h = g_item_count * g_row_h;
+    if (content_h <= lh) { g_scroll_drag = false; return; }
+
+    // LMB bırakıldıysa drag bitir
+    if (!(btns & 1)) { g_scroll_drag = false; return; }
+    if (!g_scroll_drag) return;
+
+    int track_w = 8;
+    int track_x = lx + lw - track_w - 2;
+    int track_y = ly + 2;
+    int track_h = lh - 4;
+
+    int knob_h = (track_h * lh) / content_h;
+    if (knob_h < 14) knob_h = 14;
+
+    int max_scroll = get_scroll_max(lh);
+    int travel = track_h - knob_h;
+    if (travel <= 0) return;
+
+    int knob_y = my - g_scroll_drag_off;
+    int target = knob_y - track_y;
+    target = clampi(target, 0, travel);
+
+    if (max_scroll > 0) g_scroll = (target * max_scroll) / travel;
+    else g_scroll = 0;
+
+    scroll_clamp(lh);
+
+    // güvenlik: track dışına çıkarsa da kalsın
+    (void)track_x;
+}
+
+// ------------------------------------------------------------
+// INPUT (click/press)
 // ------------------------------------------------------------
 void open_dialog_handle_mouse(int mx, int my, bool clicked) {
-    if (!g_active || !clicked) return;
+    if (!g_active) return;
 
-    int dw = 400, dh = 310;
-    int dx = (fb_get_width() - dw) / 2;
-    int dy = (fb_get_height() - dh) / 2;
+    int dx, dy, dw, dh, lx, ly, lw, lh;
+    list_metrics(&dx, &dy, &dw, &dh, &lx, &ly, &lw, &lh);
+
+    // drag state: her click öncesi resetleme, move bitiriyor zaten
+    if (!clicked) return;
 
     // X
     if (mx >= dx + dw - 22 && mx <= dx + dw - 4 &&
         my >= dy + 4 && my <= dy + 20) {
         g_active = false;
         g_newdir_mode = false;
+        g_scroll_drag = false;
         return;
     }
 
@@ -225,46 +362,87 @@ void open_dialog_handle_mouse(int mx, int my, bool clicked) {
         return;
     }
 
-    // LISTE
-    int list_y = dy + 60;
+    // ------------------------------------------------------------
+    // LIST: scrollbar click / list click
+    // ------------------------------------------------------------
+    // scrollbar hit test
+    {
+        int content_h = g_item_count * g_row_h;
+        if (content_h > lh) {
+            int track_w = 8;
+            int track_x = lx + lw - track_w - 2;
+            int track_y = ly + 2;
+            int track_h = lh - 4;
 
-    for (int i = 0; i < g_item_count; i++) {
-        int iy = list_y + 4 + (i * 18);
+            if (hit(mx, my, track_x, track_y, track_w, track_h)) {
+                int max_scroll = get_scroll_max(lh);
 
-        if (mx >= dx + 15 && mx <= dx + dw - 15 &&
-            my >= iy && my <= iy + 18) {
+                int knob_h = (track_h * lh) / content_h;
+                if (knob_h < 14) knob_h = 14;
 
-            uint32_t now = g_ticks_ms;
-            bool is_dbl = (g_last_click_idx == i) && ((now - g_last_click_ms) < DBLCLICK_MS);
+                int travel = track_h - knob_h;
+                if (travel < 1) travel = 1;
 
-            // tek tık: seç
-            g_selected = i;
-            g_last_click_idx = i;
-            g_last_click_ms = now;
+                int knob_y = track_y;
+                if (max_scroll > 0) knob_y = track_y + (g_scroll * travel) / max_scroll;
 
-            // dosya ise buffer'a yaz, klasör ise buffer temiz
-            if (g_items[i].is_dir) {
-                g_dlg.buffer[0] = '\0';
-                if (is_dbl) {
-                    // ✅ çift tık: klasöre gir
-                    open_dialog_enter_dir(g_items[i].name);
+                // knob içine tıklarsa drag başlat
+                if (my >= knob_y && my <= knob_y + knob_h) {
+                    g_scroll_drag = true;
+                    g_scroll_drag_off = my - knob_y;
+                    return;
                 }
-            } else {
-                strncpy(g_dlg.buffer, g_items[i].name, 63);
-                g_dlg.buffer[63] = '\0';
+
+                // track'e tık: o noktaya zıplat
+                int target = my - track_y - knob_h / 2;
+                target = clampi(target, 0, travel);
+                g_scroll = (max_scroll > 0) ? (target * max_scroll) / travel : 0;
+                scroll_clamp(lh);
+                return;
             }
-            return;
         }
     }
 
-    // BUTONLAR
-    int input_y = list_y + 130 + 15;
+    // list area click -> index hesapla (scroll dahil)
+    if (mx >= lx && mx <= lx + lw && my >= ly && my <= ly + lh) {
+        int inner_y = my - (ly + 4);
+        int y_scrolled = inner_y + g_scroll;
+        int idx = y_scrolled / g_row_h;
+
+        if (idx >= 0 && idx < g_item_count) {
+            uint32_t now = g_ticks_ms;
+            bool is_dbl = (g_last_click_idx == idx) && ((now - g_last_click_ms) < DBLCLICK_MS);
+
+            g_selected = idx;
+            g_last_click_idx = idx;
+            g_last_click_ms = now;
+
+            if (g_items[idx].is_dir) {
+                g_dlg.buffer[0] = '\0';
+                if (is_dbl) {
+                    open_dialog_enter_dir(g_items[idx].name);
+                }
+            } else {
+                strncpy(g_dlg.buffer, g_items[idx].name, 63);
+                g_dlg.buffer[63] = '\0';
+
+                if (is_dbl) {
+                    open_dialog_do_open_file();
+                }
+            }
+        }
+        return;
+    }
+
+    // ------------------------------------------------------------
+    // BUTTONS
+    // ------------------------------------------------------------
+    int input_y = (dy + 60) + 130 + 15;
     int btn_x = dx + dw - 85;
 
     // ana buton
     if (hit(mx, my, btn_x, input_y, 70, 22)) {
         if (g_pick_dir_mode) {
-            // dosya seçiliyse engelle
             if (g_selected >= 0 && g_selected < g_item_count && !g_items[g_selected].is_dir) {
                 notification_show("Klasor secmelisin!", 1500);
                 return;
@@ -279,19 +457,20 @@ void open_dialog_handle_mouse(int mx, int my, bool clicked) {
     // iptal
     if (hit(mx, my, btn_x, input_y + 30, 70, 22)) {
         g_active = false;
+        g_scroll_drag = false;
         return;
     }
 }
 
 // ------------------------------------------------------------
-// DRAW (sadece buton label kısmı önemli)
+// DRAW
 // ------------------------------------------------------------
 void open_dialog_draw(void) {
     if (!g_active) return;
 
-    int dw = 400, dh = 310;
-    int dx = (fb_get_width() - dw) / 2;
-    int dy = (fb_get_height() - dh) / 2;
+    int dx, dy, dw, dh, lx, ly, lw, lh;
+    list_metrics(&dx, &dy, &dw, &dh, &lx, &ly, &lw, &lh);
+
     int btn_x = dx + dw - 85;
 
     gfx_fill_rect(dx, dy, dw, dh, 0xC6C6C6);
@@ -313,23 +492,39 @@ void open_dialog_draw(void) {
     gfx_draw_rect(dx + 42, nav_y, dw - 95, 22, 0x808080);
     gfx_draw_text_utf8(dx + 47, nav_y + 4, 0x000000, g_path);
 
-    // list
-    int list_y = dy + 60;
-    int list_h = 130;
-    gfx_fill_rect(dx + 15, list_y, dw - 30, list_h, 0xFFFFFF);
-    gfx_draw_rect(dx + 15, list_y, dw - 30, list_h, 0x808080);
+    // list box
+    gfx_fill_rect(lx, ly, lw, lh, 0xFFFFFF);
+    gfx_draw_rect(lx, ly, lw, lh, 0x808080);
 
-    for (int i = 0; i < g_item_count; i++) {
-        int iy = list_y + 4 + (i * 18);
-        if (g_selected == i) gfx_fill_rect(dx + 16, iy, dw - 32, 17, 0xCCE8FF);
+    scroll_clamp(lh);
+
+    // only visible rows
+    int first = g_scroll / g_row_h;
+    int y_off = -(g_scroll % g_row_h);
+
+    int visible_rows = (lh / g_row_h) + 2;
+    int last = first + visible_rows;
+    if (last > g_item_count) last = g_item_count;
+
+    for (int i = first; i < last; i++) {
+        int iy = ly + 4 + y_off + (i - first) * g_row_h;
+
+        // clipping
+        if (iy + g_row_h < ly) continue;
+        if (iy > ly + lh) break;
+
+        if (g_selected == i) gfx_fill_rect(lx + 1, iy, lw - 2, g_row_h - 1, 0xCCE8FF);
 
         uint32_t color = g_items[i].is_dir ? 0x0000AA : 0x000000;
-        gfx_draw_text_utf8(dx + 20, iy + 2, color, g_items[i].is_dir ? ">" : "-");
-        gfx_draw_text_utf8(dx + 35, iy + 2, color, g_items[i].name);
+        gfx_draw_text_utf8(lx + 5,  iy + 2, color, g_items[i].is_dir ? ">" : "-");
+        gfx_draw_text_utf8(lx + 20, iy + 2, color, g_items[i].name);
     }
 
-    // input yeri (klasör modunda da dursun ama pasif)
-    int input_y = list_y + list_h + 15;
+    // scrollbar
+    draw_scrollbar(lx, ly, lw, lh);
+
+    // input area
+    int input_y = ly + lh + 15;
     gfx_draw_text_utf8(dx + 15, input_y + 3, 0x000000, g_pick_dir_mode ? "Secim:" : "Dosya:");
 
     gfx_fill_rect(dx + 90, input_y, dw - 190, 20, g_pick_dir_mode ? 0xEEEEEE : 0xFFFFFF);
@@ -383,7 +578,6 @@ void open_dialog_show(const char* title, const char* initial_name, int owner_win
     open_dialog_refresh();
 }
 
-// ✅ klasör seçici aç
 void open_dialog_show_dirpicker(const char* title, const char* initial_path, int owner_win_id, open_callback_t cb) {
     open_dialog_show(title, "", owner_win_id, cb);
     g_pick_dir_mode = true;
@@ -410,22 +604,18 @@ void open_dialog_handle_key(uint16_t scancode, char c) {
     if (scancode == 0x01) {
         g_active = false;
         g_newdir_mode = false;
+        g_scroll_drag = false;
         return;
     }
 
     // Enter
     if (scancode == 0x1C) {
-        if (g_pick_dir_mode) {
-            // klasör modunda Enter = klasörü seç
-            // (seçim yoksa current klasörü seçer)
-            open_dialog_do_pick_dir();
-        } else {
-            open_dialog_do_open_file();
-        }
+        if (g_pick_dir_mode) open_dialog_do_pick_dir();
+        else open_dialog_do_open_file();
         return;
     }
 
-    // klasör seçim modunda yazı yazdırma yok (input pasif)
+    // klasör seçim modunda yazı yazdırma yok
     if (g_pick_dir_mode) return;
 
     // Backspace

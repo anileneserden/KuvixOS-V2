@@ -114,6 +114,27 @@ static bool resolve_url_to_path(const char* url, char* out, int cap) {
         return true;
     }
 
+    // 0) file: scheme  (file:/path veya file:///path)
+    if (strncmp(url, "file:", 5) == 0) {
+        const char* p = url + 5;
+
+        // file:///home/... gibi durumlarda fazla slash’ları kırp
+        while (*p == '/') p++;
+
+        // başına '/' koyarak absolute path üret
+        if (*p) {
+            if (cap >= 2) {
+                out[0] = '/';
+                out[1] = 0;
+                strncat(out, p, (size_t)cap - strlen(out) - 1);
+            }
+        } else {
+            strncpy(out, "/", cap - 1);
+            out[cap - 1] = 0;
+        }
+        return true;
+    }
+
     // 1) absolute path
     if (is_abs_path(url)) {
         strncpy(out, url, cap - 1);
@@ -368,6 +389,13 @@ static void draw_content_html(rect_t r, const char* url, int scroll_y) {
     html_render_doc(&doc, draw_x, draw_y, draw_w);
 
     vfs_free_alloc(buf);
+}
+
+void kuvix_browser_open_url(app_t* app, const char* url) {
+    kuvix_browser_t* b = br(app);
+    if (!b) return;
+    br_navigate(b, (url && url[0]) ? url : "local:home");
+    br_set_status(b, "Opened from Fileman");
 }
 
 #if KBROWSER_ENABLE_TABS

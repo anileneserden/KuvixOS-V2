@@ -18,6 +18,7 @@ typedef struct {
 void wm_init(void);
 int  wm_add_window(int x, int y, int w, int h, const char* title, app_t* owner);
 void wm_close_window(int idx);
+void wm_request_close(int win_id);
 
 int  wm_get_window(int win_id, ui_window_t* out);
 void wm_set_title(int win_id, const char* title);
@@ -66,5 +67,6 @@ int wm_get_mouse_y(void);
 
 void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons);
 
+uint32_t wm_get_ticks(void);
 
 #endif

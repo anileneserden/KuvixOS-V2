@@ -6,6 +6,9 @@
 static int g_origin_x = 0;
 static int g_origin_y = 0;
 
+static uint32_t isqrt_u32(uint32_t n);
+static inline int in_clip(int sx, int sy);
+
 void gfx_init(void) {
     // Ekranı başlangıç için siyahla temizle
     fb_clear(0x000000); 
@@ -20,7 +23,12 @@ void gfx_clear(uint32_t color) {
 
 // Temel piksel çizimi
 void gfx_putpixel(int x, int y, uint32_t color) {
-    fb_putpixel(x + g_origin_x, y + g_origin_y, color);
+    int sx = x + g_origin_x;
+    int sy = y + g_origin_y;
+
+    if (!in_clip(sx, sy)) return;
+
+    fb_putpixel(sx, sy, color);
 }
 
 // r, g, b: Yeni rengin bileşenleri
@@ -61,7 +69,69 @@ void gfx_draw_alpha_rect(int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t 
 
 // Kare/Dikdörtgen çizimi
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color) {
-    fb_draw_rect(x + g_origin_x, y + g_origin_y, w, h, color);
+    for (int yy=0; yy<h; yy++)
+        for (int xx=0; xx<w; xx++)
+            gfx_putpixel(x+xx, y+yy, color);
+}
+
+static int clampi(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+void gfx_fill_round_rect4(int x, int y, int w, int h,
+                          int rtl, int rtr, int rbl, int rbr,
+                          uint32_t color) {
+    if (w <= 0 || h <= 0) return;
+
+    int maxr = (w < h ? w : h) / 2;
+    rtl = clampi(rtl, 0, maxr);
+    rtr = clampi(rtr, 0, maxr);
+    rbl = clampi(rbl, 0, maxr);
+    rbr = clampi(rbr, 0, maxr);
+
+    for (int yy = 0; yy < h; yy++) {
+
+        int inset_l = 0;
+        int inset_r = 0;
+
+        // ---- LEFT side inset (TL or BL) ----
+        if (yy < rtl && rtl > 0) {
+            int r = rtl;
+            int dy = (r - 1) - yy;
+            int rr = r * r;
+            inset_l = r - (int)isqrt_u32((uint32_t)(rr - dy * dy));
+        } else if (yy >= h - rbl && rbl > 0) {
+            int r = rbl;
+            int dy = yy - (h - r);
+            int rr = r * r;
+            inset_l = r - (int)isqrt_u32((uint32_t)(rr - dy * dy));
+        }
+
+        // ---- RIGHT side inset (TR or BR) ----
+        if (yy < rtr && rtr > 0) {
+            int r = rtr;
+            int dy = (r - 1) - yy;
+            int rr = r * r;
+            inset_r = r - (int)isqrt_u32((uint32_t)(rr - dy * dy));
+        } else if (yy >= h - rbr && rbr > 0) {
+            int r = rbr;
+            int dy = yy - (h - r);
+            int rr = r * r;
+            inset_r = r - (int)isqrt_u32((uint32_t)(rr - dy * dy));
+        }
+
+        int x0 = x + inset_l;
+        int x1 = x + w - 1 - inset_r;
+
+        if (x1 < x0) continue;
+
+        // satırı doldur
+        for (int xx = x0; xx <= x1; xx++) {
+            gfx_putpixel(xx, y + yy, color);
+        }
+    }
 }
 
 #define abs(x) ((x) < 0 ? -(x) : (x))
@@ -249,6 +319,63 @@ void gfx_reset_origin(void) {
     g_origin_y = 0;
 }
 
+typedef enum { CLIP_NONE=0, CLIP_RECT=1, CLIP_RRECT4=2 } clip_mode_t;
+
+static clip_mode_t g_clip_mode = CLIP_NONE;
+
+static int g_clip_x, g_clip_y, g_clip_w, g_clip_h;
+static int g_clip_rtl, g_clip_rtr, g_clip_rbl, g_clip_rbr;
+
+static inline int in_clip(int sx, int sy) {
+    if (g_clip_mode == CLIP_NONE) return 1;
+
+    if (sx < g_clip_x || sy < g_clip_y || sx >= g_clip_x + g_clip_w || sy >= g_clip_y + g_clip_h)
+        return 0;
+
+    if (g_clip_mode == CLIP_RECT) return 1;
+
+    // rounded rect check
+    int lx = sx - g_clip_x;
+    int ly = sy - g_clip_y;
+    int w  = g_clip_w;
+    int h  = g_clip_h;
+
+    // TL corner
+    if (g_clip_rtl > 0 && lx < g_clip_rtl && ly < g_clip_rtl) {
+        int r = g_clip_rtl;
+        int dx = (r - 1) - lx;
+        int dy = (r - 1) - ly;
+        return (dx*dx + dy*dy) <= (r*r);
+    }
+    // TR
+    if (g_clip_rtr > 0 && lx >= (w - g_clip_rtr) && ly < g_clip_rtr) {
+        int r = g_clip_rtr;
+        int dx = lx - (w - r);
+        int dy = (r - 1) - ly;
+        return (dx*dx + dy*dy) <= (r*r);
+    }
+    // BL
+    if (g_clip_rbl > 0 && lx < g_clip_rbl && ly >= (h - g_clip_rbl)) {
+        int r = g_clip_rbl;
+        int dx = (r - 1) - lx;
+        int dy = ly - (h - r);
+        return (dx*dx + dy*dy) <= (r*r);
+    }
+    // BR
+    if (g_clip_rbr > 0 && lx >= (w - g_clip_rbr) && ly >= (h - g_clip_rbr)) {
+        int r = g_clip_rbr;
+        int dx = lx - (w - r);
+        int dy = ly - (h - r);
+        return (dx*dx + dy*dy) <= (r*r);
+    }
+
+    return 1;
+}
+
+void gfx_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key) {
+    fb_blit_argb_key(x + g_origin_x, y + g_origin_y, w, h, data, key);
+}
+
 // UTF-8 -> CP1254 (Türkçe subset) tek byte çevirir.
 // Dönen: 0..255 tek byte, '?' fallback
 static uint8_t utf8_to_cp1254_1(const char** ps) {
@@ -288,4 +415,19 @@ static uint8_t utf8_to_cp1254_1(const char** ps) {
     // diğer UTF-8 uzunlukları: skip 1 byte fallback
     (*ps)++;
     return '?';
+}
+
+void gfx_clip_clear(void) {
+    g_clip_mode = CLIP_NONE;
+}
+
+void gfx_clip_rect(int x, int y, int w, int h) {
+    g_clip_mode = CLIP_RECT;
+    g_clip_x = x; g_clip_y = y; g_clip_w = w; g_clip_h = h;
+}
+
+void gfx_clip_round_rect4(int x, int y, int w, int h, int rtl, int rtr, int rbl, int rbr) {
+    g_clip_mode = CLIP_RRECT4;
+    g_clip_x = x; g_clip_y = y; g_clip_w = w; g_clip_h = h;
+    g_clip_rtl = rtl; g_clip_rtr = rtr; g_clip_rbl = rbl; g_clip_rbr = rbr;
 }

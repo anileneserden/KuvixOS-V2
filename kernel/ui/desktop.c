@@ -41,6 +41,9 @@
 
 #include <kernel/memory/kmalloc.h>
 
+#include <ui/desktop_icons/folder_icon.h>
+
+
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -115,6 +118,12 @@ static int g_dbg_last_dy = 0;
 static int g_dbg_wheel_step = 0;
 static int g_dbg_wheel_total = 0;
 
+static bool g_need_redraw = true;
+
+static inline void desktop_request_redraw(void) {
+    g_need_redraw = true;
+}
+
 // --- Debug overlay helps (desktop içi) ---
 static bool g_dbg_overlay = false;
 
@@ -172,6 +181,7 @@ static void desktop_toggle_ext(void);
 
 void desktop_invalidate_full(void) {
     g_force_full_present = true;
+    g_need_redraw = true;
 }
 
 // ============================================================
@@ -223,8 +233,8 @@ static void get_unique_filename(const char* base_path, const char* ext, char* ou
 static void desktop_toggle_ext(void) {
     ui_toggle_show_extensions();
     desktop_icons_init();
-    desktop_icons_snap_all();      // ✅ iyi olur, dizilim bozulmasın
-    desktop_invalidate_full();     // ✅ senin helper, g_force_full_present = true
+    desktop_icons_snap_all();
+    desktop_invalidate_full();
 }
 
 void seed_store_repo(void) {
@@ -312,6 +322,180 @@ static void kbi_write_demo_terminal_icon(void) {
     vfs_write_all(path, buf, cap);
     kfree(buf);
 }
+
+static void draw_demo_icon_card(void) {
+    int x = 80;
+    int y = 90;
+    int w = 72;
+    int h = 72;
+    int r = 12;
+
+    // shadow
+    gfx_fill_round_rect(x + 2, y + 2, w, h, r, 0x101010);
+
+    // mavi kart
+    gfx_fill_round_rect(x, y, w, h, r, 0x0078D7);
+
+    // --- ikon üstte (2x scale) ---
+    int scale = 2;
+    int base_icon_size = 20;
+    int icon_w = base_icon_size * scale;
+    int icon_h = base_icon_size * scale;
+
+    int pad_top = 8;
+
+    int ix = x + (w - icon_w) / 2;
+    int iy = y + pad_top;
+
+    for (int rr = 0; rr < base_icon_size; rr++) {
+        for (int cc = 0; cc < base_icon_size; cc++) {
+
+            uint8_t p = folder_icon[rr][cc];
+
+            uint32_t col = 0;
+            if (p == 1)      col = 0x000000;
+            else if (p == 2) col = 0xFFFFFF;
+            else if (p == 3) col = 0xE6E6E6;
+            else if (p == 4) col = 0xFFFFFF;
+
+            if (p != 0) {
+                // 2x2 büyütme
+                for (int sy = 0; sy < scale; sy++) {
+                    for (int sx = 0; sx < scale; sx++) {
+                        gfx_putpixel(
+                            ix + cc * scale + sx,
+                            iy + rr * scale + sy,
+                            col
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // --- yazı kartın içinde altta ---
+    const char* label = "Demo";
+    int label_len = (int)strlen(label);
+    int label_w = label_len * 8;
+    int label_h = 16;
+    int pad_bottom = 6;
+
+    int text_x = x + (w - label_w) / 2;
+    int text_y = y + h - label_h - pad_bottom;
+
+    gfx_draw_text_utf8(text_x, text_y, 0x00FFFFFF, label);
+}
+
+static void draw_side_button_right(int px, int py, int ph, int r, const char* text, bool active) {
+    // px,py: pencere sağ kenarına yapışık yer
+    // ph: buton yüksekliği (örn 44)
+    // r: sağ köşe radius (örn 12)
+
+    int bw = 44;  // buton genişliği
+    int bx = px - bw;  // sağa yapışık: px pencerenin sağ sınırı (x+w)
+    int by = py;
+
+    uint32_t shadow = 0x101010;
+    uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
+    uint32_t txt    = 0x00FFFFFF;
+
+    // shadow (sağa hafif)
+    gfx_fill_round_rect4(bx + 2, by + 2, bw, ph, 0, r, 0, r, shadow);
+
+    // buton gövdesi: TL=0, TR=r, BL=0, BR=r
+    gfx_fill_round_rect4(bx, by, bw, ph, 0, r, 0, r, bg);
+
+    // yazı ortala (basit)
+    if (!text) text = "";
+    int len = (int)strlen(text);
+    int tw = len * 8;
+    int tx = bx + (bw - tw) / 2;
+    int ty = by + (ph - 16) / 2;
+
+    gfx_draw_text_utf8(tx, ty, txt, text);
+}
+
+static void draw_header_right_chip(int x, int y, int w, int h, int r,
+                                   const char* text, bool active) {
+    uint32_t shadow = 0x101010;
+    uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
+
+    // ✅ shadow sadece sağa (alta kaydırma yok)
+    gfx_fill_round_rect4(x + 2, y, w, h, 0, r, 0, 0, shadow);
+
+    // body: sadece sağ-üst yuvarlak
+    gfx_fill_round_rect4(x, y, w, h, 0, r, 0, 0, bg);
+
+    // text ortala
+    if (!text) text = "";
+    int len = (int)strlen(text);
+    int tw  = len * 8;
+    int tx  = x + (w - tw) / 2;
+    int ty  = y + (h - 16) / 2;
+    gfx_draw_text_utf8(tx, ty, 0x00FFFFFF, text);
+}
+
+static void draw_header_flat_chip(int x, int y, int w, int h,
+                                  const char* text, bool active) {
+    uint32_t shadow = 0x101010;
+    uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
+
+    // ✅ shadow sadece sağa
+    gfx_fill_rect(x + 2, y, w, h, shadow);
+
+    // body düz
+    gfx_fill_rect(x, y, w, h, bg);
+
+    // text ortala
+    if (!text) text = "";
+    int len = (int)strlen(text);
+    int tw  = len * 8;
+    int tx  = x + (w - tw) / 2;
+    int ty  = y + (h - 16) / 2;
+    gfx_draw_text_utf8(tx, ty, 0x00FFFFFF, text);
+}
+
+static void demo_box_with_header(int x, int y, int w, int h) {
+    int r = 20;
+    int header_h = 28;
+
+    uint32_t shadow = 0x101010;
+    uint32_t body   = 0x2F2F2F;
+    uint32_t header = 0x252525;
+
+    // shadow (pencere): altta belli olsun
+    gfx_fill_round_rect(x + 2, y + 6, w, h, r, shadow);
+
+    // body (tüm köşeler yuvarlak)
+    gfx_fill_round_rect(x, y, w, h, r, body);
+
+    // header: sadece üst köşeler yuvarlak, alt köşeler düz
+    gfx_fill_round_rect4(x, y, w, header_h, r, r, 0, 0, header);
+
+    // başlık
+    gfx_draw_text_utf8(x + 14, y + 8, 0x00FFFFFF, "KuvixOS Demo");
+
+    // ---- header butonları (sağda 3'lü grup) ----
+    int chip_h = header_h;
+    int chip_w = 44;
+    int gap    = 0; // arada boşluk istemiyorsan 0
+
+    // en sağdaki: ">"
+    int x_right = x + w - chip_w;
+    // onun solu: "-"
+    int x_mid   = x_right - gap - chip_w;
+    // onun solu: "+"
+    int x_left  = x_mid   - gap - chip_w;
+
+    // iki düz chip
+    draw_header_flat_chip(x_left, y, chip_w, chip_h, "+", false);
+    draw_header_flat_chip(x_mid,  y, chip_w, chip_h, "-", false);
+
+    // sağ üst köşesi yuvarlak chip
+    draw_header_right_chip(x_right, y, chip_w, chip_h, 12, ">", false);
+}
+
+
 
 // ============================================================
 // Desktop Handlers
@@ -457,6 +641,7 @@ void ui_desktop_init(void) {
 
     // ✅ ilk frame kesin ekrana basılsın
     g_force_full_present = true;
+    g_need_redraw = true;
 
     // (opsiyonel) diskten kurtarma - burada 1 kere çalışsın
     char disk_buffer[512];
@@ -500,6 +685,17 @@ void ui_desktop_handle_scancode(uint16_t sc)
     if (kbd_is_super_pressed() && sc8 == 0x13) {
         app_t* a = appmgr_start_app(7);
         if (a) wm_set_active_id(a->win_id); // sende bu var
+        desktop_invalidate_full();
+        return;
+    }
+
+    // ------------------------------------------------------------
+    // GLOBAL HOTKEY: SUPER+Q -> Close active window
+    // Set1: Q make = 0x10
+    // ------------------------------------------------------------
+    if (kbd_is_super_pressed() && sc8 == 0x10) { // Q
+        int wid = wm_get_active_id();
+        wm_request_close(wid);
         desktop_invalidate_full();
         return;
     }
@@ -587,6 +783,7 @@ void ui_desktop_tick(void) {
     static bool prev_selecting = false;
     static int prev_sel_start_x = 0, prev_sel_start_y = 0;
     static int prev_sel_end_x = 0, prev_sel_end_y = 0;
+    static int prev_hover_hit = -2;
 
     bool need_full_present = false;
 
@@ -622,10 +819,12 @@ void ui_desktop_tick(void) {
 
             wm_handle_mouse_wheel(mouse_x, mouse_y, step, btn);
             need_full_present = true;
+            desktop_request_redraw();
         }
 
         if (dx != 0 || dy != 0) {
             wm_handle_mouse_move(mouse_x, mouse_y);
+            desktop_request_redraw();
 
             // Mouse bir pencerenin üstündeyse hover değişebilir -> full present gerekli
             if (wm_find_window_at(mouse_x, mouse_y) != -1) {
@@ -670,6 +869,7 @@ void ui_desktop_tick(void) {
         wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
         if (wm_did_consume_mouse()) {
             need_full_present = true;
+            desktop_request_redraw();
             is_selecting = false;
             g_lmb_down = 0;
             g_dragging = 0;
@@ -683,7 +883,8 @@ void ui_desktop_tick(void) {
 
             // ✅ Context menu açıkken: her eventte hover/submenu update
             if (context_menu_is_visible()) {
-                need_full_present = true; // dirty-rect menü için güvenli değil
+                need_full_present = true;
+                desktop_request_redraw();
                 context_menu_handle_mouse(mouse_x, mouse_y, false);
             }
 
@@ -768,7 +969,12 @@ void ui_desktop_tick(void) {
 
                     uint32_t now = g_ticks_ms;
                     if (g_last_click_hit == hit && (now - g_last_click_ms) < DBLCLICK_MS) {
+
                         desktop_icons_process_click(hit);
+
+                        // ✅ uygulama açıldıktan sonra seçimi kapat
+                        desktop_icons_deselect_all();
+                        desktop_invalidate_full();
 
                         g_last_click_hit = -1;
                         g_last_click_ms = 0;
@@ -800,7 +1006,7 @@ void ui_desktop_tick(void) {
                     if ((ddx * ddx + ddy * ddy) >= (DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX)) {
                         need_full_present = true;
                         g_dragging = 1;
-                        desktop_icons_set_dragging(g_down_hit, true);
+                        desktop_icons_set_dragging(g_down_hit, true, mouse_x, mouse_y);
                         is_selecting = false;
                     }
                 }
@@ -840,6 +1046,13 @@ void ui_desktop_tick(void) {
         g_last_btn = btn;
     }
 
+    int now_hover = desktop_icons_get_hit(mouse_x, mouse_y);
+    if (now_hover != prev_hover_hit) {
+        need_full_present = true;
+        desktop_request_redraw();
+        prev_hover_hit = now_hover;
+    }
+
     // ---------- Render ----------
     // ✅ Klavye/hotkey ile UI değiştiyse bu frame full present zorla
     if (g_force_full_present) {
@@ -854,8 +1067,47 @@ void ui_desktop_tick(void) {
 
     if (appmgr_any_continuous_redraw()) need_full_present = true;
 
+    // ---------- Decide if we should redraw this frame ----------
+    bool continuous = false;
+
+    // drag sırasında sürekli redraw şart
+    if (wm_is_dragging_window()) continuous = true;
+
+    // animasyon/video gibi sürekli redraw isteyen app varsa
+    if (appmgr_any_continuous_redraw()) continuous = true;
+
+    // debug overlay / memmon açıksa sürekli redraw
+    if (g_dbg_overlay) continuous = true;
+    if (memmon_is_visible()) continuous = true;
+
+    // invalidate_full çağrıldıysa redraw da şart
+    if (g_force_full_present) g_need_redraw = true;
+
+    bool should_draw = (g_need_redraw || continuous);
+
+    if (!should_draw) {
+        // hiçbir şey değişmedi -> çizme/present yok
+        return;
+    }
+
+    // bu frame çiziyoruz -> bayrağı sıfırla (continuous ise zaten tekrar set olur)
+    g_need_redraw = false;
+
+    // ---------- Render / Present policy ----------
+    if (g_force_full_present) {
+        need_full_present = true;
+        g_force_full_present = false;
+    }
+
+    // (bunlar full present gerektirebilir)
+    if (g_dbg_overlay) need_full_present = true;
+    if (memmon_is_visible()) need_full_present = true;
+    if (wm_is_dragging_window()) need_full_present = true;
+    if (appmgr_any_continuous_redraw()) need_full_present = true;
+
     fb_clear(ui_get_desktop_bg());
     desktop_icons_draw_all();
+
     topbar_draw();
 
     if (is_selecting) {
@@ -878,7 +1130,7 @@ void ui_desktop_tick(void) {
     messagebox_draw();
     notification_draw();
 
-    memmon_draw((int)fb_get_width(), (int)fb_get_height());   // ✅ BURAYA
+    memmon_draw((int)fb_get_width(), (int)fb_get_height());
 
     cursor_draw_arrow(mouse_x, mouse_y);
     dbg_draw_panel();
