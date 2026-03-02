@@ -70,6 +70,7 @@ SRC_C = \
     kernel/ui/apps/designer.c \
     kernel/ui/apps/demo_font.c \
     kernel/ui/apps/file_manager.c \
+    kernel/ui/apps/fileman_v2.c \
     kernel/ui/apps/grid_demo.c \
     kernel/ui/apps/kbi_viewer.c \
     kernel/ui/apps/kuvix_browser.c \

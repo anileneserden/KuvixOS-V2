@@ -69,7 +69,7 @@ static void draw_icon_center_key(int bx, int by, int bw, int bh,
 }
 
 // ------------------------------------------------------------
-// Header chip draw (dikdörtgen)
+// Header chip draw
 // ------------------------------------------------------------
 static void draw_header_right_chip(int x, int y, int w, int h, int r,
                                    const char* text, int active, int mx, int my) {
@@ -79,7 +79,6 @@ static void draw_header_right_chip(int x, int y, int w, int h, int r,
     // hover
     if (mx >= x && mx < x+w && my >= y && my < y+h) bg = 0x3A3A3A;
 
-    // shadow sadece sağa
     gfx_fill_round_rect4(x + 2, y, w, h, 0, r, 0, 0, shadow);
     gfx_fill_round_rect4(x, y, w, h, 0, r, 0, 0, bg);
 
@@ -97,7 +96,6 @@ static void draw_header_right_chip_transparent(
         gfx_fill_round_rect4(x, y, w, h, 0, r, 0, 0, darken_rgb(title_bg, 18));
     }
 
-    // ayraç çizgisi (sol)
     gfx_fill_rect(x, y, 2, h, 0x2A2A2A);
 }
 
@@ -106,7 +104,6 @@ static void draw_header_flat_chip(int x, int y, int w, int h,
     uint32_t shadow = 0x101010;
     uint32_t bg     = active ? 0x0078D7 : 0x2A2A2A;
 
-    // hover
     if (mx >= x && mx < x+w && my >= y && my < y+h) bg = 0x3A3A3A;
 
     gfx_fill_rect(x + 2, y, w, h, shadow);
@@ -122,12 +119,10 @@ static void draw_header_flat_chip_transparent(
     int x, int y, int w, int h,
     uint32_t title_bg, int mx, int my
 ) {
-    // hover overlay: title bg’yi az karart
     if (mx >= x && mx < x+w && my >= y && my < y+h) {
         gfx_fill_rect(x, y, w, h, darken_rgb(title_bg, 18));
     }
 
-    // ayraç çizgisi (sol kenar)
     gfx_fill_rect(x, y, 2, h, 0x2A2A2A);
 }
 
@@ -165,11 +160,8 @@ void ui_window_draw(const ui_window_t* win, int is_active, int mx, int my) {
     // ------------------------------------------------------------
     // Header chips: ✅ L’den çiz (dikdörtgen)
     // ------------------------------------------------------------
-    // İkon istemiyorsun: text boş bırakabilirsin
-    // İstersen sonra "X", "□", "_" koyarsın.
     int chip_r = 12;
 
-    // arka planı titlebar’dan biraz koyu yap
     uint32_t chip_bg   = darken_rgb(col_title_bg, 35);
     uint32_t chip_bg_h = darken_rgb(col_title_bg, 55);
 

@@ -20,6 +20,7 @@
 #include <ui/apps/kuvix_browser.h>
 #include <ui/apps/kbi_viewer.h>
 #include <ui/apps/controls_test.h>
+#include <ui/apps/fileman_v2.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -70,6 +71,7 @@ static app_definition_t app_registry[] = {
     { 15, "Kuvix Browser", &kuvix_browser_vtbl,  160, 120, 820, 520, sizeof(kuvix_browser_t)  },
     { 16, "KBI Viewer",    &kbi_viewer_vtbl,     160, 120, 820, 520, sizeof(kbi_viewer_t)     },
     { 17, "Controls test", &controls_test_vtbl,  160, 120, 820, 520, sizeof(controls_test_t)  },
+    { 18, "Fileman V2",    &fileman_v2_vtbl,     160, 120, 820, 520, sizeof(fileman_v2_t)  },
     { 0,  NULL,                        NULL,       0,   0,   0,   0,                       0  }
 };
 

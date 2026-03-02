@@ -199,7 +199,6 @@ void wm_init(void) {
         g_used[i] = 0;
         g_wins[i].owner = 0;
 
-        // güvenli başlangıç
         g_wins[i].win.is_closed = 1;
         g_wins[i].win.state = WIN_NORMAL;
         g_wins[i].win.x = g_wins[i].win.y = 0;
@@ -210,9 +209,8 @@ void wm_init(void) {
 }
 
 int wm_add_window(int x, int y, int w, int h, const char* title, app_t* owner) {
-    if (g_count >= WM_MAX_WINDOWS) return -1; // z listesi dolu
+    if (g_count >= WM_MAX_WINDOWS) return -1;
 
-    // ✅ free slot bul
     int id = -1;
     for (int i = 0; i < WM_MAX_WINDOWS; i++) {
         if (!g_used[i]) { id = i; break; }
@@ -223,7 +221,6 @@ int wm_add_window(int x, int y, int w, int h, const char* title, app_t* owner) {
     win->x = x; win->y = y;
     win->w = w; win->h = h;
 
-    // prev değerleri
     win->prev_x = x;
     win->prev_y = y;
     win->prev_w = w;
@@ -236,7 +233,6 @@ int wm_add_window(int x, int y, int w, int h, const char* title, app_t* owner) {
 
     g_wins[id].owner = owner;
 
-    // ✅ z-order listesine ekle
     g_z[g_count++] = id;
     g_active = id;
     g_used[id] = 1;
@@ -244,28 +240,35 @@ int wm_add_window(int x, int y, int w, int h, const char* title, app_t* owner) {
     return id;
 }
 
+void wm_request_close(int win_id) {
+    if (!is_alive_id(win_id)) return;
+
+    app_t* app = g_wins[win_id].owner;
+    if (app && app->v && app->v->on_close_request) {
+        int allow = app->v->on_close_request(app);
+        if (!allow) return;
+    }
+
+    wm_close_window(win_id);
+}
+
 void wm_close_window(int win_id) {
     if (!is_alive_id(win_id)) return;
 
-    // ✅ Drag state temizle (kapatılan pencere sürükleniyorsa)
     if (g_drag_idx == win_id) {
         g_mouse_down = 0;
         g_dragging = 0;
         g_drag_idx = -1;
     }
 
-    // ✅ App cleanup TEK yerde: AppManager
     appmgr_on_window_closed(win_id);
 
-    // ✅ WM slot boşalt
     g_wins[win_id].owner = 0;
     g_wins[win_id].win.is_closed = 1;
     g_used[win_id] = 0;
 
-    // ✅ z-order’dan çıkar
     z_remove(win_id);
 
-    // ✅ active güncelle
     if (g_active == win_id) {
         g_active = (g_count == 0) ? -1 : find_top_non_minimized();
     }
@@ -277,7 +280,6 @@ void wm_minimize(int win_id) {
     ui_window_t* w = &g_wins[win_id].win;
     if (w->state == WIN_MINIMIZED) return;
 
-    // Maximize ise önce normal’e dön
     if (w->state == WIN_MAXIMIZED) {
         w->x = w->prev_x; w->y = w->prev_y;
         w->w = w->prev_w; w->h = w->prev_h;
@@ -285,12 +287,11 @@ void wm_minimize(int win_id) {
 
     w->state = WIN_MINIMIZED;
 
-    // Active ise başka pencereye geç
     if (g_active == win_id) {
         g_active = find_top_non_minimized();
     }
 
-    // Drag iptal
+    // Drag cancel
     g_mouse_down = 0;
     g_dragging = 0;
     g_drag_idx = -1;
@@ -363,7 +364,6 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
 
     int idx = pick_top(mx, my);
 
-    // pencere yoksa
     if (idx == -1) {
         if (released & 0x01) {
             g_mouse_down = 0;
@@ -373,7 +373,6 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
         return;
     }
 
-    // pencere var -> consume
     g_mouse_consumed = 1;
 
     // pressed: öne al + chrome hittest
@@ -384,12 +383,7 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
         wm_hittest_t hit = ui_chrome_hittest(w, mx, my);
 
         if (hit == HT_BTN_CLOSE) {
-            app_t* app = g_wins[idx].owner;
-            if (app && app->v && app->v->on_close_request) {
-                int allow = app->v->on_close_request(app);
-                if (!allow) return;
-            }
-            wm_close_window(idx);
+            wm_request_close(idx);
             return;
         }
 
@@ -429,7 +423,6 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
                             }
                         }
 
-                        // [+] butonu
                         wm_recti_t ar = wm_tab_add_rect(strip, max_tabs, 28, tab_h, gap);
                         if (wm_pt_in_rect(mx, my, ar)) {
                             int last = n - 1;
@@ -442,7 +435,6 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
                 }
             }
 
-            // Tab’a basılmadıysa normal drag
             g_mouse_down = 1;
             g_drag_idx = idx;
             g_down_x = mx;
@@ -450,10 +442,8 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
             g_dragging = 0;
             return;
         }
-        // HT_CLIENT ise app event aşağıda gidecek
     }
 
-    // ✅ app mouse event her zaman gitsin (hover/release için)
     {
         app_t* app = g_wins[idx].owner;
         if (app && app->v && app->v->on_mouse) {
@@ -548,7 +538,6 @@ void wm_draw(void) {
         ui_window_t* win = &g_wins[id].win;
         app_t* app = g_wins[id].owner;
 
-        // minimized çizme
         if (win->state == WIN_MINIMIZED) continue;
 
         if (app && app->visible) {
@@ -557,9 +546,16 @@ void wm_draw(void) {
             if (app->v && app->v->on_draw) {
                 ui_rect_t client = wm_get_client_rect(id);
 
+                int r = 18; 
+
+                gfx_clip_round_rect4(client.x, client.y, client.w, client.h,
+                                    0, 0, r, r);
+
                 gfx_set_origin(client.x, client.y);
                 app->v->on_draw(app);
                 gfx_reset_origin();
+
+                gfx_clip_clear();
             }
         }
     }
@@ -628,4 +624,8 @@ int wm_did_consume_mouse(void) {
 
 int wm_is_dragging_window(void) {
     return g_dragging;
+}
+
+uint32_t wm_get_ticks(void) {
+    return g_ticks_ms;
 }
