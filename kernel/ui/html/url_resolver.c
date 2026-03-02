@@ -3,6 +3,8 @@
 
 #include <kernel/fs/vfs.h>
 #include <kernel/printk.h>
+#include <kernel/user.h>     // USER_DESKTOP_PATH
+
 #include <lib/string.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -85,7 +87,7 @@ static bool safe_cat(char* out, int cap, const char* add) {
 }
 
 static bool has_dot_ext_after_slash(const char* path) {
-    // son segmentte '.' var mı? (dosya gibi)
+    // last segment has '.' ? (file-like)
     if (!path) return false;
     const char* base = strrchr(path, '/');
     base = base ? base + 1 : path;
@@ -97,12 +99,17 @@ static bool looks_like_dir_root(const char* root) {
     if (!root || !root[0]) return false;
     int n = (int)strlen(root);
     if (root[n - 1] == '/') return true;
-    // eğer uzantı yoksa klasör gibi davran
+    // if no extension in last segment -> treat as dir
     return !has_dot_ext_after_slash(root);
 }
 
-// host + request-path ayır
-static void split_url(const char* url, char* out_host, int host_cap,
+static int is_abs_path(const char* s) {
+    return (s && s[0] == '/');
+}
+
+// host + request-path split
+static void split_url(const char* url,
+                      char* out_host, int host_cap,
                       char* out_reqpath, int path_cap)
 {
     if (out_host && host_cap > 0) out_host[0] = 0;
@@ -130,7 +137,7 @@ static void split_url(const char* url, char* out_host, int host_cap,
     safe_copy(out_reqpath, path_cap, slash); // includes leading '/'
 }
 
-// basit token parser (space separated)
+// basic token parser (space separated)
 static int next_token(char** ps, char* out, int cap) {
     if (!ps || !*ps || !out || cap <= 0) return 0;
 
@@ -152,12 +159,8 @@ static int next_token(char** ps, char* out, int cap) {
 }
 
 static uint32_t parse_ipv4(const char* s) {
-    // çok basit: a.b.c.d (0..255)
+    // very small: a.b.c.d (0..255)
     if (!s) return 0;
-    int a=0,b=0,c=0,d=0;
-    char dummy = 0;
-    // sscanf yoksa diye manual yapmayalım, ama çoğu libc yok; senin string lib’de sscanf yok olabilir.
-    // Bu yüzden manuel:
     int parts[4] = {0,0,0,0};
     int pi = 0;
     int val = 0;
@@ -183,9 +186,7 @@ static uint32_t parse_ipv4(const char* s) {
     if (pi != 3) return 0;
     parts[pi] = val;
 
-    a=parts[0]; b=parts[1]; c=parts[2]; d=parts[3];
-    dummy = 0; (void)dummy;
-    return ((uint32_t)a<<24) | ((uint32_t)b<<16) | ((uint32_t)c<<8) | (uint32_t)d;
+    return ((uint32_t)parts[0]<<24) | ((uint32_t)parts[1]<<16) | ((uint32_t)parts[2]<<8) | (uint32_t)parts[3];
 }
 
 static void table_clear(void) {
@@ -224,8 +225,14 @@ static const urlr_entry_t* table_find(const char* host) {
     return NULL;
 }
 
-static int is_abs_path(const char* s) {
-    return (s && s[0] == '/');
+static bool vfs_file_exists_ro(const char* path) {
+    if (!path || !path[0]) return false;
+    vfs_file_t* f = 0;
+    if (vfs_open(path, VFS_O_RDONLY, &f) == 1) {
+        vfs_close(f);
+        return true;
+    }
+    return false;
 }
 
 // ------------------------------------------------------------
@@ -271,9 +278,8 @@ static void parse_line(char* line) {
 
     uint32_t ip = parse_ipv4(t1);
     if (ip != 0) {
-        // ip host [root]
         const char* host = t2;
-        const char* root = has3 ? t3 : ""; // require root ideally
+        const char* root = has3 ? t3 : "";
         if (root[0]) table_add(host, root, ip);
         return;
     }
@@ -311,8 +317,37 @@ static void ensure_loaded(void) {
     }
 
     vfs_free_alloc(buf);
-
     printk("[url_resolver] loaded %s\n", URLR_CONF_PATH);
+}
+
+// ------------------------------------------------------------
+// local: mapping
+// ------------------------------------------------------------
+static bool resolve_local(const char* url, char* out, int cap) {
+    if (!url || strncmp(url, "local:", 6) != 0) return false;
+
+    const char* p = url + 6;
+
+    // local:   -> home
+    if (!p[0] || strcmp(p, "home") == 0) {
+        safe_copy(out, cap, USER_DESKTOP_PATH "/home.html");
+        return true;
+    }
+    if (strcmp(p, "docs") == 0) {
+        safe_copy(out, cap, USER_DESKTOP_PATH "/docs.html");
+        return true;
+    }
+    if (strcmp(p, "new") == 0) {
+        safe_copy(out, cap, USER_DESKTOP_PATH "/new.html");
+        return true;
+    }
+
+    // İstersen local:foo.html => desktop/foo.html yap:
+    // safe_copy(out, cap, USER_DESKTOP_PATH "/");
+    // safe_cat(out, cap, p);
+    // return true;
+
+    return false;
 }
 
 // ------------------------------------------------------------
@@ -324,18 +359,22 @@ bool url_resolve_to_path(const char* url, char* out, int cap) {
 
     ensure_loaded();
 
-    if (!url || !url[0]) return false;
+    // empty => default home
+    if (!url || !url[0]) {
+        safe_copy(out, cap, USER_DESKTOP_PATH "/home.html");
+        return true;
+    }
 
-    // if user typed just "local:home" etc, resolver doesn't handle it
-    // (browser fallback handles local:)
-    // but if you want, you can also accept ".local" etc here.
+    // local:
+    if (resolve_local(url, out, cap)) return true;
 
-    // absolute path: let browser handle (but it's okay to support here too)
+    // absolute path
     if (is_abs_path(url)) {
         safe_copy(out, cap, url);
         return true;
     }
 
+    // split host + req
     char host[URLR_MAX_HOST];
     char req[128];
     split_url(url, host, (int)sizeof(host), req, (int)sizeof(req));
@@ -345,46 +384,55 @@ bool url_resolve_to_path(const char* url, char* out, int cap) {
     const urlr_entry_t* e = table_find(host);
     if (!e) return false;
 
-    // build output
     char tmp[256];
     tmp[0] = 0;
 
     const bool root_is_dir = looks_like_dir_root(e->root);
 
     if (root_is_dir) {
-        // root + (req ? req : /index.html)
+        // base root
         safe_copy(tmp, (int)sizeof(tmp), e->root);
 
-        if (req[0]) {
-            // avoid double slash
-            if (tmp[0] && tmp[strlen(tmp)-1] == '/' && req[0] == '/')
-                safe_cat(tmp, (int)sizeof(tmp), req + 1);
-            else
-                safe_cat(tmp, (int)sizeof(tmp), req);
-        } else {
+        // ensure trailing slash on root when joining
+        int tl = (int)strlen(tmp);
+        if (tl > 0 && tmp[tl - 1] != '/') safe_cat(tmp, (int)sizeof(tmp), "/");
+
+        if (!req[0] || strcmp(req, "/") == 0) {
             // default index.html
-            if (tmp[0] && tmp[strlen(tmp)-1] != '/') safe_cat(tmp, (int)sizeof(tmp), "/");
             safe_cat(tmp, (int)sizeof(tmp), "index.html");
+            if (!vfs_file_exists_ro(tmp)) return false;
+        } else {
+            // req starts with '/', append without leading '/'
+            const char* rp = (req[0] == '/') ? (req + 1) : req;
+            safe_cat(tmp, (int)sizeof(tmp), rp);
+
+            // If it doesn't exist, try "req/index.html" (apache-like)
+            if (!vfs_file_exists_ro(tmp)) {
+                // tmp currently ".../about" -> try ".../about/index.html"
+                safe_cat(tmp, (int)sizeof(tmp), "/index.html");
+                if (!vfs_file_exists_ro(tmp)) return false;
+            }
         }
     } else {
-        // mapped to a file
-        // if user wrote /something, interpret relative to file directory
-        if (!req[0]) {
+        // mapped to a file (e->root)
+        if (!req[0] || strcmp(req, "/") == 0) {
             safe_copy(tmp, (int)sizeof(tmp), e->root);
+            if (!vfs_file_exists_ro(tmp)) return false;
         } else {
+            // interpret req relative to file's directory
             safe_copy(tmp, (int)sizeof(tmp), e->root);
 
             // cut to directory
             char* last = strrchr(tmp, '/');
-            if (last) *(last+1) = 0; // keep trailing '/'
+            if (last) *(last + 1) = 0;
 
-            // append req without leading '/'
             const char* rp = (req[0] == '/') ? (req + 1) : req;
             safe_cat(tmp, (int)sizeof(tmp), rp);
+
+            if (!vfs_file_exists_ro(tmp)) return false;
         }
     }
 
-    // copy to out
     safe_copy(out, cap, tmp);
     return true;
 }

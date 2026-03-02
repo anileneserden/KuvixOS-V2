@@ -1,3 +1,4 @@
+// kernel/ui/context_menu.c
 #include <ui/context_menu.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
@@ -11,13 +12,17 @@
 #define ARROW_W  12
 #define CHECK_W  12
 
+// TEST MODE: sadece beyaz kutu çiz
+#define CONTEXT_MENU_TEST_RECT 0
+#define TEST_W  220
+#define TEST_H  140
+
 typedef struct context_menu context_menu_t;
 
 typedef struct {
     char text[32];
     void (*callback)(void);
-
-    context_menu_t* submenu;  // ✅ varsa ">"
+    context_menu_t* submenu;  // varsa ">"
 } menu_item_t;
 
 struct context_menu {
@@ -35,8 +40,14 @@ struct context_menu {
 };
 
 static context_menu_t g_root;
-static context_menu_t g_view; // örnek: tek bir submenu havuzu (istersen daha fazla ekleriz)
 
+#define SUBMENU_POOL_MAX 8
+static context_menu_t g_pool[SUBMENU_POOL_MAX];
+static int g_pool_used = 0;
+
+// ------------------------------------------------------------
+// small helpers
+// ------------------------------------------------------------
 static int clampi(int v, int lo, int hi) {
     if (v < lo) return lo;
     if (v > hi) return hi;
@@ -44,7 +55,7 @@ static int clampi(int v, int lo, int hi) {
 }
 
 static int text_px(const char* s) {
-    return (int)strlen(s) * 8; // senin font 8px varsayımı
+    return (int)strlen(s) * 8; // 8px font varsayımı
 }
 
 static void menu_measure(context_menu_t* m) {
@@ -54,16 +65,16 @@ static void menu_measure(context_menu_t* m) {
         if (w > maxw) maxw = w;
     }
 
-    // left: check area (ilerde kullanırsın), right: arrow area
     m->w = PAD + CHECK_W + 6 + maxw + 6 + ARROW_W + PAD;
     m->h = PAD * 2 + m->count * ITEM_H;
 
-    if (m->w < 120) m->w = 120; // minimum genişlik
+    if (m->w < 120) m->w = 120;
+    if (m->h < (PAD * 2 + ITEM_H)) m->h = (PAD * 2 + ITEM_H); // min yükseklik
 }
 
 static bool menu_hit(context_menu_t* m, int mx, int my) {
-    return (mx >= m->x && mx <= m->x + m->w &&
-            my >= m->y && my <= m->y + m->h);
+    return (mx >= m->x && mx < (m->x + m->w) &&
+            my >= m->y && my < (m->y + m->h));
 }
 
 static int menu_item_at(context_menu_t* m, int mx, int my) {
@@ -75,7 +86,8 @@ static int menu_item_at(context_menu_t* m, int mx, int my) {
     return idx;
 }
 
-static void menu_place_root(context_menu_t* m, int x, int y) {
+// normal: ölçer + clamp
+static void menu_place_root_measured(context_menu_t* m, int x, int y) {
     int sw = fb_get_width();
     int sh = fb_get_height();
 
@@ -84,7 +96,24 @@ static void menu_place_root(context_menu_t* m, int x, int y) {
     int nx = x;
     int ny = y;
 
-    // ekrandan taşma engelle
+    if (nx + m->w > sw) nx = sw - m->w;
+    if (ny + m->h > sh) ny = sh - m->h;
+
+    nx = clampi(nx, 0, sw - m->w);
+    ny = clampi(ny, 0, sh - m->h);
+
+    m->x = nx;
+    m->y = ny;
+}
+
+// TEST: ölçmeden (mevcut w/h ile) clamp
+static void menu_place_root_raw(context_menu_t* m, int x, int y) {
+    int sw = fb_get_width();
+    int sh = fb_get_height();
+
+    int nx = x;
+    int ny = y;
+
     if (nx + m->w > sw) nx = sw - m->w;
     if (ny + m->h > sh) ny = sh - m->h;
 
@@ -101,23 +130,16 @@ static void menu_place_submenu(context_menu_t* parent, context_menu_t* child, in
 
     menu_measure(child);
 
-    // anchor: parent item satırı
     int anchor_y = parent->y + PAD + item_index * ITEM_H;
     int y = anchor_y;
 
     int x_right = parent->x + parent->w;
     int x_left  = parent->x - child->w;
 
-    // default sağ
     int x = x_right;
-
-    // sağ taşarsa sol
     if (x + child->w > sw) x = x_left;
-
-    // sol da taşarsa clamp
     if (x < 0) x = 0;
 
-    // alt taşarsa yukarı çek
     if (y + child->h > sh) y = sh - child->h;
     if (y < 0) y = 0;
 
@@ -144,12 +166,7 @@ void context_menu_reset(void) {
     g_root.parent = NULL;
     g_root.child = NULL;
 
-    // submenu menülerini de sıfırla (en azından “view”)
-    g_view.count = 0;
-    g_view.hover = -1;
-    g_view.visible = false;
-    g_view.parent = NULL;
-    g_view.child = NULL;
+    g_pool_used = 0; // ✅ submenu pool reset
 }
 
 void context_menu_add_item(const char* text, void (*callback)(void)) {
@@ -176,9 +193,10 @@ context_menu_t* context_menu_add_submenu_to(context_menu_t* menu, const char* te
     if (!menu) return NULL;
     if (menu->count >= MAX_MENU_ITEMS) return NULL;
 
-    // Şimdilik tek submenu havuzu: g_view
-    // (İstersen ileride pool yaparız)
-    context_menu_t* child = &g_view;
+    // ✅ pool'dan submenu al
+    if (g_pool_used >= SUBMENU_POOL_MAX) return NULL;
+    context_menu_t* child = &g_pool[g_pool_used++];
+
     child->count = 0;
     child->hover = -1;
     child->visible = false;
@@ -200,7 +218,15 @@ void context_menu_show(int x, int y) {
     g_root.hover = -1;
     menu_close_child(&g_root);
 
-    menu_place_root(&g_root, x, y);
+#if CONTEXT_MENU_TEST_RECT
+    // TEST: sadece sabit boyutlu beyaz kutu
+    g_root.count = 0;   // item çizilmeyecek
+    g_root.w = TEST_W;
+    g_root.h = TEST_H;
+    menu_place_root_raw(&g_root, x, y);   // ✅ ölçmeden clamp
+#else
+    menu_place_root_measured(&g_root, x, y);
+#endif
 }
 
 void context_menu_hide(void) {
@@ -212,27 +238,26 @@ bool context_menu_is_visible(void) {
     return g_root.visible;
 }
 
+// ------------------------------------------------------------
+// DRAW
+// ------------------------------------------------------------
 static void menu_draw_one(context_menu_t* m) {
     if (!m || !m->visible) return;
 
-    // bg + border
     gfx_fill_rect(m->x, m->y, m->w, m->h, 0xCCCCCC);
     gfx_draw_rect(m->x, m->y, m->w, m->h, 0x000000);
 
     for (int i = 0; i < m->count; i++) {
         int iy = m->y + PAD + i * ITEM_H;
 
-        // hover highlight
         if (m->hover == i) {
             gfx_fill_rect(m->x + 1, iy, m->w - 2, ITEM_H, 0x000080);
         }
 
         uint32_t col = (m->hover == i) ? 0xFFFFFF : 0x000000;
 
-        // text
         gfx_draw_text_utf8(m->x + PAD + CHECK_W + 6, iy + 5, col, m->items[i].text);
 
-        // submenu arrow
         if (m->items[i].submenu) {
             gfx_draw_text_utf8(m->x + m->w - PAD - ARROW_W, iy + 5, col, ">");
         }
@@ -242,19 +267,36 @@ static void menu_draw_one(context_menu_t* m) {
 void context_menu_draw(void) {
     if (!g_root.visible) return;
 
+#if CONTEXT_MENU_TEST_RECT
+    gfx_fill_rect(g_root.x, g_root.y, g_root.w, g_root.h, 0xFFFFFF);
+    gfx_draw_rect(g_root.x, g_root.y, g_root.w, g_root.h, 0x000000);
+#else
     menu_draw_one(&g_root);
     if (g_root.child && g_root.child->visible) {
         menu_draw_one(g_root.child);
     }
+#endif
 }
 
+// ------------------------------------------------------------
+// INPUT
+// ------------------------------------------------------------
 void context_menu_handle_mouse(int mx, int my, bool clicked) {
     if (!g_root.visible) return;
 
+#if CONTEXT_MENU_TEST_RECT
+    // Test: sadece dışarı tıklayınca kapat
+    if (clicked) {
+        if (!menu_hit(&g_root, mx, my)) {
+            context_menu_hide();
+        }
+    }
+    return;
+#else
     context_menu_t* root = &g_root;
     context_menu_t* child = root->child;
 
-    // 1) Öncelik: child açık ve mouse child üstündeyse
+    // 1) child üstünde
     if (child && child->visible && menu_hit(child, mx, my)) {
         int idx = menu_item_at(child, mx, my);
         child->hover = idx;
@@ -267,16 +309,14 @@ void context_menu_handle_mouse(int mx, int my, bool clicked) {
         return;
     }
 
-    // 2) Root hover/click
+    // 2) root
     int ridx = menu_item_at(root, mx, my);
     root->hover = ridx;
 
-    // Hover: submenu aç/kapat
     if (ridx >= 0 && ridx < root->count) {
         menu_item_t* it = &root->items[ridx];
 
         if (it->submenu) {
-            // aynı submenu zaten açıksa dokunma
             if (root->child != it->submenu || !it->submenu->visible) {
                 menu_close_child(root);
                 root->child = it->submenu;
@@ -287,11 +327,9 @@ void context_menu_handle_mouse(int mx, int my, bool clicked) {
                 menu_place_submenu(root, root->child, ridx);
             }
         } else {
-            // leaf hover: child kapat
             menu_close_child(root);
         }
 
-        // Click: leaf ise çalıştır
         if (clicked) {
             if (!it->submenu) {
                 if (it->callback) it->callback();
@@ -301,17 +339,14 @@ void context_menu_handle_mouse(int mx, int my, bool clicked) {
         return;
     }
 
-    // 3) Menülerin dışında click -> kapat
+    // 3) dışarı tıkla -> kapat
     if (clicked) {
-        // child görünse bile dışarı click kapanmalı
         if (!(menu_hit(root, mx, my) || (child && child->visible && menu_hit(child, mx, my)))) {
             context_menu_hide();
-        } else {
-            // root içi ama item yoksa: hiçbir şey
         }
     } else {
-        // hover root dışında: child kapat
-        // (Windows'ta genelde dışarı çıkınca child kapanır)
+        // hover dışarı çıktıysa child kapat
         menu_close_child(root);
     }
+#endif
 }

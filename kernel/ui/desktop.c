@@ -16,6 +16,7 @@
 #include <ui/context_menu.h>
 #include <kernel/fs/vfs.h>
 #include <ui/apps/notepad.h>
+#include <ui/apps/kuvix_browser.h>
 
 #include <kernel/drivers/ata_pio.h>
 #include <kernel/block/block.h>
@@ -102,6 +103,7 @@ static int  sel_start_x = 0;
 static int  sel_start_y = 0;
 
 static int rename_target_index = -1;
+static int g_ctx_icon_index = -1;
 
 // mouse state
 static uint8_t g_last_btn = 0;
@@ -117,6 +119,12 @@ static int g_dbg_last_dx = 0;
 static int g_dbg_last_dy = 0;
 static int g_dbg_wheel_step = 0;
 static int g_dbg_wheel_total = 0;
+
+static bool g_need_redraw = true;
+
+static inline void desktop_request_redraw(void) {
+    g_need_redraw = true;
+}
 
 // --- Debug overlay helps (desktop içi) ---
 static bool g_dbg_overlay = false;
@@ -175,6 +183,7 @@ static void desktop_toggle_ext(void);
 
 void desktop_invalidate_full(void) {
     g_force_full_present = true;
+    g_need_redraw = true;
 }
 
 // ============================================================
@@ -226,8 +235,8 @@ static void get_unique_filename(const char* base_path, const char* ext, char* ou
 static void desktop_toggle_ext(void) {
     ui_toggle_show_extensions();
     desktop_icons_init();
-    desktop_icons_snap_all();      // ✅ iyi olur, dizilim bozulmasın
-    desktop_invalidate_full();     // ✅ senin helper, g_force_full_present = true
+    desktop_icons_snap_all();
+    desktop_invalidate_full();
 }
 
 void seed_store_repo(void) {
@@ -488,6 +497,8 @@ static void demo_box_with_header(int x, int y, int w, int h) {
     draw_header_right_chip(x_right, y, chip_w, chip_h, 12, ">", false);
 }
 
+
+
 // ============================================================
 // Desktop Handlers
 // ============================================================
@@ -598,6 +609,53 @@ static void desktop_handle_create_folder(void) {
     notification_show("Klasor olusturuldu", 600);
 }
 
+static void ctx_open_default(void) {
+    if (g_ctx_icon_index < 0) return;
+    const char* path = desktop_icons_get_path(g_ctx_icon_index);
+    if (path) appmgr_open_path(path);
+}
+
+static void ctx_open_with_notepad(void) {
+    if (g_ctx_icon_index < 0) return;
+    const char* path = desktop_icons_get_path(g_ctx_icon_index);
+    if (!path) return;
+
+    app_t* a = appmgr_start_app(3); // APPID_NOTEPAD
+    if (a) notepad_open_file(path);
+}
+
+static void ctx_open_with_browser(void) {
+    if (g_ctx_icon_index < 0) return;
+    const char* path = desktop_icons_get_path(g_ctx_icon_index);
+    if (!path) return;
+
+    char url[256];
+    url[0] = 0;
+    strncpy(url, "file:", sizeof(url) - 1);
+    url[sizeof(url) - 1] = 0;
+    strncat(url, path, sizeof(url) - strlen(url) - 1);
+
+    app_t* b = appmgr_start_app(15); // APPID_BROWSER
+    if (b) kuvix_browser_open_url(b, url);
+}
+
+static bool ends_with_ci(const char* s, const char* suf) {
+    if (!s || !suf) return false;
+    int sl = (int)strlen(s);
+    int pl = (int)strlen(suf);
+    if (sl < pl) return false;
+
+    const char* a = s + (sl - pl);
+    for (int i = 0; i < pl; i++) {
+        char ca = a[i];
+        char cb = suf[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb - 'A' + 'a');
+        if (ca != cb) return false;
+    }
+    return true;
+}
+
 void desktop_reset_selection_state(void) {
     is_selecting = false;
 }
@@ -632,6 +690,7 @@ void ui_desktop_init(void) {
 
     // ✅ ilk frame kesin ekrana basılsın
     g_force_full_present = true;
+    g_need_redraw = true;
 
     // (opsiyonel) diskten kurtarma - burada 1 kere çalışsın
     char disk_buffer[512];
@@ -675,6 +734,17 @@ void ui_desktop_handle_scancode(uint16_t sc)
     if (kbd_is_super_pressed() && sc8 == 0x13) {
         app_t* a = appmgr_start_app(7);
         if (a) wm_set_active_id(a->win_id); // sende bu var
+        desktop_invalidate_full();
+        return;
+    }
+
+    // ------------------------------------------------------------
+    // GLOBAL HOTKEY: SUPER+Q -> Close active window
+    // Set1: Q make = 0x10
+    // ------------------------------------------------------------
+    if (kbd_is_super_pressed() && sc8 == 0x10) { // Q
+        int wid = wm_get_active_id();
+        wm_request_close(wid);
         desktop_invalidate_full();
         return;
     }
@@ -798,10 +868,12 @@ void ui_desktop_tick(void) {
 
             wm_handle_mouse_wheel(mouse_x, mouse_y, step, btn);
             need_full_present = true;
+            desktop_request_redraw();
         }
 
         if (dx != 0 || dy != 0) {
             wm_handle_mouse_move(mouse_x, mouse_y);
+            desktop_request_redraw();
 
             // Mouse bir pencerenin üstündeyse hover değişebilir -> full present gerekli
             if (wm_find_window_at(mouse_x, mouse_y) != -1) {
@@ -846,6 +918,7 @@ void ui_desktop_tick(void) {
         wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
         if (wm_did_consume_mouse()) {
             need_full_present = true;
+            desktop_request_redraw();
             is_selecting = false;
             g_lmb_down = 0;
             g_dragging = 0;
@@ -859,7 +932,8 @@ void ui_desktop_tick(void) {
 
             // ✅ Context menu açıkken: her eventte hover/submenu update
             if (context_menu_is_visible()) {
-                need_full_present = true; // dirty-rect menü için güvenli değil
+                need_full_present = true;
+                desktop_request_redraw();
                 context_menu_handle_mouse(mouse_x, mouse_y, false);
             }
 
@@ -874,6 +948,7 @@ void ui_desktop_tick(void) {
                 is_selecting = false;
 
                 int hit = desktop_icons_get_hit(mouse_x, mouse_y);
+                g_ctx_icon_index = hit;
 
                 // ✅ Windows gibi: sağ tık ikon üstündeyse onu seç
                 desktop_icons_deselect_all();
@@ -883,13 +958,37 @@ void ui_desktop_tick(void) {
 
                 if (hit != -1) {
                     // ikon üstü
-                    context_menu_add_item("Ac", desktop_handle_open);
+                    context_menu_add_item("Ac", ctx_open_default);
+
+                    // ✅ Birlikte Aç submenu
+                    const char* p = desktop_icons_get_path(hit);
+
+                    // sadece dosyalarda göster (istersen klasör için de gösterirsin)
+                    vfs_stat_t st;
+                    bool is_dir = false;
+                    if (p && vfs_stat(p, &st) && st.type == VFS_T_DIR) is_dir = true;
+
+                    if (!is_dir) {
+                        context_menu_t* ow = context_menu_add_submenu("Birlikte Ac");
+                        if (ow) {
+                            // HTML -> Browser + Notepad
+                            if (p && (ends_with_ci(p, ".html") || ends_with_ci(p, ".htm"))) {
+                                context_menu_add_item_to(ow, "Kuvix Browser", ctx_open_with_browser);
+                                context_menu_add_item_to(ow, "Not Defteri",  ctx_open_with_notepad);
+                            }
+                            // TXT -> Notepad
+                            else if (p && ends_with_ci(p, ".txt")) {
+                                context_menu_add_item_to(ow, "Not Defteri", ctx_open_with_notepad);
+                            }
+                            // bilinmeyen -> yine de notepad göster (debug için)
+                            else {
+                                context_menu_add_item_to(ow, "Not Defteri", ctx_open_with_notepad);
+                            }
+                        }
+                    }
+
                     context_menu_add_item("Ad Degistir", desktop_handle_rename);
                     context_menu_add_item("Sil", desktop_icons_delete_selected);
-
-                    // (istersen ikon üstünde de Görünüm koy)
-                    // context_menu_t* view = context_menu_add_submenu("Gorunum");
-                    // context_menu_add_item_to(view, "Dosya uzantilarini goster", desktop_toggle_ext);
                 } else {
                     // boş alan
                     context_menu_t* view = context_menu_add_submenu("Gorunum");
@@ -949,7 +1048,7 @@ void ui_desktop_tick(void) {
 
                         // ✅ uygulama açıldıktan sonra seçimi kapat
                         desktop_icons_deselect_all();
-                        desktop_invalidate_full();   // (opsiyonel ama iyi: hemen refresh)
+                        desktop_invalidate_full();
 
                         g_last_click_hit = -1;
                         g_last_click_ms = 0;
@@ -1024,6 +1123,7 @@ void ui_desktop_tick(void) {
     int now_hover = desktop_icons_get_hit(mouse_x, mouse_y);
     if (now_hover != prev_hover_hit) {
         need_full_present = true;
+        desktop_request_redraw();
         prev_hover_hit = now_hover;
     }
 
@@ -1041,13 +1141,48 @@ void ui_desktop_tick(void) {
 
     if (appmgr_any_continuous_redraw()) need_full_present = true;
 
+    // ---------- Decide if we should redraw this frame ----------
+    bool continuous = false;
+
+    // drag sırasında sürekli redraw şart
+    if (wm_is_dragging_window()) continuous = true;
+
+    // animasyon/video gibi sürekli redraw isteyen app varsa
+    if (appmgr_any_continuous_redraw()) continuous = true;
+
+    // debug overlay / memmon açıksa sürekli redraw
+    if (g_dbg_overlay) continuous = true;
+    if (memmon_is_visible()) continuous = true;
+
+    // invalidate_full çağrıldıysa redraw da şart
+    if (g_force_full_present) g_need_redraw = true;
+
+    bool should_draw = (g_need_redraw || continuous);
+
+    if (!should_draw) {
+        // hiçbir şey değişmedi -> çizme/present yok
+        return;
+    }
+
+    // bu frame çiziyoruz -> bayrağı sıfırla (continuous ise zaten tekrar set olur)
+    g_need_redraw = false;
+
+    // ---------- Render / Present policy ----------
+    if (g_force_full_present) {
+        need_full_present = true;
+        g_force_full_present = false;
+    }
+
+    // (bunlar full present gerektirebilir)
+    if (g_dbg_overlay) need_full_present = true;
+    if (memmon_is_visible()) need_full_present = true;
+    if (wm_is_dragging_window()) need_full_present = true;
+    if (appmgr_any_continuous_redraw()) need_full_present = true;
+
     fb_clear(ui_get_desktop_bg());
     desktop_icons_draw_all();
-    // draw_demo_icon_card();
 
     topbar_draw();
-    // demo_simple_rounded_box(260, 120, 340, 220);
-    // demo_box_with_header(260, 120, 340, 220);
 
     if (is_selecting) {
         gfx_draw_alpha_rect(
@@ -1069,7 +1204,7 @@ void ui_desktop_tick(void) {
     messagebox_draw();
     notification_draw();
 
-    memmon_draw((int)fb_get_width(), (int)fb_get_height());   // ✅ BURAYA
+    memmon_draw((int)fb_get_width(), (int)fb_get_height());
 
     cursor_draw_arrow(mouse_x, mouse_y);
     dbg_draw_panel();

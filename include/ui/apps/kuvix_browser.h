@@ -9,8 +9,14 @@
 typedef struct {
     int active_tab;
 
+    // committed (açık olan sayfa)
     char url[KBROWSER_URL_MAX];
     int  url_len;
+
+    // editing buffer (adres çubuğunda yazılan)
+    char addr_buf[KBROWSER_URL_MAX];
+    int  addr_len;
+
     int  addr_edit_mode;
 
     char history[KBROWSER_HISTORY_MAX][KBROWSER_URL_MAX];
@@ -27,3 +33,6 @@ typedef struct {
 // vtbl dışarıya
 struct app_vtbl;
 extern const struct app_vtbl kuvix_browser_vtbl;
+
+struct app;
+void kuvix_browser_open_url(struct app* app, const char* url);

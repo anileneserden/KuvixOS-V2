@@ -54,4 +54,9 @@ void gfx_reset_origin(void);
 
 void gfx_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t key);
 
+void gfx_clip_clear(void);
+void gfx_clip_rect(int x, int y, int w, int h);
+
+void gfx_clip_round_rect4(int x, int y, int w, int h, int rtl, int rtr, int rbl, int rbr);
+
 #endif
