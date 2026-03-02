@@ -1,26 +1,31 @@
 #include <app/app_manager.h>
 #include <app/app.h>
+
 #include <kernel/printk.h>
-#include <lib/string.h>
 #include <kernel/memory/kmalloc.h>
 #include <kernel/fs/vfs.h>
+
+#include <lib/string.h>
 #include <stdint.h>
+#include <stdbool.h>
+
 #include <ui/wm.h>
 #include <ui/desktop.h>
+#include <kernel/user.h>
 
 #include <ui/apps/notepad.h>
+#include <ui/apps/file_manager.h>
+#include <ui/apps/kuvix_browser.h>
+#include <ui/apps/fileman_v2.h>
+#include <ui/apps/terminal.h>
 #include <ui/apps/pixel_draw_app.h>
 #include <ui/apps/demo_font.h>
-#include <ui/apps/file_manager.h>
-#include <ui/apps/terminal.h>
 #include <ui/apps/scroll_demo.h>
 #include <ui/apps/kuvix_store.h>
 #include <ui/apps/settings.h>
 #include <ui/apps/designer.h>
-#include <ui/apps/kuvix_browser.h>
 #include <ui/apps/kbi_viewer.h>
 #include <ui/apps/controls_test.h>
-#include <ui/apps/fileman_v2.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -40,6 +45,7 @@ extern const app_vtbl_t designer_vtbl;
 extern const app_vtbl_t kuvix_browser_vtbl;
 extern const app_vtbl_t kbi_viewer_vtbl;
 extern const app_vtbl_t controls_test_vtbl;
+extern const app_vtbl_t fileman_v2_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -54,33 +60,90 @@ typedef struct {
 } app_definition_t;
 
 static app_definition_t app_registry[] = {
-    {  1, "Terminal",      &terminal_vtbl,       120,  90, 520, 320, sizeof(terminal_t)       },
-    {  2, "File Manager",  &file_manager_vtbl,    40,  60, 420, 260, sizeof(file_mgr_t)       },
-    {  3, "Notepad",       &notepad_vtbl,        150, 100, 450, 350, sizeof(notepad_t)        },
-    {  4, "Setup Wizard",  &setup_wizard_vtbl,   140,  90, 520, 320,                     1024 },
-    {  5, "Demo",          &demo_app_vtbl,       160, 120, 520, 240,                        0 },
-    {  6, "Calculator",    &calculator_vtbl,     160, 120, 300, 380,                        0 },
-    {  7, "Run",           &run_vtbl,            200, 140, 420, 140,                      256 },
-    {  8, "Grid Demo",     &grid_demo_app_vtbl,  120,  80, 720, 540,                       16 },
-    {  9, "Pixel Draw",    &pixel_draw_app_vtbl, 120,  80, 900, 650, sizeof(pixel_draw_app_t) },
-    { 10, "Font Demo",     &demo_font_vtbl,      140,  90, 700, 500, sizeof(demo_font_t)      },
-    { 11, "Scroll Demo",   &scroll_demo_vtbl,    120,  90, 520, 320, sizeof(scroll_demo_t)    },
-    { 12, "KuvixStore",    &kuvix_store_vtbl,    160, 120, 720, 420, sizeof(kuvix_store_t)    },
-    { 13, "Settings",      &settings_vtbl,       170, 120, 640, 420, sizeof(settings_t)       },
-    { 14, "Designer",      &designer_vtbl,       170, 120, 640, 420, sizeof(designer_t)       },
-    { 15, "Kuvix Browser", &kuvix_browser_vtbl,  160, 120, 820, 520, sizeof(kuvix_browser_t)  },
-    { 16, "KBI Viewer",    &kbi_viewer_vtbl,     160, 120, 820, 520, sizeof(kbi_viewer_t)     },
-    { 17, "Controls test", &controls_test_vtbl,  160, 120, 820, 520, sizeof(controls_test_t)  },
-    { 18, "Fileman V2",    &fileman_v2_vtbl,     160, 120, 820, 520, sizeof(fileman_v2_t)  },
-    { 0,  NULL,                        NULL,       0,   0,   0,   0,                       0  }
+    {  1, "Terminal",      &terminal_vtbl,        120,  90, 520, 320, sizeof(terminal_t)        },
+    {  2, "File Manager",  &file_manager_vtbl,     40,  60, 420, 260, sizeof(file_mgr_t)        },
+    {  3, "Notepad",       &notepad_vtbl,         150, 100, 450, 350, sizeof(notepad_t)         },
+    {  4, "Setup Wizard",  &setup_wizard_vtbl,    140,  90, 520, 320, 1024                      },
+    {  5, "Demo",          &demo_app_vtbl,        160, 120, 520, 240, 0                         },
+    {  6, "Calculator",    &calculator_vtbl,      160, 120, 300, 380, 0                         },
+    {  7, "Run",           &run_vtbl,             200, 140, 420, 140, 256                       },
+    {  8, "Grid Demo",     &grid_demo_app_vtbl,   120,  80, 720, 540, 16                        },
+    {  9, "Pixel Draw",    &pixel_draw_app_vtbl,  120,  80, 900, 650, sizeof(pixel_draw_app_t)  },
+    { 10, "Font Demo",     &demo_font_vtbl,       140,  90, 700, 500, sizeof(demo_font_t)       },
+    { 11, "Scroll Demo",   &scroll_demo_vtbl,     120,  90, 520, 320, sizeof(scroll_demo_t)     },
+    { 12, "KuvixStore",    &kuvix_store_vtbl,     160, 120, 720, 420, sizeof(kuvix_store_t)     },
+    { 13, "Settings",      &settings_vtbl,        170, 120, 640, 420, sizeof(settings_t)        },
+    { 14, "Designer",      &designer_vtbl,        170, 120, 640, 420, sizeof(designer_t)        },
+    { 15, "Kuvix Browser", &kuvix_browser_vtbl,   160, 120, 820, 520, sizeof(kuvix_browser_t)   },
+    { 16, "KBI Viewer",    &kbi_viewer_vtbl,      160, 120, 820, 520, sizeof(kbi_viewer_t)      },
+    { 17, "Controls test", &controls_test_vtbl,   160, 120, 820, 520, sizeof(controls_test_t)   },
+    { 18, "Fileman V2",    &fileman_v2_vtbl,      160, 120, 820, 520, sizeof(fileman_v2_t)      },
+    {  0, NULL,            NULL,                    0,   0,   0,   0, 0                         }
 };
 
-#define APP_MAX 16
+// ------------------------------------------------------------
+// FILE ASSOCIATIONS (MVP)
+// ------------------------------------------------------------
+
+typedef struct {
+    const char* ext;            // "html", "txt"
+    int handlers[8];            // app id list
+    int handler_count;
+    int default_handler;        // app id (neg/0 => yok)
+} file_assoc_t;
+
+#define APPID_NOTEPAD   3
+#define APPID_BROWSER   15
+
+static file_assoc_t g_assoc[] = {
+    { "html", { APPID_BROWSER, APPID_NOTEPAD }, 2, APPID_BROWSER },
+    { "htm",  { APPID_BROWSER, APPID_NOTEPAD }, 2, APPID_BROWSER },
+    { "txt",  { APPID_NOTEPAD },                1, APPID_NOTEPAD },
+    { "kth",  { APPID_NOTEPAD },                1, APPID_NOTEPAD },
+};
+
+static int g_assoc_count = (int)(sizeof(g_assoc) / sizeof(g_assoc[0]));
+
+// ------------------------------------------------------------
+// RUNNING APPS
+// ------------------------------------------------------------
+
+// 18 app var, 16 yetmez -> 32 yap
+#define APP_MAX 32
 static app_t* g_apps[APP_MAX];
 
 // ------------------------------------------------------------
-// INTERNAL HELPERS
+// SMALL UTILS
 // ------------------------------------------------------------
+
+static char to_lower(char c) {
+    if (c >= 'A' && c <= 'Z') return (char)(c - 'A' + 'a');
+    return c;
+}
+
+static int str_eq_ci(const char* a, const char* b) {
+    if (!a || !b) return 0;
+    while (*a && *b) {
+        if (to_lower(*a) != to_lower(*b)) return 0;
+        a++; b++;
+    }
+    return (*a == 0 && *b == 0);
+}
+
+static bool ends_with(const char* s, const char* suf) {
+    if (!s || !suf) return false;
+    int sl = (int)strlen(s);
+    int pl = (int)strlen(suf);
+    if (sl < pl) return false;
+    return strcmp(s + (sl - pl), suf) == 0;
+}
+
+static const char* path_ext(const char* path) {
+    if (!path) return 0;
+    const char* dot = strrchr(path, '.');
+    if (!dot || dot == path) return 0;
+    return dot + 1; // "html"
+}
 
 static app_definition_t* appmgr_get_def(int app_id) {
     for (int i = 0; app_registry[i].id != 0; i++) {
@@ -102,33 +165,12 @@ static int appmgr_find_free_slot(void) {
     for (int i = 0; i < APP_MAX; i++) {
         if (g_apps[i] == NULL) return i;
     }
-    return -1;    
+    return -1;
 }
 
-void appmgr_on_window_closed(int win_id) {
-    for (int i = 0; i < APP_MAX; i++) {
-        app_t* a = g_apps[i];
-        if (!a) continue;
-        if (a->win_id != win_id) continue;
-
-        // app destroy callback
-        if (a->v && a->v->on_destroy)
-            a->v->on_destroy(a);
-        
-        printk("[AppMgr] close app_id=%d win=%d user=%p\n", a->id, a->win_id, a->user);
-
-        // user data free
-        if (a->user) kfree(a->user);
-
-        // app free
-        kfree(a);
-        g_apps[i] = NULL;
-
-        // aktif pencere kapandıysa WM aktifliği temizlemek isteyebilirsin
-        // (WM tarafında zaten handle yapıyorsan sorun yok)
-        return;
-    }
-    
+static const char* appmgr_title_from_id(int app_id) {
+    app_definition_t* def = appmgr_get_def(app_id);
+    return def ? def->title : "Unknown";
 }
 
 // ------------------------------------------------------------
@@ -160,17 +202,35 @@ int appmgr_find_window_by_app_id(int app_id) {
     return -1;
 }
 
+void appmgr_on_window_closed(int win_id) {
+    for (int i = 0; i < APP_MAX; i++) {
+        app_t* a = g_apps[i];
+        if (!a) continue;
+        if (a->win_id != win_id) continue;
+
+        if (a->v && a->v->on_destroy)
+            a->v->on_destroy(a);
+
+        printk("[AppMgr] close app_id=%d win=%d user=%p\n", a->id, a->win_id, a->user);
+
+        if (a->user) kfree(a->user);
+        kfree(a);
+        g_apps[i] = NULL;
+
+        return;
+    }
+}
+
 // ------------------------------------------------------------
 // ENGINE: App instance başlatır
 // ------------------------------------------------------------
 
 app_t* appmgr_start_app(int app_id) {
-
     app_definition_t* def = appmgr_get_def(app_id);
     if (!def || !def->vtbl) return NULL;
 
-    // örnek Notepad singleton yapmak istersen
-    if (app_id == 3) {
+    // Notepad singleton örneği
+    if (app_id == APPID_NOTEPAD) {
         app_t* existing = appmgr_get_running_by_id(app_id);
         if (existing && wm_is_window_alive(existing->win_id)) {
             wm_set_active(existing->win_id);
@@ -178,7 +238,7 @@ app_t* appmgr_start_app(int app_id) {
         }
     }
 
-    // Run'ı da singleton yap (Win+R spam yemesin)
+    // Run singleton
     if (app_id == 7) {
         int w = appmgr_find_window_by_app_id(7);
         if (w != -1) {
@@ -186,7 +246,7 @@ app_t* appmgr_start_app(int app_id) {
             return appmgr_get_app_by_window_id(w);
         }
     }
-    
+
     int slot = appmgr_find_free_slot();
     if (slot < 0) {
         printk("AppManager: limit dolu\n");
@@ -223,44 +283,96 @@ app_t* appmgr_start_app(int app_id) {
     g_apps[slot] = a;
 
     wm_set_active(win_id);
-
     desktop_invalidate_full();
 
     printk("[AppMgr] start app_id=%d title=%s -> win_id=%d user=%p\n",
-       a->id, def->title, win_id, a->user);
+           a->id, def->title, win_id, a->user);
 
     return a;
 }
 
-static bool ends_with(const char* s, const char* suf) {
-    if (!s || !suf) return false;
-    int sl = (int)strlen(s);
-    int pl = (int)strlen(suf);
-    if (sl < pl) return false;
-    return strcmp(s + (sl - pl), suf) == 0;
+// ------------------------------------------------------------
+// FILE ASSOCIATION API (Fileman sağ-tık menüsü burayı çağıracak)
+// ------------------------------------------------------------
+
+int appmgr_get_handlers_for_path(const char* path, int* out, int cap, int* out_default) {
+    if (out_default) *out_default = -1;
+    if (!path || !out || cap <= 0) return 0;
+
+    const char* ext = path_ext(path);
+    if (!ext || !ext[0]) return 0;
+
+    for (int i = 0; i < g_assoc_count; i++) {
+        if (str_eq_ci(g_assoc[i].ext, ext)) {
+            int n = g_assoc[i].handler_count;
+            if (n > cap) n = cap;
+            for (int k = 0; k < n; k++) out[k] = g_assoc[i].handlers[k];
+            if (out_default) *out_default = g_assoc[i].default_handler;
+            return n;
+        }
+    }
+    return 0;
 }
+
+// ------------------------------------------------------------
+// OPEN WITH: seçilen app_id ile path aç
+// ------------------------------------------------------------
+
+app_t* appmgr_open_with_appid(int app_id, const char* path) {
+    if (!path || !path[0]) return NULL;
+
+    printk("[AppMgr] open_with: app=%d(%s) path='%s'\n", app_id, appmgr_title_from_id(app_id), path);
+
+    // klasör => her zaman File Manager
+    vfs_stat_t st;
+    if (vfs_stat(path, &st) == 1 && st.type == VFS_T_DIR) {
+        return appmgr_start_app(2);
+    }
+
+    // Notepad => dosyayı aç
+    if (app_id == APPID_NOTEPAD) {
+        app_t* a = appmgr_start_app(APPID_NOTEPAD);
+        if (a) notepad_open_file(path);
+        return a;
+    }
+
+    // Browser => file: URL ile aç (html değilse bile şimdilik açabilir)
+    if (app_id == APPID_BROWSER) {
+        char url[VFS_PATH_MAX + 8];
+        url[0] = 0;
+        strncpy(url, "file:", sizeof(url) - 1);
+        url[sizeof(url) - 1] = 0;
+        strncat(url, path, sizeof(url) - (size_t)strlen(url) - 1);
+
+        app_t* bapp = appmgr_start_app(APPID_BROWSER);
+        if (bapp) {
+            kuvix_browser_open_url(bapp, url);
+            return bapp;
+        }
+        return NULL;
+    }
+
+    // Diğer app’ler için şimdilik sadece başlat
+    // (ileride "open_file" callback standardı ekleriz)
+    return appmgr_start_app(app_id);
+}
+
+// ------------------------------------------------------------
+// DEFAULT OPEN: çift tık / "Aç"
+// ------------------------------------------------------------
 
 app_t* appmgr_open_path(const char* path) {
     if (!path || !path[0]) return NULL;
 
     printk("[AppMgr] open_path: '%s'\n", path);
 
+    // klasör -> File Manager
     vfs_stat_t st;
-    if (vfs_stat(path, &st) == 1) {
-        // Klasör -> File Manager
-        if (st.type == VFS_T_DIR) {
-            return appmgr_start_app(2);
-        }
+    if (vfs_stat(path, &st) == 1 && st.type == VFS_T_DIR) {
+        return appmgr_start_app(2);
     }
 
-    // .txt -> Notepad (DOSYAYI AÇ)
-    if (ends_with(path, ".txt") || ends_with(path, ".kth")) {
-        app_t* a = appmgr_start_app(3);
-        notepad_open_file(path);
-        return a;
-    }
-
-    // .ksf -> shortcut parse
+    // ksf shortcut
     if (ends_with(path, ".ksf")) {
         uint8_t buf[256];
         uint32_t sz = 0;
@@ -268,47 +380,39 @@ app_t* appmgr_open_path(const char* path) {
         if (vfs_read_all(path, buf, sizeof(buf) - 1, &sz) == 1) {
             buf[sz] = 0;
 
-            printk("[AppMgr] ksf read ok: %u bytes\n", sz);
-            printk("[AppMgr] ksf content:\n%s\n", (char*)buf);
-
             char* p = strstr((char*)buf, "app_id=");
-            printk("[AppMgr] find app_id=: %p\n", (void*)p);
-
             if (p) {
                 int id = 0;
                 p += 7;
                 while (*p >= '0' && *p <= '9') { id = id * 10 + (*p - '0'); p++; }
-                printk("[AppMgr] parsed id=%d\n", id);
-
                 if (id > 0) return appmgr_start_app(id);
             }
-        } else {
-            printk("[AppMgr] ksf read FAILED: %s\n", path);
         }
+        printk("[AppMgr] ksf read FAILED or invalid: %s\n", path);
+        return NULL;
     }
 
-    // ✅ HTML -> Browser
+    // ✅ association ile default handler
+    int handlers[8];
+    int def = -1;
+    int n = appmgr_get_handlers_for_path(path, handlers, 8, &def);
+    if (n > 0 && def > 0) {
+        return appmgr_open_with_appid(def, path);
+    }
+
+    // fallback: önceki davranış (istersen kaldırabilirsin)
+    if (ends_with(path, ".txt") || ends_with(path, ".kth")) {
+        return appmgr_open_with_appid(APPID_NOTEPAD, path);
+    }
     if (ends_with(path, ".html") || ends_with(path, ".htm")) {
-        char url[VFS_PATH_MAX + 8];
-        url[0] = 0;
-        strncpy(url, "file:", sizeof(url) - 1);
-        url[sizeof(url) - 1] = 0;
-        strncat(url, path, sizeof(url) - strlen(url) - 1);
-
-        // Browser app id sende kaçsa onu koy (15 demiştik)
-        app_t* bapp = appmgr_start_app(15);
-        if (bapp) {
-            kuvix_browser_open_url(bapp, url);
-            return bapp;          // ✅ int değil, app pointer
-        }
-
-        printk("[AppMgr] Browser start failed\n");
-        return NULL;              // ✅ fail
+        return appmgr_open_with_appid(APPID_BROWSER, path);
     }
 
-    printk("AppManager: bilinmeyen path: %s\n", path);
+    printk("AppManager: bilinmeyen path (default app yok): %s\n", path);
     return NULL;
 }
+
+// ------------------------------------------------------------
 
 bool appmgr_any_continuous_redraw(void) {
     for (int i = 0; i < APP_MAX; i++) {
@@ -316,7 +420,6 @@ bool appmgr_any_continuous_redraw(void) {
         if (!a) continue;
         if (!a->visible) continue;
         if (!wm_is_window_alive(a->win_id)) continue;
-
         if (a->wants_continuous_redraw) return true;
     }
     return false;

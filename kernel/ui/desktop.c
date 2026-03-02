@@ -16,6 +16,7 @@
 #include <ui/context_menu.h>
 #include <kernel/fs/vfs.h>
 #include <ui/apps/notepad.h>
+#include <ui/apps/kuvix_browser.h>
 
 #include <kernel/drivers/ata_pio.h>
 #include <kernel/block/block.h>
@@ -102,6 +103,7 @@ static int  sel_start_x = 0;
 static int  sel_start_y = 0;
 
 static int rename_target_index = -1;
+static int g_ctx_icon_index = -1;
 
 // mouse state
 static uint8_t g_last_btn = 0;
@@ -607,6 +609,53 @@ static void desktop_handle_create_folder(void) {
     notification_show("Klasor olusturuldu", 600);
 }
 
+static void ctx_open_default(void) {
+    if (g_ctx_icon_index < 0) return;
+    const char* path = desktop_icons_get_path(g_ctx_icon_index);
+    if (path) appmgr_open_path(path);
+}
+
+static void ctx_open_with_notepad(void) {
+    if (g_ctx_icon_index < 0) return;
+    const char* path = desktop_icons_get_path(g_ctx_icon_index);
+    if (!path) return;
+
+    app_t* a = appmgr_start_app(3); // APPID_NOTEPAD
+    if (a) notepad_open_file(path);
+}
+
+static void ctx_open_with_browser(void) {
+    if (g_ctx_icon_index < 0) return;
+    const char* path = desktop_icons_get_path(g_ctx_icon_index);
+    if (!path) return;
+
+    char url[256];
+    url[0] = 0;
+    strncpy(url, "file:", sizeof(url) - 1);
+    url[sizeof(url) - 1] = 0;
+    strncat(url, path, sizeof(url) - strlen(url) - 1);
+
+    app_t* b = appmgr_start_app(15); // APPID_BROWSER
+    if (b) kuvix_browser_open_url(b, url);
+}
+
+static bool ends_with_ci(const char* s, const char* suf) {
+    if (!s || !suf) return false;
+    int sl = (int)strlen(s);
+    int pl = (int)strlen(suf);
+    if (sl < pl) return false;
+
+    const char* a = s + (sl - pl);
+    for (int i = 0; i < pl; i++) {
+        char ca = a[i];
+        char cb = suf[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb - 'A' + 'a');
+        if (ca != cb) return false;
+    }
+    return true;
+}
+
 void desktop_reset_selection_state(void) {
     is_selecting = false;
 }
@@ -899,6 +948,7 @@ void ui_desktop_tick(void) {
                 is_selecting = false;
 
                 int hit = desktop_icons_get_hit(mouse_x, mouse_y);
+                g_ctx_icon_index = hit;
 
                 // ✅ Windows gibi: sağ tık ikon üstündeyse onu seç
                 desktop_icons_deselect_all();
@@ -908,13 +958,37 @@ void ui_desktop_tick(void) {
 
                 if (hit != -1) {
                     // ikon üstü
-                    context_menu_add_item("Ac", desktop_handle_open);
+                    context_menu_add_item("Ac", ctx_open_default);
+
+                    // ✅ Birlikte Aç submenu
+                    const char* p = desktop_icons_get_path(hit);
+
+                    // sadece dosyalarda göster (istersen klasör için de gösterirsin)
+                    vfs_stat_t st;
+                    bool is_dir = false;
+                    if (p && vfs_stat(p, &st) && st.type == VFS_T_DIR) is_dir = true;
+
+                    if (!is_dir) {
+                        context_menu_t* ow = context_menu_add_submenu("Birlikte Ac");
+                        if (ow) {
+                            // HTML -> Browser + Notepad
+                            if (p && (ends_with_ci(p, ".html") || ends_with_ci(p, ".htm"))) {
+                                context_menu_add_item_to(ow, "Kuvix Browser", ctx_open_with_browser);
+                                context_menu_add_item_to(ow, "Not Defteri",  ctx_open_with_notepad);
+                            }
+                            // TXT -> Notepad
+                            else if (p && ends_with_ci(p, ".txt")) {
+                                context_menu_add_item_to(ow, "Not Defteri", ctx_open_with_notepad);
+                            }
+                            // bilinmeyen -> yine de notepad göster (debug için)
+                            else {
+                                context_menu_add_item_to(ow, "Not Defteri", ctx_open_with_notepad);
+                            }
+                        }
+                    }
+
                     context_menu_add_item("Ad Degistir", desktop_handle_rename);
                     context_menu_add_item("Sil", desktop_icons_delete_selected);
-
-                    // (istersen ikon üstünde de Görünüm koy)
-                    // context_menu_t* view = context_menu_add_submenu("Gorunum");
-                    // context_menu_add_item_to(view, "Dosya uzantilarini goster", desktop_toggle_ext);
                 } else {
                     // boş alan
                     context_menu_t* view = context_menu_add_submenu("Gorunum");
