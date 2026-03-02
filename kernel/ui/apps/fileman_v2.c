@@ -15,6 +15,9 @@
 // senin ikon header'ın (path'i gerekirse değiştir)
 #include <ui/desktop_icons/folder_icon.h>
 
+#include <app/app_manager.h>
+#include <ui/apps/kuvix_browser.h>
+
 // terminal'deki gibi (scancode -> ascii)
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 
@@ -70,6 +73,14 @@ static bool fm_is_dir(const char* path) {
 }
 
 static void fm_load_dir(fileman_v2_t* f, const char* path);
+
+static bool ends_with(const char* s, const char* suffix) {
+    if (!s || !suffix) return false;
+    int sl = (int)strlen(s);
+    int tl = (int)strlen(suffix);
+    if (tl <= 0 || sl < tl) return false;
+    return (strcmp(s + (sl - tl), suffix) == 0);
+}
 
 // ------------------------------------------------------------
 // vfs list callback
@@ -392,13 +403,39 @@ static void fm_open_selected(app_t* app) {
 
     fm2_item_t* it = &f->items[f->selected];
 
+    // klasörse içine gir
     if (it->is_dir) {
         fm_load_dir(f, it->full);
         return;
     }
 
-    // TODO: dispatcher (txt->notepad, html->browser, kef/ksf->start)
-    fm_set_status(f, "Open file: (dispatcher TODO)");
+    // -------------------------
+    // HTML -> Kuvix Browser
+    // -------------------------
+    if (ends_with(it->name, ".html") || ends_with(it->name, ".htm")) {
+        char url[FM2_PATH_MAX + 8];
+        url[0] = 0;
+
+        // "file:" + fullpath
+        strncpy(url, "file:", sizeof(url) - 1);
+        url[sizeof(url) - 1] = 0;
+        strncat(url, it->full, sizeof(url) - strlen(url) - 1);
+
+        // Browser app id: app_manager.c registry’de 15
+        app_t* bapp = appmgr_start_app(15);
+        if (bapp) {
+            kuvix_browser_open_url(bapp, url);
+            fm_set_status(f, "Opened in browser");
+        } else {
+            fm_set_status(f, "Browser start failed");
+        }
+        return;
+    }
+
+    // -------------------------
+    // TODO: TXT -> Notepad vs.
+    // -------------------------
+    fm_set_status(f, "Open file: no handler");
 }
 
 // ------------------------------------------------------------

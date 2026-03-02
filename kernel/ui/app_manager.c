@@ -287,6 +287,25 @@ app_t* appmgr_open_path(const char* path) {
         }
     }
 
+    // ✅ HTML -> Browser
+    if (ends_with(path, ".html") || ends_with(path, ".htm")) {
+        char url[VFS_PATH_MAX + 8];
+        url[0] = 0;
+        strncpy(url, "file:", sizeof(url) - 1);
+        url[sizeof(url) - 1] = 0;
+        strncat(url, path, sizeof(url) - strlen(url) - 1);
+
+        // Browser app id sende kaçsa onu koy (15 demiştik)
+        app_t* bapp = appmgr_start_app(15);
+        if (bapp) {
+            kuvix_browser_open_url(bapp, url);
+            return bapp;          // ✅ int değil, app pointer
+        }
+
+        printk("[AppMgr] Browser start failed\n");
+        return NULL;              // ✅ fail
+    }
+
     printk("AppManager: bilinmeyen path: %s\n", path);
     return NULL;
 }

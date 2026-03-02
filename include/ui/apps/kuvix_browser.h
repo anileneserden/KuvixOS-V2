@@ -27,3 +27,6 @@ typedef struct {
 // vtbl dışarıya
 struct app_vtbl;
 extern const struct app_vtbl kuvix_browser_vtbl;
+
+struct app;
+void kuvix_browser_open_url(struct app* app, const char* url);
