@@ -1,6 +1,6 @@
 // kernel/kmain.c
 #include <stdint.h>
-#include <multiboot2.h>   // sende bu var; multiboot_info_t kullanıyorsun (MB1)
+#include <multiboot2.h>
 
 #include <kernel/serial.h>
 #include <kernel/printk.h>
@@ -17,22 +17,17 @@
 
 #include <kernel/time.h>
 
-// ✅ heap/kmalloc
 #include <kernel/memory/kmalloc.h>
 
-// UI / Session
 #include <ui/session.h>
 
 #include <kernel/fs/fs_init.h>
 
 #include <ui/inputtest.h>
 
-#include <ui/theme.h>
-
 extern void gdt_init(void);
 extern void idt_init(void);
 
-// ✅ linker.ld’den geliyor: end/_end sembolü
 extern uint8_t _end;
 
 static inline uintptr_t align_up(uintptr_t x, uintptr_t a) {
@@ -67,10 +62,6 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
         bpp   = 32;
     }
 
-    if (bpp != 32) {
-        // printk("[FB] Warning: bpp=%u, forcing 32bpp path\n", bpp);
-    }
-
     if (pitch == 0) pitch = w * 4;
 
     printk("MBI flags=0x%x\n", mbi ? mbi->flags : 0);
@@ -88,13 +79,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     gdt_init();
     idt_init();
 
-    // =========================================================
-    // ✅ HEAP INIT (kernel end’den başlat)
-    // =========================================================
-    uintptr_t heap_base = align_up((uintptr_t)&_end, 0x1000); // 4K hizala
+    uintptr_t heap_base = align_up((uintptr_t)&_end, 0x1000);
 
-    // QEMU 256MB ise şimdilik 32MB heap gayet güvenli.
-    // İstersen 8/16/64 yapabilirsin.
     uint32_t heap_size = 32u * 1024u * 1024u;
 
     kmalloc_init((void*)heap_base, heap_size);
@@ -111,25 +97,18 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     gfx_init();
     fb_console_init(0x00FFFFFF, 0x00000000);
 
-    // input init
     kbd_init();
     ps2_mouse_init();
 
-    // time
     timer_init(1000);
 
-    // ✅ IRQ’ları aç (mouse/timer için şart)
     asm volatile("sti");
-
-    // FS (eğer fs_init kullanıyorsan burada çağır)
-    fs_init_once();  // sende nasıl ise (fs_prepare_user_layout vb.) ona göre
-
-    ui_theme_bootstrap_default();
+    
+    fs_init_once();
 
     // UI
     ui_session_init();
     ui_session_switch(UI_SESSION_DESKTOP);
-    // inputtest_init();
 
     while (1) {
         // klavye event dispatch

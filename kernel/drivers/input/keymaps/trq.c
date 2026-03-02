@@ -46,7 +46,7 @@ static const uint8_t trq_norm[128] = {
     [0x26] = 'l',
     [0x27] = 0xFE,    // özel
     [0x28] = 'i',
-    [0x29] = '<',
+    [0x29] = '"',
 
     [0x2B] = ',',     // sen böyle istemiştin
     [0x2C] = 'z',

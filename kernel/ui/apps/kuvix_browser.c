@@ -143,6 +143,92 @@ static bool resolve_url_to_path(const char* url, char* out, int cap) {
 // ------------------------------------------------------------
 typedef struct { int x, y, w, h; } rect_t;
 
+// ------------------------------------------------------------
+// Directory listing (MVP)
+// ------------------------------------------------------------
+typedef struct {
+    char dir[VFS_PATH_MAX];
+    char entries[128][VFS_PATH_MAX];
+    int  count;
+} br_dirlist_t;
+
+static const char* basename_of(const char* path) {
+    if (!path) return "";
+    const char* p = strrchr(path, '/');
+    return p ? (p + 1) : path;
+}
+
+static int br_list_cb(const char* path, uint32_t size, void* u) {
+    (void)size;
+    br_dirlist_t* dl = (br_dirlist_t*)u;
+    if (!dl) return 0;
+    if (dl->count >= 128) return 0;
+
+    strncpy(dl->entries[dl->count], path, VFS_PATH_MAX - 1);
+    dl->entries[dl->count][VFS_PATH_MAX - 1] = 0;
+    dl->count++;
+    return 1;
+}
+
+static void build_index_path(const char* dir, char* out, int cap) {
+    if (!out || cap <= 0) return;
+    out[0] = 0;
+    if (!dir || !dir[0]) return;
+
+    strncpy(out, dir, cap - 1);
+    out[cap - 1] = 0;
+
+    int n = (int)strlen(out);
+    if (n > 0 && out[n - 1] != '/') {
+        if (n + 1 < cap) {
+            out[n] = '/';
+            out[n + 1] = 0;
+        }
+    }
+    strncat(out, "index.html", (size_t)cap - strlen(out) - 1);
+}
+
+static void draw_dir_listing(rect_t r, const char* dir_path, int scroll_y) {
+    gfx_fill_rect(r.x, r.y, r.w, r.h, 0x1A1A1A);
+
+    br_dirlist_t dl;
+    memset(&dl, 0, sizeof(dl));
+    strncpy(dl.dir, dir_path ? dir_path : "/", sizeof(dl.dir) - 1);
+    dl.dir[sizeof(dl.dir) - 1] = 0;
+
+    vfs_list(dl.dir, br_list_cb, &dl);
+
+    int pad = 12;
+    int x = r.x + pad;
+    int y = r.y + pad - scroll_y;
+
+    gfx_draw_text_utf8(x, y, 0xFFFFFF, "Directory:");
+    gfx_draw_text_utf8(x + 96, y, 0xAAAAAA, dl.dir);
+    y += 18;
+
+    if (dl.count == 0) {
+        gfx_draw_text_utf8(x, y, 0xAAAAAA, "(empty)");
+        return;
+    }
+
+    for (int i = 0; i < dl.count; i++) {
+        if (y > r.y + r.h - 12) break;
+        if (y < r.y - 16) { y += 16; continue; }
+
+        const char* full = dl.entries[i];
+        const char* name = basename_of(full);
+
+        vfs_stat_t st;
+        int is_dir = (vfs_stat(full, &st) && st.type == VFS_T_DIR);
+
+        if (is_dir) gfx_draw_text_utf8(x, y, 0xFF6A00, "[DIR]");
+        else        gfx_draw_text_utf8(x, y, 0x808080, "     ");
+
+        gfx_draw_text_utf8(x + 44, y, 0xFFFFFF, name);
+        y += 16;
+    }
+}
+
 static bool pt_in_rect(int px, int py, rect_t r) {
     return (px >= r.x && py >= r.y && px < (r.x + r.w) && py < (r.y + r.h));
 }
@@ -221,13 +307,43 @@ static void draw_statusbar(rect_t r, const char* status) {
 static void draw_content_html(rect_t r, const char* url, int scroll_y) {
     gfx_fill_rect(r.x, r.y, r.w, r.h, 0x1A1A1A);
 
-    char path[256];
+    char path[VFS_PATH_MAX];
     if (!resolve_url_to_path(url, path, (int)sizeof(path))) {
         gfx_draw_text_utf8(r.x + 14, r.y + 14, 0xFF4444, "Unsupported URL");
         gfx_draw_text_utf8(r.x + 14, r.y + 30, 0xAAAAAA, url ? url : "(null)");
         return;
     }
 
+    // ✅ file: prefix
+    if (strncmp(path, "file:", 5) == 0) {
+        memmove(path, path + 5, strlen(path + 5) + 1);
+        if (!path[0]) strncpy(path, "/", sizeof(path) - 1);
+    }
+
+    // ✅ file/dir ayrımı
+    vfs_stat_t st;
+    if (!vfs_stat(path, &st)) {
+        gfx_draw_text_utf8(r.x + 14, r.y + 14, 0xFF4444, "Not found:");
+        gfx_draw_text_utf8(r.x + 14, r.y + 30, 0xAAAAAA, path);
+        return;
+    }
+
+    // ✅ KLASÖR ise: index.html dene, yoksa listing çiz
+    if (st.type == VFS_T_DIR) {
+        char idx[VFS_PATH_MAX];
+        build_index_path(path, idx, (int)sizeof(idx));
+
+        vfs_stat_t st2;
+        if (vfs_stat(idx, &st2) && st2.type == VFS_T_FILE) {
+            strncpy(path, idx, sizeof(path) - 1);
+            path[sizeof(path) - 1] = 0;
+        } else {
+            draw_dir_listing(r, path, scroll_y);
+            return;
+        }
+    }
+
+    // ✅ FILE (HTML)
     uint8_t* buf = 0;
     uint32_t sz = 0;
 
@@ -296,6 +412,11 @@ static void browser_on_create(app_t* app) {
     br_set_url(b, "local:home");
     br_push_history(b, "local:home");
     br_set_status(b, "Ready");
+
+    // edit buffer init
+    strncpy(b->addr_buf, b->url, sizeof(b->addr_buf) - 1);
+    b->addr_buf[sizeof(b->addr_buf) - 1] = 0;
+    b->addr_len = (int)strlen(b->addr_buf);
 }
 
 static void browser_on_draw(app_t* app) {
@@ -313,9 +434,11 @@ static void browser_on_draw(app_t* app) {
     draw_button(r_btn_forward(), ">", false);
     draw_button(r_btn_reload(), "R", false);
 
-    draw_addrbar(r_addr_bar(client.w), b->url, (b->addr_edit_mode != 0));
+    const char* addr_text = b->addr_edit_mode ? b->addr_buf : b->url;
+    draw_addrbar(r_addr_bar(client.w), addr_text, (b->addr_edit_mode != 0));
 
     rect_t rc = r_content(client.w, client.h);
+    // content HER ZAMAN committed url ile çizilir
     draw_content_html(rc, b->url, b->scroll_y);
 
     rect_t rs = r_status_bar(client.w, client.h);
@@ -334,6 +457,7 @@ static void browser_on_mouse(app_t* app, int mx, int my,
 
     // ✅ GLOBAL -> CLIENT
     ui_rect_t client = wm_get_client_rect(app->win_id);
+    (void)client;
     int lx = mx;
     int ly = my;
 
@@ -365,6 +489,12 @@ static void browser_on_mouse(app_t* app, int mx, int my,
 
     if (pt_in_rect(lx, ly, r_addr_bar(b->cw))) {
         b->addr_edit_mode = 1;
+
+        // edit buffer = current url
+        strncpy(b->addr_buf, b->url, sizeof(b->addr_buf) - 1);
+        b->addr_buf[sizeof(b->addr_buf) - 1] = 0;
+        b->addr_len = (int)strlen(b->addr_buf);
+
         br_set_status(b, "Editing address (Enter=go, Esc=cancel)");
         return;
     }
@@ -375,52 +505,64 @@ static void browser_on_mouse(app_t* app, int mx, int my,
     }
 }
 
+static bool key_is_probably_ascii(uint8_t k) {
+    // printable + backspace + enter
+    if (k >= 32 && k <= 126) return true;
+    if (k == '\b' || k == 127) return true;
+    if (k == '\n' || k == '\r') return true;
+    return false;
+}
+
 static void browser_on_key(app_t* app, uint16_t key) {
     kuvix_browser_t* b = br(app);
     if (!b) return;
 
     uint8_t sc = (uint8_t)(key & 0xFF);
-    if (sc & 0x80) return; // break ignore
 
-    char c = kbd_scancode_to_ascii(sc);
+    // break (key release) ignore
+    if (sc & 0x80) return;
 
-    // edit mode OFF => scroll only
+    // edit mode OFF => scroll keys (scancode)
     if (!b->addr_edit_mode) {
         int step = 32;
-
-        if (sc == 0x48) { b->scroll_y -= step; if (b->scroll_y < 0) b->scroll_y = 0; return; }
-        if (sc == 0x50) { b->scroll_y += step; return; }
-        if (sc == 0x49) { b->scroll_y -= step * 6; if (b->scroll_y < 0) b->scroll_y = 0; return; }
-        if (sc == 0x51) { b->scroll_y += step * 6; return; }
-
+        if (sc == 0x48) { b->scroll_y -= step; if (b->scroll_y < 0) b->scroll_y = 0; return; } // up
+        if (sc == 0x50) { b->scroll_y += step; return; }                                       // down
+        if (sc == 0x49) { b->scroll_y -= step * 6; if (b->scroll_y < 0) b->scroll_y = 0; return; } // pgup
+        if (sc == 0x51) { b->scroll_y += step * 6; return; }                                       // pgdn
         return;
     }
 
-    // edit mode ON
-    if (sc == 0x1C || c == '\n' || c == '\r') {
+    // ---- edit mode ON ----
+
+    // Enter
+    if (sc == 0x1C) {
         b->addr_edit_mode = 0;
-        br_navigate(b, b->url[0] ? b->url : "local:home");
+        br_navigate(b, b->addr_buf[0] ? b->addr_buf : "local:home");
         return;
     }
 
-    if (sc == 0x01) { // Esc
+    // Esc
+    if (sc == 0x01) {
         b->addr_edit_mode = 0;
         br_set_status(b, "Ready");
         return;
     }
 
-    if (c == '\b' || (uint8_t)c == 127) {
-        if (b->url_len > 0) {
-            b->url_len--;
-            b->url[b->url_len] = '\0';
+    // Backspace (set1: 0x0E)
+    if (sc == 0x0E) {
+        if (b->addr_len > 0) {
+            b->addr_len--;
+            b->addr_buf[b->addr_len] = '\0';
         }
         return;
     }
 
+    // Printable char via your layout mapper
+    char c = kbd_scancode_to_ascii(sc);
     if (c >= 32 && c <= 126) {
-        if (b->url_len < KBROWSER_URL_MAX - 1) {
-            b->url[b->url_len++] = c;
-            b->url[b->url_len] = '\0';
+        if (b->addr_len < KBROWSER_URL_MAX - 1) {
+            b->addr_buf[b->addr_len++] = c;
+            b->addr_buf[b->addr_len] = '\0';
         }
         return;
     }
