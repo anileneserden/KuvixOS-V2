@@ -140,6 +140,10 @@ void fb_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_t
     }
 }
 
+uint32_t* fb_backbuffer_ptr(void) {
+    return fb_backbuffer;
+}
+
 void fb_set_resolution(uint32_t width, uint32_t height) {
     // Şimdilik sadece FB_WIDTH/FB_HEIGHT'i güncelle.
     // Gerçek mod değişimi GRUB/VBE tarafında olur; kernel burada sadece
