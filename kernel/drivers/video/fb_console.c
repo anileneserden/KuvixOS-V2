@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <kernel/printk.h>
+
 // ✅ default: boot'ta console açık, desktop'a geçince kapatılacak.
 static bool g_enabled = true;
 
