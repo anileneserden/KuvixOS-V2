@@ -1,26 +1,45 @@
+# -----------------------------
 # Build artifacts
+# -----------------------------
 build/
-iso/
 *.o
 *.elf
 *.bin
 *.iso
 *.img
 *.vdi
-disk.img
 
+# disk images
+disk.img
+disk2.img
+
+# -----------------------------
+# Generated boot files
+# -----------------------------
+iso/boot/grub/grub.cfg
+
+# -----------------------------
 # Editors
+# -----------------------------
 .vscode/
 *.swp
+*.swo
 
+# -----------------------------
 # OS junk
+# -----------------------------
 .DS_Store
 
-# Geçici durum ve diff dosyaları
+# -----------------------------
+# Debug / temporary files
+# -----------------------------
 diff.txt
 status.txt
 tree.txt
 qemu.log
-vs-test.txtdisk.img
-# local build/tools
+vs-test.txt
+
+# -----------------------------
+# Local tools
+# -----------------------------
 client/
