@@ -9,6 +9,7 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/input/mouse_ps2.h>
 #include <kernel/drivers/input/keyboard.h>
+#include <kernel/drivers/usb/xhci.h>
 #include <lib/math.h>
 #include <lib/string.h>
 #include <ui/notification.h>
@@ -43,8 +44,6 @@
 #include <kernel/memory/kmalloc.h>
 
 #include <ui/desktop_icons/folder_icon.h>
-
-
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
@@ -122,6 +121,11 @@ static int g_dbg_wheel_total = 0;
 
 static bool g_need_redraw = true;
 
+static int g_usb_hotplug_enabled = 1; // default açık
+
+static uint32_t g_usb_poll_ms = 0;
+static uint8_t  g_port_ccs_prev[33];
+
 static inline void desktop_request_redraw(void) {
     g_need_redraw = true;
 }
@@ -189,6 +193,28 @@ void desktop_invalidate_full(void) {
 // ============================================================
 // Helpers
 // ============================================================
+
+static void desktop_usb_poll(void) {
+    if ((g_ticks_ms - g_usb_poll_ms) < 200) return;
+    g_usb_poll_ms = g_ticks_ms;
+
+    uint32_t maxp = xhci_get_max_ports();
+    if (!maxp) return;
+
+    for (uint32_t p = 1; p <= maxp; p++) {
+        uint32_t portsc = xhci_get_portsc(p);
+        uint8_t ccs = (uint8_t)(portsc & 1u);
+
+        if (g_port_ccs_prev[p] != ccs) {
+            g_port_ccs_prev[p] = ccs;
+
+            if (ccs) notification_show("USB aygıt takıldı", 180);
+            else     notification_show("USB aygıt çıkarıldı", 180);
+
+            desktop_invalidate_full();
+        }
+    }
+}
 
 static void simple_itoa(int n, char* s) {
     int i, sign;
@@ -770,16 +796,12 @@ void ui_desktop_handle_scancode(uint16_t sc)
     // ------------------------------------------------------------
     // F10 -> removable toggle (Set1: 0x44)  ✅ DOĞRUSU BU
     // ------------------------------------------------------------
-    if (sc8 == 0x44) {
-        g_removable_plugged = !g_removable_plugged;
+    static int g_usb_hotplug_debug = 1; // istersen 0 default
 
-        // duration: frame-based (şimdilik)
-        if (g_removable_plugged) {
-            notification_show("Çıkartılabilir disk takildi", 180);
-        } else {
-            notification_show("Çıkartılabilir disk cikarildi", 180);
-        }
+    if (sc8 == 0x44) { // F10
+        g_usb_hotplug_enabled = !g_usb_hotplug_enabled;
 
+        notification_show(g_usb_hotplug_enabled ? "USB hotplug: ON" : "USB hotplug: OFF", 180);
         desktop_invalidate_full();
         return; // app'lere gitmesin
     }
@@ -822,6 +844,8 @@ void ui_desktop_handle_scancode(uint16_t sc)
 }
 
 void ui_desktop_tick(void) {
+    desktop_usb_poll();
+
     int dx, dy;
     int wheel = 0;
     uint8_t btn;
@@ -1118,6 +1142,28 @@ void ui_desktop_tick(void) {
         }
 
         g_last_btn = btn;
+    }
+
+    // ---------- USB hotplug poll (xHCI) ----------
+    if (g_usb_hotplug_enabled) {
+        int ev = xhci_poll_hotplug();
+        if (ev != 0) {
+            int port = (ev > 0) ? ev : -ev;
+
+            if (ev > 0) {
+                g_removable_plugged = true; // şimdilik tek flag
+                notification_show("USB baglandi", 180);
+                printk("[USB] connected on port %d\n", port);
+            } else {
+                g_removable_plugged = false;
+                notification_show("USB cikarildi", 180);
+                printk("[USB] disconnected on port %d\n", port);
+            }
+
+            desktop_invalidate_full();
+            // İstersen: need_full_present = true; (notification için şart değil ama iyi)
+            need_full_present = true;
+        }
     }
 
     int now_hover = desktop_icons_get_hit(mouse_x, mouse_y);

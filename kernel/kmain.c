@@ -15,6 +15,8 @@
 #include <kernel/drivers/input/keyboard.h>
 #include <kernel/drivers/input/mouse_ps2.h>
 
+#include <kernel/drivers/pci.h>
+
 #include <kernel/time.h>
 
 #include <kernel/memory/kmalloc.h>
@@ -99,6 +101,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     kbd_init();
     ps2_mouse_init();
+
+    pci_debug_list_usb();
 
     timer_init(1000);
 

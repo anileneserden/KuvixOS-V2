@@ -48,10 +48,12 @@ SRC_C = \
     kernel/drivers/input/keyboard.c \
     kernel/drivers/input/mouse_ps2.c \
     kernel/drivers/rtc/rtc.c \
+    kernel/drivers/usb/xhci.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/gfx.c \
     kernel/drivers/ata_pio.c \
+    kernel/drivers/pci.c \
     kernel/drivers/power.c \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
@@ -189,10 +191,14 @@ iso: $(KERNEL)
 run: iso
 	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
 	@test -f disk2.img || dd if=/dev/zero of=disk2.img bs=1M count=5
+	@test -f usb.img || dd if=/dev/zero of=usb.img bs=1M count=64
 	@chmod 666 disk.img disk2.img
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=disk.img,format=raw,index=0,media=disk \
 		-drive file=disk2.img,format=raw,index=1,media=disk \
+		-drive if=none,id=usbdisk,format=raw,file=usb.img \
+		-device qemu-xhci \
+		-device usb-storage,drive=usbdisk \
 		-m 256M -serial stdio
 
 clean:
