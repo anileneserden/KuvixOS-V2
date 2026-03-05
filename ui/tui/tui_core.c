@@ -1,6 +1,9 @@
 #include <ui/tui/tui.h>
 #include <ui/tui/tui_action.h>
 #include <ui/tui/tui_cfg.h>
+#include <ui/tui/tui_input.h>
+
+#include <ui/notification.h>
 
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
@@ -29,6 +32,8 @@ static int g_selected = 0;
 static char g_title[TUI_TITLE_MAX] = "Menu";
 
 static int g_e0 = 0;
+
+static void tui_draw_notification(void);
 
 void tui_clear(void) {
     g_item_count = 0;
@@ -62,7 +67,6 @@ void tui_add_item(const char* label, const char* action) {
 static void tui_draw(void) {
     gfx_clear(0x00202020);
 
-    // Menü kutusu
     int box_w = 360;
     int box_h = 220;
     int x = ((int)fb_get_width()  - box_w) / 2;
@@ -71,7 +75,6 @@ static void tui_draw(void) {
     gfx_fill_rect(x, y, box_w, box_h, 0x00262626);
     gfx_draw_rect(x, y, box_w, box_h, 0x00404040);
 
-    // Title
     gfx_draw_text_utf8(x + 20, y + 18, 0x00FFFFFF, g_title);
 
     int iy = y + 60;
@@ -88,6 +91,10 @@ static void tui_draw(void) {
         iy += 22;
     }
 
+    tui_draw_notification();
+
+    // notification_draw();
+
     fb_present();
 }
 
@@ -96,10 +103,22 @@ void tui_init(void) {
 }
 
 void tui_tick(void) {
+    if (tui_input_is_active()) {
+        tui_input_tick();
+        return;
+    }
+
+    notification_tick(16);
+    if (notification_is_visible()) tui_draw();
 }
 
 void tui_handle_scancode(uint16_t sc)
 {
+    if (tui_input_is_active()) {
+        tui_input_handle_scancode(sc);
+        return;
+    }
+
     if (sc == 0xE048) { // UP
         if (g_selected > 0)
             g_selected--;
@@ -126,4 +145,34 @@ void tui_set_selected(int idx) {
     if (idx < 0) idx = 0;
     if (idx >= g_item_count) idx = g_item_count ? (g_item_count - 1) : 0;
     g_selected = idx;
+}
+
+static char g_note[96];
+static int  g_note_ms = 0;     // kalan süre
+static int  g_note_dirty = 0;  // redraw isteği
+
+void tui_notify(const char* msg, int ms) {
+    if (!msg) msg = "";
+    strncpy(g_note, msg, sizeof(g_note)-1);
+    g_note[sizeof(g_note)-1] = 0;
+    g_note_ms = (ms <= 0) ? 1500 : ms;
+    g_note_dirty = 1;
+}
+
+static void tui_draw_notification(void) {
+    if (g_note_ms <= 0 || !g_note[0]) return;
+
+    int pad = 10;
+    int w = 420;
+    int h = 28;
+
+    int x = ((int)fb_get_width() - w) / 2;
+    int y = (int)fb_get_height() - h - 30;
+
+    // arka kutu
+    gfx_fill_rect(x, y, w, h, 0x00303030);
+    gfx_draw_rect(x, y, w, h, 0x004A4A4A);
+
+    // yazı
+    gfx_draw_text_utf8(x + pad, y + 6, 0x00FFFFFF, g_note);
 }

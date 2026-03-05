@@ -117,6 +117,7 @@ SRC_C = \
     ui/tui/tui_cfg_parser.c \
     ui/tui/tui_cfg.c \
     ui/tui/tui_core.c \
+    ui/tui/tui_input.c \
     ui/inputtest.c \
     ui/mouse.c \
     ui/notification.c \

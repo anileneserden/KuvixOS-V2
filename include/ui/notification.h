@@ -4,10 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Bildirimi tetiklemek için fonksiyon
 void notification_show(const char* text, uint32_t duration);
-
-// Her karede çizilmesi için sistem fonksiyonu
 void notification_draw(void);
+
+void notification_tick(int delta_ms);
+int  notification_is_visible(void);
 
 #endif

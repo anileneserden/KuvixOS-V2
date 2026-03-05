@@ -112,6 +112,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     // UI
     ui_session_init();
     ui_session_switch(UI_SESSION_TUI);
+    fb_console_clear();
 
     while (1) {
         // klavye event dispatch

@@ -42,9 +42,9 @@ static const seed_text_t k_seed_texts[] = {
         "title=KuvixOS\n"
         "item=Terminal|session:tty1\n"
         "item=Desktop|session:desktop\n"
+        "item=Settings|cfg:/system/tui/settings.cfg\n"
         "item=Reboot|sys:reboot\n"
         "item=Power Off|sys:poweroff\n"
-        "item=Languages|cfg:/system/tui/languages.cfg\n"
     },
     {
         "/system/tui/languages.cfg",
@@ -57,6 +57,13 @@ static const seed_text_t k_seed_texts[] = {
         "/home/readme.txt",
         "Welcome to KuvixOS!\n"
         "Type 'help' in terminal.\n"
+    },
+    {
+        "/system/tui/settings.cfg",
+        "title=Settings\n"
+        "item=Set Hostname|input:/system/user.conf,hostname,cfg:/system/tui/settings.cfg,Set Hostname\n"
+        "item=Set Username|input:/system/user.conf,username,cfg:/system/tui/settings.cfg,Set Username\n"
+        "item=Back|cfg:/system/tui/main.cfg\n"
     }
 };
 

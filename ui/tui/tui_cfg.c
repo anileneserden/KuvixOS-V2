@@ -61,9 +61,8 @@ static int starts_with(const char* s, const char* pref) {
 // comments: # ... or ; ...
 // ------------------------------------------------------------
 int tui_load_cfg_text(const char* text) {
+    tui_clear();
     if (!text) return 0;
-
-    tui_clear(); // önceki menüyü sıfırla
 
     // text immutable olabilir -> kopyala
     int len = (int)strlen(text);
@@ -139,8 +138,11 @@ int tui_load_cfg_text(const char* text) {
 
     kfree(buf);
 
-    // item yoksa fail sayalım
-    return (tui_get_item_count() > 0) ? 1 : 0;
+    // item yoksa fail
+    if (tui_get_item_count() <= 0) return 0;
+
+    tui_init();   // ✅ çiz
+    return 1;
 }
 
 int tui_load_cfg(const char* path) {
@@ -151,12 +153,19 @@ int tui_load_cfg(const char* path) {
     data = (uint8_t*)kmalloc(cap);
     if (!data) return 0;
 
-    if (!vfs_read_all(path, data, cap, &sz)) {
+    // ✅ junk kalmasın
+    memset(data, 0, cap);
+
+    // ✅ cap-1 oku ki NUL için yer kalsın
+    if (!vfs_read_all(path, data, cap - 1, &sz)) {
         kfree(data);
         return 0;
     }
 
-    data[cap - 1] = 0;
+    // ✅ asıl kritik: NUL'ü okunan byte'ın sonuna koy
+    if (sz >= cap) sz = cap - 1;
+    data[sz] = 0;
+
     int ok = tui_load_cfg_text((const char*)data);
 
     kfree(data);

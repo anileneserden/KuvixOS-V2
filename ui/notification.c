@@ -106,6 +106,21 @@ void notification_draw(void) {
 
     gfx_draw_text_utf8(x + NOTIFY_PAD_X, ty, 0xFF00AAFF, prefix);
     gfx_draw_text_utf8(x + NOTIFY_PAD_X + (prefix_len * FONT_W), ty, 0xFFFFFFFF, shown);
+}
 
-    notify_timer--;
+void notification_tick(int delta_ms) {
+    if (!notify_visible) return;
+
+    if (delta_ms <= 0) delta_ms = 16; // default
+    notify_timer -= delta_ms;
+
+    if (notify_timer <= 0) {
+        notify_timer = 0;
+        notify_visible = false;
+        notify_text[0] = 0;
+    }
+}
+
+int notification_is_visible(void) {
+    return notify_visible && notify_timer > 0;
 }
