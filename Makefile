@@ -112,6 +112,8 @@ SRC_C = \
     ui/desktop_seed.c \
     ui/desktop.c \
     ui/icons/ui_icons.c \
+    ui/tui/tui_action.c \
+    ui/tui/tui_core.c \
     ui/inputtest.c \
     ui/mouse.c \
     ui/notification.c \
