@@ -1,169 +1,129 @@
-// ui/tui.c
 #include <ui/tui/tui.h>
 #include <ui/tui/tui_action.h>
+#include <ui/tui/tui_cfg.h>
 
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
-#include <kernel/printk.h>
 
+#include <kernel/fs/vfs.h>
+
+#include <kernel/memory/kmalloc.h>
+
+#include <lib/string.h>
 #include <stdint.h>
 
-#define TUI_MAX_ITEMS 16
+#define TUI_MAX_ITEMS   16
+#define TUI_TITLE_MAX   64
+#define TUI_LABEL_MAX   64
+#define TUI_ACTION_MAX  64
 
 typedef struct {
-    const char* label;   // ekranda görünen
-    const char* action;  // "session:tty1", "sys:reboot" vs
+    char label[TUI_LABEL_MAX];
+    char action[TUI_ACTION_MAX];
 } tui_item_t;
 
 static tui_item_t g_items[TUI_MAX_ITEMS];
 static int g_item_count = 0;
-static int g_selected   = 0;
+static int g_selected = 0;
 
-static const char* g_title = "Menu";
+static char g_title[TUI_TITLE_MAX] = "Menu";
 
 static int g_e0 = 0;
 
-/* Enter ile seçilen action buraya düşer */
-static const char* g_pending_action = 0;
+void tui_clear(void) {
+    g_item_count = 0;
+    g_selected = 0;
+    g_title[0] = 0;
+}
 
 void tui_set_title(const char* t) {
-    if (t && t[0]) g_title = t;
+    if (!t) t = "Menu";
+    strncpy(g_title, t, sizeof(g_title) - 1);
+    g_title[sizeof(g_title) - 1] = 0;
 }
 
 void tui_add_item(const char* label, const char* action) {
-    if (!label || !label[0]) return;
+    if (!label) label = "";
+    if (!action) action = "";
+
     if (g_item_count >= TUI_MAX_ITEMS) return;
 
-    g_items[g_item_count].label  = label;
-    g_items[g_item_count].action = action ? action : "";
+    tui_item_t* it = &g_items[g_item_count];
+
+    strncpy(it->label, label, sizeof(it->label) - 1);
+    it->label[sizeof(it->label) - 1] = 0;
+
+    strncpy(it->action, action, sizeof(it->action) - 1);
+    it->action[sizeof(it->action) - 1] = 0;
+
     g_item_count++;
 }
 
 static void tui_draw(void) {
     gfx_clear(0x00202020);
 
-    int x = 40;
-    int y = 40;
+    // Menü kutusu
+    int box_w = 360;
+    int box_h = 220;
+    int x = ((int)fb_get_width()  - box_w) / 2;
+    int y = ((int)fb_get_height() - box_h) / 2;
 
-    // title
-    gfx_draw_text_utf8(x, y, 0x00FFFFFF, g_title);
-    y += 40;
+    gfx_fill_rect(x, y, box_w, box_h, 0x00262626);
+    gfx_draw_rect(x, y, box_w, box_h, 0x00404040);
 
-    // items
+    // Title
+    gfx_draw_text_utf8(x + 20, y + 18, 0x00FFFFFF, g_title);
+
+    int iy = y + 60;
+
     for (int i = 0; i < g_item_count; i++) {
-        uint32_t color = 0x00CCCCCC;
+        uint32_t txt = 0x00CCCCCC;
 
         if (i == g_selected) {
-            color = 0x00FFFFFF;
-            // selection bg
-            gfx_fill_rect(x - 10, y - 4, 260, 20, 0x00404040);
+            gfx_fill_rect(x + 14, iy - 4, box_w - 28, 20, 0x00404040);
+            txt = 0x00FFFFFF;
         }
 
-        gfx_draw_text_utf8(x, y, color, g_items[i].label);
-        y += 20;
+        gfx_draw_text_utf8(x + 24, iy, txt, g_items[i].label);
+        iy += 22;
     }
 
     fb_present();
 }
 
 void tui_init(void) {
-    g_item_count = 0;
-    g_selected = 0;
-    g_e0 = 0;
-    g_pending_action = 0;
-
-    // demo default menu (istersen bunu dışarıdan kur)
-    tui_set_title("KuvixOS");
-    tui_add_item("Terminal",  "session:tty1");
-    tui_add_item("Desktop",   "session:desktop");
-    tui_add_item("Reboot",    "sys:reboot");
-    tui_add_item("Power Off", "sys:poweroff");
-
     tui_draw();
 }
 
 void tui_tick(void) {
-    // şimdilik yok (animasyon/cursor blink vs eklenebilir)
-}
-
-/* Enter basılınca action’ı buradan alacaksın */
-const char* tui_take_action(void) {
-    const char* a = g_pending_action;
-    g_pending_action = 0;
-    return a;
-}
-
-static void tui_move_up(void) {
-    if (g_item_count <= 0) return;
-    if (g_selected > 0) g_selected--;
-    tui_draw();
-}
-
-static void tui_move_down(void) {
-    if (g_item_count <= 0) return;
-    if (g_selected < g_item_count - 1) g_selected++;
-    tui_draw();
-}
-
-static void tui_select(void) {
-    if (g_item_count <= 0) return;
-    g_pending_action = g_items[g_selected].action;
-    // İstersen seçince küçük bir görsel feedback de ekleyebiliriz
 }
 
 void tui_handle_scancode(uint16_t sc)
 {
-    uint8_t code = (uint8_t)(sc & 0xFF);
-
-    // debug
-    printk("tui sc=%x code=%x\n", sc, code);
-
-    // Eğer event formatın "E0"yu üst byte'a koyuyorsa (senin eski kodda vardı)
-    // E0 = 0xE000 gibi geliyorsa:
-    if ((sc & 0xFF00) == 0xE000) {
-        // bu durumda code zaten 0x48/0x50 vs olur
-        if (code == 0x48) { // Up
-            if (g_selected > 0) g_selected--;
-            tui_draw();
-            return;
-        }
-        if (code == 0x50) { // Down
-            if (g_selected < g_item_count - 1) g_selected++;
-            tui_draw();
-            return;
-        }
-        return;
-    }
-
-    // Eğer driver E0'yu ayrı byte olarak yolluyorsa:
-    if (code == 0xE0) { g_e0 = 1; return; }
-
-    // break ignore
-    if (code & 0x80) { g_e0 = 0; return; }
-
-    // E0 arrow (separate prefix mode)
-    if (g_e0) {
-        if (code == 0x48) { if (g_selected > 0) g_selected--; tui_draw(); }
-        else if (code == 0x50) { if (g_selected < g_item_count - 1) g_selected++; tui_draw(); }
-        g_e0 = 0;
-        return;
-    }
-
-    // W/S (normal, E0'suz)
-    if (code == 0x11) { // W
-        if (g_selected > 0) g_selected--;
-        tui_draw();
-        return;
-    }
-    if (code == 0x1F) { // S
-        if (g_selected < g_item_count - 1) g_selected++;
+    if (sc == 0xE048) { // UP
+        if (g_selected > 0)
+            g_selected--;
         tui_draw();
         return;
     }
 
-    // Enter
-    if (code == 0x1C) {
+    if (sc == 0xE050) { // DOWN
+        if (g_selected < g_item_count - 1)
+            g_selected++;
+        tui_draw();
+        return;
+    }
+
+    if ((sc & 0xFF) == 0x1C) { // ENTER
         tui_execute_action(g_items[g_selected].action);
-        return;
     }
+}
+
+int tui_get_item_count(void) { return g_item_count; }
+int tui_get_selected(void) { return g_selected; }
+
+void tui_set_selected(int idx) {
+    if (idx < 0) idx = 0;
+    if (idx >= g_item_count) idx = g_item_count ? (g_item_count - 1) : 0;
+    g_selected = idx;
 }

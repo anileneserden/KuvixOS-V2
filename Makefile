@@ -64,6 +64,7 @@ SRC_C = \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
+    kernel/system/seed_files.c \
     ui/apps/calculator.c \
     ui/apps/controls_test.c \
     ui/apps/demo.c \
@@ -113,6 +114,8 @@ SRC_C = \
     ui/desktop.c \
     ui/icons/ui_icons.c \
     ui/tui/tui_action.c \
+    ui/tui/tui_cfg_parser.c \
+    ui/tui/tui_cfg.c \
     ui/tui/tui_core.c \
     ui/inputtest.c \
     ui/mouse.c \

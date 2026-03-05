@@ -128,6 +128,7 @@ void inputtest_draw(void) {
     draw_num(8, 112, "wheel", g_last_wheel);
     draw_u8 (8, 128, "buttons", g_last_buttons);
     draw_num(8, 144, "events", (int)g_event_count);
+    draw_num(8, 160, "scancode", g_last_sc);
 
     // basit cursor (5x5)
     for (int yy = -2; yy <= 2; yy++) {
@@ -142,7 +143,8 @@ void inputtest_draw(void) {
 void inputtest_handle_scancode(uint16_t sc) {
     uint8_t code = (uint8_t)(sc & 0xFF);
 
-    // break ignore (senin sistemde böyle kullanıyorsun)
+    g_last_sc = code;
+
     if (code & 0x80) return;
 
     // ESC -> Desktop

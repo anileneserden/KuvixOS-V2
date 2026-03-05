@@ -6,6 +6,7 @@
 #include <ui/ui_init.h>
 #include <ui/inputtest.h>
 #include <ui/theme.h>
+#include <ui/tui/tui_cfg.h>
 #include <ui/tui/tui.h>
 
 static ui_session_t g_current = UI_SESSION_NONE;
@@ -32,6 +33,8 @@ void ui_session_switch(ui_session_t s) {
     } else if (s == UI_SESSION_TUI) {
         fb_console_set_enabled(false);
         fb_console_clear();
+        tui_clear();
+        tui_load_cfg("/system/tui/main.cfg");
         tui_init();
     }
 }
