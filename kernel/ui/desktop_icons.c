@@ -477,3 +477,14 @@ const char* desktop_icons_get_name(int index) {
     }
     return "";
 }
+
+bool desktop_icons_get_rect(int index, int* x, int* y, int* w, int* h) {
+    if (index < 0 || index >= icon_count) return false;
+    if (!x || !y || !w || !h) return false;
+
+    *x = icons[index].x;
+    *y = icons[index].y;
+    *w = 72;
+    *h = 72;
+    return true;
+}

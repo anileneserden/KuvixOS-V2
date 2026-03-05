@@ -122,6 +122,8 @@ static int g_dbg_wheel_total = 0;
 
 static bool g_need_redraw = true;
 
+static int g_dbg_redraw_reason = 0;
+
 static inline void desktop_request_redraw(void) {
     g_need_redraw = true;
 }
@@ -184,6 +186,111 @@ static void desktop_toggle_ext(void);
 void desktop_invalidate_full(void) {
     g_force_full_present = true;
     g_need_redraw = true;
+}
+
+#define CURW 24
+#define CURH 24
+#define CURPAD 10  // present padding (shadow/AA varsa arttır)
+
+static int s_cur_prev_x = -1;
+static int s_cur_prev_y = -1;
+static uint32_t s_cur_under[CURW * CURH];
+
+static inline void cursor_restore_under(int x, int y) {
+    uint32_t* bb = fb_backbuffer_ptr();
+    if (!bb) return;
+
+    int W = (int)fb_get_width();
+    int H = (int)fb_get_height();
+
+    for (int row = 0; row < CURH; row++) {
+        int yy = y + row;
+        if ((unsigned)yy >= (unsigned)H) continue;
+
+        uint32_t* dst = bb + yy * W;
+        const uint32_t* src = s_cur_under + row * CURW;
+
+        for (int col = 0; col < CURW; col++) {
+            int xx = x + col;
+            if ((unsigned)xx >= (unsigned)W) continue;
+            dst[xx] = src[col];
+        }
+    }
+}
+
+static inline void cursor_save_under(int x, int y) {
+    uint32_t* bb = fb_backbuffer_ptr();
+    if (!bb) return;
+
+    int W = (int)fb_get_width();
+    int H = (int)fb_get_height();
+
+    for (int row = 0; row < CURH; row++) {
+        int yy = y + row;
+        uint32_t* dst = s_cur_under + row * CURW;
+
+        for (int col = 0; col < CURW; col++) {
+            int xx = x + col;
+            uint32_t v = 0;
+            if ((unsigned)xx < (unsigned)W && (unsigned)yy < (unsigned)H) {
+                v = bb[yy * W + xx];
+            }
+            dst[col] = v;
+        }
+    }
+}
+
+// scene_redrawn=true => sahne yeni çizildi, önce under save sonra cursor çiz
+static inline void cursor_overlay_step(int x, int y, bool scene_redrawn) {
+    if (scene_redrawn) {
+        // Sahne baştan çizildi: backbuffer’da eski cursor zaten yok.
+        // Ama frontbuffer’da eski cursor kalmış olabilir -> eski rect’i present ederek temizle.
+        if (s_cur_prev_x >= 0) {
+            present_rect_safe(s_cur_prev_x - CURPAD, s_cur_prev_y - CURPAD,
+                            CURW + CURPAD * 2, CURH + CURPAD * 2);
+        }
+
+        // Yeni cursor’u backbuffer’a çiz
+        cursor_save_under(x, y);
+        cursor_draw_arrow(x, y);
+
+        // Yeni cursor’u da present et
+        present_rect_safe(x - CURPAD, y - CURPAD,
+                        CURW + CURPAD * 2, CURH + CURPAD * 2);
+
+        s_cur_prev_x = x;
+        s_cur_prev_y = y;
+        return;
+    }
+
+    if (s_cur_prev_x < 0) {
+        cursor_save_under(x, y);
+        cursor_draw_arrow(x, y);
+        present_rect_safe(x - CURPAD, y - CURPAD, CURW + CURPAD * 2, CURH + CURPAD * 2);
+        s_cur_prev_x = x;
+        s_cur_prev_y = y;
+        return;
+    }
+
+    // old restore
+    cursor_restore_under(s_cur_prev_x, s_cur_prev_y);
+
+    // new save + draw
+    cursor_save_under(x, y);
+    cursor_draw_arrow(x, y);
+
+    // present old+new
+    present_rect_safe(s_cur_prev_x - CURPAD, s_cur_prev_y - CURPAD, CURW + CURPAD * 2, CURH + CURPAD * 2);
+    present_rect_safe(x          - CURPAD, y          - CURPAD, CURW + CURPAD * 2, CURH + CURPAD * 2);
+
+    s_cur_prev_x = x;
+    s_cur_prev_y = y;
+}
+
+// sahne full redraw olduysa (fb_clear + wm_draw vs) cursor overlay state resetlemek için
+static inline void cursor_overlay_reset(void) {
+    s_cur_prev_x = -1;
+    s_cur_prev_y = -1;
 }
 
 // ============================================================
@@ -826,23 +933,19 @@ void ui_desktop_tick(void) {
     int wheel = 0;
     uint8_t btn;
 
-    // --- Dirty-rect tracking (cursor + selection) ---
-    static int prev_mouse_x = -1;
-    static int prev_mouse_y = -1;
+    // --- State tracking (selection + icon hover) ---
     static bool prev_selecting = false;
-    static int prev_sel_start_x = 0, prev_sel_start_y = 0;
-    static int prev_sel_end_x = 0, prev_sel_end_y = 0;
-    static int prev_hover_hit = -2;
+    static int  prev_sel_start_x = 0, prev_sel_start_y = 0;
+    static int  prev_sel_end_x   = 0, prev_sel_end_y   = 0;
+    static int  sel_dirty_old = -1;
+    static int  sel_dirty_new = -1;
+    static bool sel_dirty = false;
 
     bool need_full_present = false;
-
-    // Bu tick'te mouse event geldi mi?
-    bool had_mouse_event = false;
+    bool had_mouse_event   = false;
 
     // ---------- Mouse ----------
     ps2_mouse_poll();
-
-    // Eğer hiç event yoksa bile btn state'ini bilmek bazen lazım olabilir.
     btn = g_last_btn;
 
     while (ps2_mouse_pop(&dx, &dy, &wheel, &btn)) {
@@ -855,15 +958,15 @@ void ui_desktop_tick(void) {
 
         if (mouse_x < 0) mouse_x = 0;
         if (mouse_y < 0) mouse_y = 0;
-        if (mouse_x > (int)(fb_get_width() - 1))  mouse_x = (int)fb_get_width() - 1;
+        if (mouse_x > (int)(fb_get_width()  - 1)) mouse_x = (int)fb_get_width()  - 1;
         if (mouse_y > (int)(fb_get_height() - 1)) mouse_y = (int)fb_get_height() - 1;
 
         // ---- WHEEL ----
         if (wheel != 0) {
             int step = (wheel > 0) ? -1 : 1;
-            g_dbg_wheel_step = step;
+            g_dbg_wheel_step  = step;
             g_dbg_wheel_total += step;
-            if (g_dbg_wheel_total > 500) g_dbg_wheel_total = 500;
+            if (g_dbg_wheel_total >  500) g_dbg_wheel_total =  500;
             if (g_dbg_wheel_total < -500) g_dbg_wheel_total = -500;
 
             wm_handle_mouse_wheel(mouse_x, mouse_y, step, btn);
@@ -871,13 +974,19 @@ void ui_desktop_tick(void) {
             desktop_request_redraw();
         }
 
+        // ---- MOVE ----
         if (dx != 0 || dy != 0) {
             wm_handle_mouse_move(mouse_x, mouse_y);
-            desktop_request_redraw();
 
-            // Mouse bir pencerenin üstündeyse hover değişebilir -> full present gerekli
-            if (wm_find_window_at(mouse_x, mouse_y) != -1) {
-                need_full_present = true;
+            static int prev_win = -2;
+            int win_now = wm_find_window_at(mouse_x, mouse_y);
+            if (win_now != prev_win) {
+                prev_win = win_now;
+                desktop_request_redraw();
+            }
+
+            if (is_selecting && (btn & 1)) {
+                desktop_request_redraw();
             }
         }
 
@@ -917,31 +1026,34 @@ void ui_desktop_tick(void) {
         // 3) WM
         wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
         if (wm_did_consume_mouse()) {
-            need_full_present = true;
+            if ((pressed | released) || wm_is_dragging_window()) {
+                need_full_present = true;
+            }
             desktop_request_redraw();
+
             is_selecting = false;
-            g_lmb_down = 0;
-            g_dragging = 0;
-            g_down_hit = -1;
+            g_lmb_down   = 0;
+            g_dragging   = 0;
+            g_down_hit   = -1;
+
             g_last_btn = btn;
             continue;
         }
 
-        // 4) Desktop alanı
+        // 4) Desktop alanı (WM capture yoksa)
         if (!wm_is_any_window_captured()) {
 
-            // ✅ Context menu açıkken: her eventte hover/submenu update
+            // Context menu açıkken hover/submenu update
             if (context_menu_is_visible()) {
                 need_full_present = true;
                 desktop_request_redraw();
                 context_menu_handle_mouse(mouse_x, mouse_y, false);
             }
 
-            // Sağ tık: context menu (yeniden kur + aç)
+            // Sağ tık: context menu aç
             if (pressed & 2) {
                 need_full_present = true;
 
-                // Desktop input state reset
                 g_lmb_down = 0;
                 g_dragging = 0;
                 g_down_hit = -1;
@@ -950,51 +1062,24 @@ void ui_desktop_tick(void) {
                 int hit = desktop_icons_get_hit(mouse_x, mouse_y);
                 g_ctx_icon_index = hit;
 
-                // ✅ Windows gibi: sağ tık ikon üstündeyse onu seç
                 desktop_icons_deselect_all();
+                desktop_request_redraw();
+                need_full_present = true;
                 if (hit != -1) desktop_icons_select(hit);
 
                 context_menu_reset();
 
                 if (hit != -1) {
-                    // ikon üstü
-                    context_menu_add_item("Ac", ctx_open_default);
-
-                    // ✅ Birlikte Aç submenu
-                    const char* p = desktop_icons_get_path(hit);
-
-                    // sadece dosyalarda göster (istersen klasör için de gösterirsin)
-                    vfs_stat_t st;
-                    bool is_dir = false;
-                    if (p && vfs_stat(p, &st) && st.type == VFS_T_DIR) is_dir = true;
-
-                    if (!is_dir) {
-                        context_menu_t* ow = context_menu_add_submenu("Birlikte Ac");
-                        if (ow) {
-                            // HTML -> Browser + Notepad
-                            if (p && (ends_with_ci(p, ".html") || ends_with_ci(p, ".htm"))) {
-                                context_menu_add_item_to(ow, "Kuvix Browser", ctx_open_with_browser);
-                                context_menu_add_item_to(ow, "Not Defteri",  ctx_open_with_notepad);
-                            }
-                            // TXT -> Notepad
-                            else if (p && ends_with_ci(p, ".txt")) {
-                                context_menu_add_item_to(ow, "Not Defteri", ctx_open_with_notepad);
-                            }
-                            // bilinmeyen -> yine de notepad göster (debug için)
-                            else {
-                                context_menu_add_item_to(ow, "Not Defteri", ctx_open_with_notepad);
-                            }
-                        }
-                    }
-
+                    context_menu_add_item("Ac", desktop_handle_open);
                     context_menu_add_item("Ad Degistir", desktop_handle_rename);
                     context_menu_add_item("Sil", desktop_icons_delete_selected);
                 } else {
-                    // boş alan
                     context_menu_t* view = context_menu_add_submenu("Gorunum");
-                    context_menu_add_item_to(view,
+                    context_menu_add_item_to(
+                        view,
                         ui_get_show_extensions() ? "Dosya uzantilarini gizle" : "Dosya uzantilarini goster",
-                        desktop_toggle_ext);
+                        desktop_toggle_ext
+                    );
 
                     context_menu_add_item("Yeni Metin Belgesi", desktop_handle_create_file);
                     context_menu_add_item("Yeni Klasor", desktop_handle_create_folder);
@@ -1006,7 +1091,7 @@ void ui_desktop_tick(void) {
                 continue;
             }
 
-            // ✅ Menü açıkken: sol tık pressed menüye gider, desktop’a geçmez
+            // Menü açıkken sol tık menüye gider
             if (context_menu_is_visible()) {
                 if (pressed & 1) {
                     need_full_present = true;
@@ -1014,63 +1099,95 @@ void ui_desktop_tick(void) {
                     g_last_btn = btn;
                     continue;
                 }
-
-                // Menü açıkken desktop drag/selection yok
                 g_last_btn = btn;
                 continue;
             }
 
             // ------------------------------------------------------------
-            // Menü kapalıysa normal desktop input
+            // Menü kapalı: normal desktop input
             // ------------------------------------------------------------
-
             // Sol tık pressed
             if (pressed & 1) {
-                need_full_present = true;
+                // Click event -> en az 1 frame redraw iste
+                bool selection_changed = false;
 
                 int hit = desktop_icons_get_hit(mouse_x, mouse_y);
 
                 g_lmb_down = 1;
                 g_dragging = 0;
-                g_down_x = mouse_x;
-                g_down_y = mouse_y;
+                g_down_x   = mouse_x;
+                g_down_y   = mouse_y;
                 g_down_hit = hit;
 
-                desktop_icons_deselect_all();
+                bool ctrl = kbd_is_ctrl_pressed();   // ✅ CTRL kontrolü
 
                 if (hit != -1) {
-                    desktop_icons_select(hit);
+                    if (!ctrl) {
+                        // ✅ CTRL yoksa: tek seçime zorla (eski seçimi düşür)
+                        // (zaten seçiliyse bile redraw zararsız)
+                        desktop_icons_deselect_all();
+                        desktop_icons_select(hit);
+                        selection_changed = true;
+                    } else {
+                        // ✅ CTRL varsa: toggle
+                        desktop_icons_toggle_select(hit);
+                        selection_changed = true; // ✅ EKSİK OLAN BUYDU
+                    }
 
+                    // double click (CTRL yokken)
                     uint32_t now = g_ticks_ms;
-                    if (g_last_click_hit == hit && (now - g_last_click_ms) < DBLCLICK_MS) {
-
+                    if (!ctrl && g_last_click_hit == hit && (now - g_last_click_ms) < DBLCLICK_MS) {
                         desktop_icons_process_click(hit);
 
-                        // ✅ uygulama açıldıktan sonra seçimi kapat
                         desktop_icons_deselect_all();
-                        desktop_invalidate_full();
+                        selection_changed = true;
 
+                        desktop_invalidate_full(); // app açıldı vs -> full
                         g_last_click_hit = -1;
-                        g_last_click_ms = 0;
-                        g_lmb_down = 0;
-                        g_dragging = 0;
-                        g_down_hit = -1;
+                        g_last_click_ms  = 0;
+                        g_lmb_down       = 0;
+                        g_dragging       = 0;
+                        g_down_hit       = -1;
+
+                        // ✅ redraw
+                        desktop_request_redraw();
+                        need_full_present = true;
 
                         g_last_btn = btn;
                         continue;
                     } else {
                         g_last_click_hit = hit;
-                        g_last_click_ms = now;
+                        g_last_click_ms  = now;
                     }
+
+                    is_selecting = false;
+
                 } else {
+                    // Boş alana tık
+                    if (!ctrl) {
+                        desktop_icons_deselect_all();
+                        selection_changed = true;
+                    }
+
                     is_selecting = true;
-                    sel_start_x = mouse_x;
-                    sel_start_y = mouse_y;
+                    sel_start_x  = mouse_x;
+                    sel_start_y  = mouse_y;
 
                     g_last_click_hit = -1;
-                    g_last_click_ms = 0;
+                    g_last_click_ms  = 0;
                 }
-            }
+
+                if (selection_changed) {
+                    desktop_request_redraw();
+                    need_full_present = true; // şimdilik garanti; sonra istersen dirty rect'e düşürürüz
+                } else {
+                    // selection değişmediyse ama selection rect başlıyorsa yine redraw gerekli
+                    if (is_selecting) {
+                        desktop_request_redraw();
+                        need_full_present = true;
+                    }
+                }
+}
 
             // Sol tık basılı: drag threshold
             if (btn & 1) {
@@ -1092,7 +1209,9 @@ void ui_desktop_tick(void) {
 
             // Sol tık release
             if (released & 1) {
-                need_full_present = true;
+
+                bool selection_was_active = is_selecting;
+
                 g_lmb_down = 0;
 
                 if (g_dragging) {
@@ -1100,102 +1219,110 @@ void ui_desktop_tick(void) {
                     g_down_hit = -1;
                     desktop_icons_stop_dragging_all();
                     desktop_icons_snap_all();
-                    is_selecting = false;
+
+                    // Drag bitti -> redraw şart
+                    desktop_request_redraw();
 
                     g_last_btn = btn;
                     continue;
                 }
 
                 if (is_selecting) {
-                    desktop_icons_select_in_rect(sel_start_x, sel_start_y, mouse_x, mouse_y);
+                    desktop_icons_select_in_rect(
+                        sel_start_x, sel_start_y,
+                        mouse_x, mouse_y
+                    );
                 }
+
                 is_selecting = false;
 
                 desktop_icons_stop_dragging_all();
                 desktop_icons_snap_all();
                 g_down_hit = -1;
+
+                // ✅ Eğer selection vardıysa kaldırmak için redraw zorla
+                if (selection_was_active) {
+                    desktop_request_redraw();
+                    // full present şart değil
+                    // çünkü sahne yeniden çizilecek
+                }
             }
         }
 
         g_last_btn = btn;
     }
 
-    int now_hover = desktop_icons_get_hit(mouse_x, mouse_y);
+    static int  prev_hover_hit = -2;
+    static int  hover_old = -1;
+    static int  hover_new = -1;
+    static bool hover_dirty = false;
+
+    int now_hover = -1;
+    int over_win = wm_find_window_at(mouse_x, mouse_y);
+    if (over_win == -1 && !context_menu_is_visible()) {
+        now_hover = desktop_icons_get_hit(mouse_x, mouse_y);
+    }
+
     if (now_hover != prev_hover_hit) {
-        need_full_present = true;
-        desktop_request_redraw();
+        hover_old = prev_hover_hit;
+        hover_new = now_hover;
+        hover_dirty = true;
+
         prev_hover_hit = now_hover;
+        desktop_request_redraw();
     }
 
-    // ---------- Render ----------
-    // ✅ Klavye/hotkey ile UI değiştiyse bu frame full present zorla
-    if (g_force_full_present) {
-        need_full_present = true;
-        g_force_full_present = false;
-    }
-
-    if (g_dbg_overlay) need_full_present = true;
-    if (memmon_is_visible()) need_full_present = true;
-
+    // ---------- Render flags ----------
+    if (g_force_full_present) need_full_present = true;
+    if (g_dbg_overlay)        need_full_present = true;
+    if (memmon_is_visible())  need_full_present = true;
     if (wm_is_dragging_window()) need_full_present = true;
-
     if (appmgr_any_continuous_redraw()) need_full_present = true;
 
-    // ---------- Decide if we should redraw this frame ----------
+    // ---------- Decide redraw vs cursor-only ----------
     bool continuous = false;
-
-    // drag sırasında sürekli redraw şart
-    if (wm_is_dragging_window()) continuous = true;
-
-    // animasyon/video gibi sürekli redraw isteyen app varsa
+    if (wm_is_dragging_window())       continuous = true;
     if (appmgr_any_continuous_redraw()) continuous = true;
+    if (g_dbg_overlay)                continuous = true;
+    if (memmon_is_visible())          continuous = true;
 
-    // debug overlay / memmon açıksa sürekli redraw
-    if (g_dbg_overlay) continuous = true;
-    if (memmon_is_visible()) continuous = true;
-
-    // invalidate_full çağrıldıysa redraw da şart
     if (g_force_full_present) g_need_redraw = true;
 
-    bool should_draw = (g_need_redraw || continuous);
-
-    if (!should_draw) {
-        // hiçbir şey değişmedi -> çizme/present yok
+    // Sadece mouse hareketi geldiyse, sahneyi çizme: cursor overlay ile güncelle
+    if (!g_need_redraw && !continuous) {
+        if (had_mouse_event) cursor_overlay_step(mouse_x, mouse_y, false);
         return;
     }
 
-    // bu frame çiziyoruz -> bayrağı sıfırla (continuous ise zaten tekrar set olur)
-    g_need_redraw = false;
-
-    // ---------- Render / Present policy ----------
-    if (g_force_full_present) {
-        need_full_present = true;
-        g_force_full_present = false;
+    if (!(g_need_redraw || continuous)) {
+        // güvenli: sahne çizilmiyor, cursor da güncellenmiyor
+        return;
     }
 
-    // (bunlar full present gerektirebilir)
-    if (g_dbg_overlay) need_full_present = true;
-    if (memmon_is_visible()) need_full_present = true;
-    if (wm_is_dragging_window()) need_full_present = true;
-    if (appmgr_any_continuous_redraw()) need_full_present = true;
+    // bu frame sahne çizilecek
+    g_need_redraw = false;
 
+    // g_force_full_present bir kere kullanılıp sıfırlanmalı (yoksa hep full gider)
+    bool force_full = g_force_full_present;
+    g_force_full_present = false;
+
+    // ---------- Render scene ----------
     fb_clear(ui_get_desktop_bg());
     desktop_icons_draw_all();
-
     topbar_draw();
 
     if (is_selecting) {
+        int rx = min(sel_start_x, mouse_x);
+        int ry = min(sel_start_y, mouse_y);
+        int rw = abs(mouse_x - sel_start_x) + 1;
+        int rh = abs(mouse_y - sel_start_y) + 1;
+
         gfx_draw_alpha_rect(
-            abs(mouse_x - sel_start_x),
-            abs(mouse_y - sel_start_y),
+            rw, rh,
             0, 85, 170, 150,
-            min(sel_start_x, mouse_x),
-            min(sel_start_y, mouse_y)
+            rx, ry
         );
     }
-
-    static int once = 0;
-    if (!once) { once = 1; printk("[NOTIF] draw called\n"); }
 
     wm_draw();
     save_dialog_draw();
@@ -1203,25 +1330,23 @@ void ui_desktop_tick(void) {
     context_menu_draw();
     messagebox_draw();
     notification_draw();
-
     memmon_draw((int)fb_get_width(), (int)fb_get_height());
-
-    cursor_draw_arrow(mouse_x, mouse_y);
     dbg_draw_panel();
 
-    // ---------- Present ----------
-    const int CW = 32;
-    const int CH = 32;
-    const int CPAD = 10;
+    // sahne çizildi -> cursor'u backbuffer'a bas (under-save ile)
+    cursor_overlay_step(mouse_x, mouse_y, true);
 
-    if (need_full_present || prev_mouse_x < 0) {
+    // ---------- Present ----------
+    if (force_full) need_full_present = true;
+
+    if (need_full_present) {
         fb_present();
     } else {
-        // Cursor old+new
-        present_rect_safe(prev_mouse_x - CPAD, prev_mouse_y - CPAD, CW + CPAD * 2, CH + CPAD * 2);
-        present_rect_safe(mouse_x      - CPAD, mouse_y      - CPAD, CW + CPAD * 2, CH + CPAD * 2);
+        // 1) Cursor: scene_redrawn=true iken cursor_overlay_step zaten present yapmıyor,
+        //    sadece backbuffer'a çiziyor. O yüzden cursor için burada bir şey yapmıyoruz.
+        //    (Mouse sadece hareket ettiğinde, üstteki cursor-only path zaten present ediyor.)
 
-        // Selection old+new
+        // 2) Selection dirty rect (eski + yeni)
         if (prev_selecting || is_selecting) {
             int ax0 = prev_sel_start_x, ay0 = prev_sel_start_y;
             int ax1 = prev_sel_end_x,   ay1 = prev_sel_end_y;
@@ -1239,20 +1364,38 @@ void ui_desktop_tick(void) {
             int b_w = (bx0 < bx1) ? (bx1 - bx0) : (bx0 - bx1);
             int b_h = (by0 < by1) ? (by1 - by0) : (by0 - by1);
 
-            const int PAD = 6;
-            present_rect_safe(a_x - PAD, a_y - PAD, a_w + PAD * 2, a_h + PAD * 2);
-            present_rect_safe(b_x - PAD, b_y - PAD, b_w + PAD * 2, b_h + PAD * 2);
+            // ✅ son pikseli de kapsa
+            a_w += 1; a_h += 1;
+            b_w += 1; b_h += 1;
+
+            // ✅ alpha/outline kenarları için biraz daha büyük pad
+            const int SEL_PAD = 10;
+
+            present_rect_safe(a_x - SEL_PAD, a_y - SEL_PAD, a_w + SEL_PAD * 2, a_h + SEL_PAD * 2);
+            present_rect_safe(b_x - SEL_PAD, b_y - SEL_PAD, b_w + SEL_PAD * 2, b_h + SEL_PAD * 2);
+        }
+
+        // 3) Hover dirty rect (selection olsa da olmasa da çalışmalı!)
+        if (hover_dirty) {
+            int x, y, w, h;
+            const int HOV_PAD = 4;
+
+            if (desktop_icons_get_rect(hover_old, &x, &y, &w, &h))
+                present_rect_safe(x - HOV_PAD, y - HOV_PAD, w + HOV_PAD * 2, h + HOV_PAD * 2);
+
+            if (desktop_icons_get_rect(hover_new, &x, &y, &w, &h))
+                present_rect_safe(x - HOV_PAD, y - HOV_PAD, w + HOV_PAD * 2, h + HOV_PAD * 2);
+
+            hover_dirty = false;
         }
     }
 
-    // Save prev state
-    prev_mouse_x = mouse_x;
-    prev_mouse_y = mouse_y;
-    prev_selecting = is_selecting;
+    // Save prev selection state
+    prev_selecting   = is_selecting;
     prev_sel_start_x = sel_start_x;
     prev_sel_start_y = sel_start_y;
-    prev_sel_end_x = mouse_x;
-    prev_sel_end_y = mouse_y;
+    prev_sel_end_x   = mouse_x;
+    prev_sel_end_y   = mouse_y;
 }
 
 // ============================================================

@@ -353,17 +353,22 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
     g_mouse_x = mx;
     g_mouse_y = my;
     g_buttons_state = buttons;
+
+    // default: consume yok
     g_mouse_consumed = 0;
 
     // 1) Modal save dialog
     if (save_dialog_is_active()) {
         save_dialog_handle_mouse(mx, my, (pressed & 0x01));
+
+        // modal sadece click ile consume etsin (istersen buttons!=0 iken de 1 yapabilirsin)
         if (pressed & 0x01) g_mouse_consumed = 1;
         return;
     }
 
     int idx = pick_top(mx, my);
 
+    // pencere yoksa
     if (idx == -1) {
         if (released & 0x01) {
             g_mouse_down = 0;
@@ -373,7 +378,10 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
         return;
     }
 
-    g_mouse_consumed = 1;
+    // ------------------------------------------------------------
+    // ✅ Hover (pressed=0, released=0, buttons=0) => consume ETME
+    // ------------------------------------------------------------
+    int has_input = ((pressed | released) != 0) || (buttons != 0);
 
     // pressed: öne al + chrome hittest
     if (pressed & 0x01) {
@@ -383,15 +391,25 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
         wm_hittest_t hit = ui_chrome_hittest(w, mx, my);
 
         if (hit == HT_BTN_CLOSE) {
+            g_mouse_consumed = 1;
             wm_request_close(idx);
             return;
         }
 
-        if (hit == HT_BTN_MAX) { wm_toggle_maximize(idx); return; }
-        if (hit == HT_BTN_MIN) { wm_minimize(idx); return; }
+        if (hit == HT_BTN_MAX) { 
+            g_mouse_consumed = 1; 
+            wm_toggle_maximize(idx); 
+            desktop_invalidate_full();
+            return; 
+        }
+        if (hit == HT_BTN_MIN) { 
+            g_mouse_consumed = 1; 
+            wm_minimize(idx); 
+            desktop_invalidate_full();
+            return; 
+        }
 
         if (hit == HT_TITLE) {
-
             // ✅ Tabs provider titlebar click
             app_t* app = g_wins[idx].owner;
             if (app && app->v &&
@@ -415,8 +433,8 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
 
                         for (int i = 0; i < max_tabs; i++) {
                             wm_recti_t tr = wm_tab_rect(strip, i, tab_w, tab_h, gap);
-
                             if (wm_pt_in_rect(mx, my, tr)) {
+                                g_mouse_consumed = 1;
                                 app->v->tabs_set_active(app, i);
                                 desktop_invalidate_full();
                                 return;
@@ -427,6 +445,7 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
                         if (wm_pt_in_rect(mx, my, ar)) {
                             int last = n - 1;
                             if (last < 0) last = 0;
+                            g_mouse_consumed = 1;
                             app->v->tabs_set_active(app, last);
                             desktop_invalidate_full();
                             return;
@@ -435,6 +454,8 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
                 }
             }
 
+            // title drag start
+            g_mouse_consumed = 1;
             g_mouse_down = 1;
             g_drag_idx = idx;
             g_down_x = mx;
@@ -442,19 +463,26 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
             g_dragging = 0;
             return;
         }
+
+        // pressed pencere içine geldiyse input var sayılır
+        has_input = 1;
     }
 
-    {
+    // ------------------------------------------------------------
+    // ✅ App mouse event: sadece input varsa (hover spam yok)
+    // ------------------------------------------------------------
+    if (has_input) {
         app_t* app = g_wins[idx].owner;
         if (app && app->v && app->v->on_mouse) {
             ui_rect_t cr = wm_get_client_rect(idx);
 
-            // mx,my ekran coords -> client coords
             int cx = mx - cr.x;
             int cy = my - cr.y;
 
             app->v->on_mouse(app, cx, cy, pressed, released, buttons);
         }
+
+        g_mouse_consumed = 1;
     }
 
     // release -> drag reset
@@ -472,10 +500,10 @@ void wm_handle_mouse_move(int mx, int my) {
     g_mouse_x = mx;
     g_mouse_y = my;
 
+    // Dragging window (titlebar drag)
     if (g_mouse_down && g_drag_idx != -1 && is_alive_id(g_drag_idx)) {
         ui_window_t* w = &g_wins[g_drag_idx].win;
 
-        // maximize değilse taşı
         if (w->state != WIN_MAXIMIZED) {
             w->x += dx;
             w->y += dy;
@@ -484,15 +512,19 @@ void wm_handle_mouse_move(int mx, int my) {
         return;
     }
 
+    // ✅ Drag yok + mouse basılı değil -> app'e move yollama (hover spam kesilir)
+    if (!g_mouse_down) {
+        return;
+    }
+
+    // Mouse basılıysa (app içi drag/select gibi) app'e move gönder
     int top = pick_top(mx, my);
     if (top != -1) {
         app_t* app = g_wins[top].owner;
         if (app && app->v && app->v->on_mouse) {
             ui_rect_t cr = wm_get_client_rect(top);
-
             int cx = mx - cr.x;
             int cy = my - cr.y;
-
             app->v->on_mouse(app, cx, cy, 0, 0, g_buttons_state);
         }
     }
@@ -539,24 +571,27 @@ void wm_draw(void) {
         app_t* app = g_wins[id].owner;
 
         if (win->state == WIN_MINIMIZED) continue;
+        if (!(app && app->visible)) continue;
 
-        if (app && app->visible) {
-            ui_window_draw(win, (id == g_active), g_mouse_x, g_mouse_y);
+        ui_window_draw(win, (id == g_active), g_mouse_x, g_mouse_y);
 
-            if (app->v && app->v->on_draw) {
-                ui_rect_t client = wm_get_client_rect(id);
+        if (app->v && app->v->on_draw) {
+            ui_rect_t client = wm_get_client_rect(id);
 
-                int r = 18; 
-
-                gfx_clip_round_rect4(client.x, client.y, client.w, client.h,
-                                    0, 0, r, r);
-
-                gfx_set_origin(client.x, client.y);
-                app->v->on_draw(app);
-                gfx_reset_origin();
-
-                gfx_clip_clear();
+            // ✅ Maximized iken round clip pahalı -> kapat / düz clip kullan
+            if (win->state != WIN_MAXIMIZED) {
+                int r = 18;
+                gfx_clip_round_rect4(client.x, client.y, client.w, client.h, 0, 0, r, r);
+            } else {
+                // Eğer gfx_clip_rect yoksa hiçbir şey yapma (clip yok)
+                // gfx_clip_rect(client.x, client.y, client.w, client.h);
             }
+
+            gfx_set_origin(client.x, client.y);
+            app->v->on_draw(app);
+            gfx_reset_origin();
+
+            gfx_clip_clear();
         }
     }
 }
