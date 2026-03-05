@@ -24,6 +24,19 @@ typedef struct html_node {
     struct html_node* parent;
     struct html_node* first_child;
     struct html_node* next_sibling;
+
+    const char* id;
+    uint16_t id_len;
+
+    const char* class_name;
+    uint16_t class_len;
+
+    const char* style;
+    uint16_t style_len;
+
+    // computed style
+    uint32_t css_bg, css_fg;
+    bool css_has_bg, css_has_fg;
 } html_node_t;
 
 typedef struct {

@@ -28,9 +28,11 @@ static void skip_spaces(html_lex_t* lx){
     while (lx->p < lx->end && is_space(*lx->p)) lx->p++;
 }
 
-static void try_parse_href(const char* p, const char* end, html_tok_t* out){
-    out->href = 0;
-    out->href_len = 0;
+static void try_parse_attrs(const char* p, const char* end, html_tok_t* out){
+    out->href = 0; out->href_len = 0;
+    out->id = 0; out->id_len = 0;
+    out->class_name = 0; out->class_len = 0;
+    out->style = 0; out->style_len = 0;
 
     while (p < end){
         while (p<end && is_space(*p)) p++;
@@ -38,7 +40,7 @@ static void try_parse_href(const char* p, const char* end, html_tok_t* out){
         if (*p=='>' || (*p=='/' && (p+1)<end && p[1]=='>')) break;
 
         const char* name = p;
-        while (p<end && !is_space(*p) && *p!='=' && *p!='>' ) p++;
+        while (p<end && !is_space(*p) && *p!='=' && *p!='>') p++;
         uint32_t name_len = (uint32_t)(p - name);
 
         while (p<end && is_space(*p)) p++;
@@ -62,7 +64,16 @@ static void try_parse_href(const char* p, const char* end, html_tok_t* out){
 
         if (match_kw_ci(name, name_len, "href")){
             out->href = val;
-            out->href_len = val_len;
+            out->href_len = (uint16_t)((val_len > 0xFFFF) ? 0xFFFF : val_len);
+        } else if (match_kw_ci(name, name_len, "id")){
+            out->id = val;
+            out->id_len = (uint16_t)((val_len > 0xFFFF) ? 0xFFFF : val_len);
+        } else if (match_kw_ci(name, name_len, "class")){
+            out->class_name = val;
+            out->class_len = (uint16_t)((val_len > 0xFFFF) ? 0xFFFF : val_len);
+        } else if (match_kw_ci(name, name_len, "style")){
+            out->style = val;
+            out->style_len = (uint16_t)((val_len > 0xFFFF) ? 0xFFFF : val_len);
         }
     }
 }
@@ -73,6 +84,9 @@ bool html_lex_next(html_lex_t* lx, html_tok_t* out){
     out->tag = 0; out->tag_len = 0;
     out->href = 0; out->href_len = 0;
     out->self_closing = false;
+    out->id = 0; out->id_len = 0;
+    out->class_name = 0; out->class_len = 0;
+    out->style = 0; out->style_len = 0;
 
     if (lx->p >= lx->end){
         out->type = HTOK_EOF;
@@ -137,7 +151,7 @@ bool html_lex_next(html_lex_t* lx, html_tok_t* out){
     if ((lx->p > tag_start) && (lx->p[-1] == '/')) out->self_closing = true;
 
     // parse href within attr region
-    try_parse_href(attr_begin, lx->p, out);
+    try_parse_attrs(attr_begin, lx->p, out);
 
     lx->p++; // '>'
 

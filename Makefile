@@ -64,6 +64,7 @@ SRC_C = \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
+    kernel/system/seed_files.c \
     ui/apps/calculator.c \
     ui/apps/controls_test.c \
     ui/apps/demo.c \
@@ -98,6 +99,7 @@ SRC_C = \
     ui/dialogs/messagebox.c \
     ui/font/font8x8_basic.c \
     ui/font/font8x16_basic.c \
+    ui/html/css.c \
     ui/html/html_dom.c \
     ui/html/html_parser.c \
     ui/html/html_render.c \

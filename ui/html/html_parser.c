@@ -101,6 +101,18 @@ bool html_parse(html_doc_t* doc, const char* data, uint32_t size){
                 el->href = t.href;
                 el->href_len = (uint16_t)t.href_len;
             }
+            if (t.id && t.id_len){
+                el->id = t.id;
+                el->id_len = (uint16_t)t.id_len;
+            }
+            if (t.class_name && t.class_len){
+                el->class_name = t.class_name;
+                el->class_len = (uint16_t)t.class_len;
+            }
+            if (t.style && t.style_len){
+                el->style = t.style;
+                el->style_len = (uint16_t)t.style_len;
+            }
 
             el->self_closing = t.self_closing || is_void_tag(t.tag, (uint16_t)t.tag_len);
 

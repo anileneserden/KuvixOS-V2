@@ -24,6 +24,7 @@
 #include <kernel/fs/fs_init.h>
 
 #include <ui/inputtest.h>
+#include <kernel/system/seed_files.h>
 
 extern void gdt_init(void);
 extern void idt_init(void);
@@ -105,6 +106,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     asm volatile("sti");
     
     fs_init_once();
+    seed_files_run();
 
     // UI
     ui_session_init();

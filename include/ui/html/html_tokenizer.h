@@ -22,6 +22,15 @@ typedef struct {
     uint32_t href_len;
 
     bool self_closing;
+
+    const char* id;
+    uint16_t id_len;
+    
+    const char* class_name;
+    uint16_t class_len;
+
+    const char* style;
+    uint16_t style_len;
 } html_tok_t;
 
 typedef struct {

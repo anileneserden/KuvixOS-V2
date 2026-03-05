@@ -62,7 +62,15 @@ void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t l
         return;
     }
 
-    // 4) Home geneli: "/home/anil/xxx" -> "~/xxx"
+    // 4) HTML
+    if (starts_with(abs_path, USER_HTML_PATH)) {
+        str_append(out, out_sz, "~/html");
+        const char* rest = abs_path + strlen(USER_HTML_PATH);
+        if (rest[0] == '/') str_append(out, out_sz, rest);
+        return;
+    }
+
+    // 5) Home geneli: "/home/anil/xxx" -> "~/xxx"
     if (starts_with(abs_path, USER_HOME_PATH)) {
         str_append(out, out_sz, "~");
         const char* rest = abs_path + strlen(USER_HOME_PATH);
@@ -70,7 +78,7 @@ void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t l
         return;
     }
 
-    // 5) Home değilse aynen bas
+    // 6) Home değilse aynen bas
     str_append(out, out_sz, abs_path);
 }
 

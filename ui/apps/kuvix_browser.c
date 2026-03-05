@@ -5,9 +5,10 @@
 
 #include <ui/html/html_parser.h>
 #include <ui/html/html_render.h>
-#include <ui/html/url_resolver.h>   // url_resolve_to_path(...)
-#include <kernel/fs/vfs.h>
+#include <ui/html/url_resolver.h>
+#include <ui/html/css.h>
 
+#include <kernel/fs/vfs.h>
 #include <kernel/drivers/video/gfx.h>
 #include <lib/string.h>
 #include <stdint.h>
@@ -20,7 +21,6 @@
 // ------------------------------------------------------------
 #define KBROWSER_ENABLE_TABS 0
 
-// terminal'deki gibi
 extern char kbd_scancode_to_ascii(uint8_t scancode);
 
 // ------------------------------------------------------------
@@ -392,6 +392,15 @@ static void draw_content_html(kuvix_browser_t* b, rect_t r, const char* url, int
     int draw_y = r.y + pad - scroll_y;
     int draw_w = r.w - pad * 2;
 
+    // ---- CSS (MVP) ----
+    css_stylesheet_t sheet;
+    css_parse(
+        "div{color:white;background-color:#222222;}"
+        ".box{background-color:#ff8800;color:black;}"
+        "a{color:#33A0FF;}",
+        &sheet
+    );
+    css_apply_styles(doc.root, &sheet);
     html_render_doc(&doc, draw_x, draw_y, draw_w);
 
     vfs_free_alloc(buf);
