@@ -449,3 +449,9 @@ int net_tcp_close(void) {
     }
     return 1;
 }
+
+void net_get_ipv4(uint32_t* ip_be, uint32_t* mask_be, uint32_t* gw_be) {
+    if (ip_be)   *ip_be   = g_ip;
+    if (mask_be) *mask_be = g_mask;
+    if (gw_be)   *gw_be   = g_gw;
+}
