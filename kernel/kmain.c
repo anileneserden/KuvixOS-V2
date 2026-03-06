@@ -117,19 +117,18 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     // time
     timer_init(1000);
+    time_set_tz_offset_sec(3 * 3600);
+    time_init_from_rtc();
 
-    // ✅ IRQ’ları aç (mouse/timer için şart)
     asm volatile("sti");
 
-    // FS (eğer fs_init kullanıyorsan burada çağır)
-    fs_init_once();  // sende nasıl ise (fs_prepare_user_layout vb.) ona göre
+    fs_init_once();
 
     ui_theme_bootstrap_default();
 
     // UI
     ui_session_init();
     ui_session_switch(UI_SESSION_DESKTOP);
-    // inputtest_init();
 
     while (1) {
         // klavye event dispatch

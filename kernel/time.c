@@ -8,6 +8,10 @@ uint64_t g_boot_epoch = 0;
 static uint32_t g_boot_ticks_ms = 0;
 int g_hour = 0, g_minute = 0, g_second = 0;
 volatile int test_counter = 0;
+static int32_t g_tz_off_sec = 0;
+
+void time_set_tz_offset_sec(int32_t off_sec) { g_tz_off_sec = off_sec; }
+int32_t time_get_tz_offset_sec(void) { return g_tz_off_sec; }
 
 // --- Yardımcı Zaman Fonksiyonları (En Üste Alındı) ---
 
@@ -120,4 +124,35 @@ uint64_t time_now_epoch_sec(void) {
 
 rtc_datetime_t time_now_datetime(void) {
     return epoch_to_datetime(time_now_epoch_sec());
+}
+
+rtc_datetime_t time_now_datetime_local(void) {
+    int64_t e = (int64_t)time_now_epoch_sec() + (int64_t)g_tz_off_sec;
+    if (e < 0) e = 0;
+    return epoch_to_datetime((uint64_t)e);
+}
+
+void time_format_hhmm(char* out6) {
+    if (!out6) return;
+    rtc_datetime_t t = time_now_datetime_local();
+    out6[0] = (char)('0' + (t.hour / 10));
+    out6[1] = (char)('0' + (t.hour % 10));
+    out6[2] = ':';
+    out6[3] = (char)('0' + (t.min / 10));
+    out6[4] = (char)('0' + (t.min % 10));
+    out6[5] = 0;
+}
+
+void time_format_hhmmss(char* out9) {
+    if (!out9) return;
+    rtc_datetime_t t = time_now_datetime_local();
+    out9[0] = (char)('0' + (t.hour / 10));
+    out9[1] = (char)('0' + (t.hour % 10));
+    out9[2] = ':';
+    out9[3] = (char)('0' + (t.min / 10));
+    out9[4] = (char)('0' + (t.min % 10));
+    out9[5] = ':';
+    out9[6] = (char)('0' + (t.sec / 10));
+    out9[7] = (char)('0' + (t.sec % 10));
+    out9[8] = 0;
 }

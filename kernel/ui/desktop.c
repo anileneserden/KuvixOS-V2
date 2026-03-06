@@ -929,13 +929,7 @@ void ui_desktop_tick(void) {
         if (dx != 0 || dy != 0) {
             wm_handle_mouse_move(mouse_x, mouse_y);
 
-            static int prev_win = -2;
-            int win_now = wm_find_window_at(mouse_x, mouse_y);
-            if (win_now != prev_win) {
-                prev_win = win_now;
-                desktop_request_redraw();
-            }
-
+            // selection sürüyorsa redraw gerekir
             if (is_selecting && (btn & 1)) {
                 desktop_request_redraw();
             }

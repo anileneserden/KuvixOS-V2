@@ -3,6 +3,7 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
 #include <lib/string.h>
+#include <kernel/time.h>
 
 static int bar_h = 28;
 static int btn_w = 120;   // pencere buton genişliği
@@ -92,5 +93,7 @@ void topbar_draw(void) {
     draw_window_buttons();
 
     // Sağ saat
-    gfx_draw_text(sw - 120, 7, 0xAAAAAA, "17:11  CPU: 2%");
+    char t[6];
+    time_format_hhmm(t);
+    gfx_draw_text(sw - 80, 7, 0xAAAAAA, t);
 }
