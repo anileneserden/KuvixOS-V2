@@ -47,6 +47,8 @@ SRC_C = \
     kernel/drivers/input/keymaps/trq.c \
     kernel/drivers/input/keyboard.c \
     kernel/drivers/input/mouse_ps2.c \
+    kernel/drivers/net/net.c \
+    kernel/drivers/net/pci.c \
     kernel/drivers/rtc/rtc.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
@@ -193,6 +195,7 @@ run: iso
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=disk.img,format=raw,index=0,media=disk \
 		-drive file=disk2.img,format=raw,index=1,media=disk \
+        -device e1000,netdev=n0 -netdev user,id=n0 \
 		-m 256M -serial stdio
 
 clean:

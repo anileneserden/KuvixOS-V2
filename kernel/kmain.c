@@ -15,6 +15,8 @@
 #include <kernel/drivers/input/keyboard.h>
 #include <kernel/drivers/input/mouse_ps2.h>
 
+#include <kernel/drivers/net/net.h>
+
 #include <kernel/time.h>
 
 #include <kernel/memory/kmalloc.h>
@@ -22,8 +24,6 @@
 #include <ui/session.h>
 
 #include <kernel/fs/fs_init.h>
-
-#include <ui/inputtest.h>
 
 extern void gdt_init(void);
 extern void idt_init(void);
@@ -99,6 +99,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     kbd_init();
     ps2_mouse_init();
+
+    net_init();
 
     timer_init(1000);
 
