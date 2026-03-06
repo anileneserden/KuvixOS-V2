@@ -47,6 +47,7 @@ SRC_C = \
     kernel/drivers/input/keymaps/trq.c \
     kernel/drivers/input/keyboard.c \
     kernel/drivers/input/mouse_ps2.c \
+    kernel/drivers/net/e1000.c \
     kernel/drivers/net/net.c \
     kernel/drivers/net/pci.c \
     kernel/drivers/rtc/rtc.c \

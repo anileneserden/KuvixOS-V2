@@ -1,4 +1,5 @@
 #include <kernel/drivers/net/pci.h>
+#include <kernel/drivers/net/e1000.h>
 #include <arch/x86/io.h>
 #include <kernel/printk.h>
 
@@ -13,6 +14,19 @@ static inline uint32_t pci_cfg_addr(uint8_t bus, uint8_t slot, uint8_t func, uin
 uint32_t pci_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
     outl(0xCF8, pci_cfg_addr(bus, slot, func, offset));
     return inl(0xCFC);
+}
+
+void pci_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value) {
+    outl(0xCF8, pci_cfg_addr(bus, slot, func, offset));
+    outl(0xCFC, value);
+}
+
+void pci_write16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t value) {
+    uint32_t old = pci_read32(bus, slot, func, offset & 0xFC);
+    uint32_t shift = (offset & 2) * 8;
+    uint32_t mask = 0xFFFFu << shift;
+    uint32_t neu = (old & ~mask) | ((uint32_t)value << shift);
+    pci_write32(bus, slot, func, offset & 0xFC, neu);
 }
 
 uint16_t pci_read16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
@@ -44,7 +58,12 @@ void pci_scan_dump_nics(void) {
                 // Network Controller = class 0x02
                 if (class == 0x02) {
                     printk("[PCI] NIC bus=%u slot=%u func=%u vendor=%x device=%x subclass=%x\n",
-                           bus, slot, func, vendor, device, subclass);
+                        bus, slot, func, vendor, device, subclass);
+
+                    // e1000 QEMU (8086:100E)
+                    if (vendor == 0x8086 && device == 0x100E) {
+                        e1000_probe(bus, slot, func);
+                    }
                 }
 
                 // multi-function kontrolü (header type bit7)
