@@ -2,25 +2,22 @@
 
 #include <app/app.h>
 #include <app/app_manager.h>
-
 #include <ui/wm.h>
 #include <ui/dialogs/save_dialog.h>
 #include <ui/dialogs/open_dialog.h>
 #include <ui/dialogs/messagebox.h>
-
+#include <ui/desktop.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/printk.h>
 #include <kernel/drivers/input/keyboard.h>
-
+#include <kernel/memory/kmalloc.h>
 #include <ui/notification.h>
 #include <ui/apps/notepad.h>
 #include <kernel/user.h>
-
 #include <lib/string.h>
 #include <stdint.h>
 #include <stdbool.h>
-
 #include <ui/wm.h>
 
 // Menü itemları
@@ -54,7 +51,7 @@ static inline notepad_tab_t* ntab(notepad_t* n) {
 // ------------------------------------------------------------
 static inline int np_len(const notepad_tab_t* tab) {
     if (!tab) return 0;
-    return (int)strlen(tab->text);
+    return (int)tab->len;
 }
 
 static inline void np_sel_clear(notepad_tab_t* t) {
@@ -93,20 +90,77 @@ static void np_delete_selection(notepad_tab_t* t) {
 static bool np_insert_str(notepad_tab_t* tab, const char* s, int n) {
     if (!tab || !s || n <= 0) return false;
 
-    int len = np_len(tab);
+    // text yoksa ilk allocate etmeyi dene
+    if (!tab->text || tab->cap < 2) {
+        uint32_t cap = (tab->cap >= 2) ? tab->cap : (uint32_t)NOTEPAD_INIT_CAP;
+        if (cap < 2) cap = 2;
+
+        tab->text = (char*)kmalloc(cap);
+        if (!tab->text) {
+            tab->cap = 0;
+            tab->len = 0;
+            tab->cursor = 0;
+            return false;
+        }
+        tab->cap = cap;
+        tab->len = 0;
+        tab->cursor = 0;
+        tab->text[0] = '\0';
+    }
+
+    uint32_t len = tab->len;
+
+    // cursor clamp
     if ((int)tab->cursor < 0) tab->cursor = 0;
-    if ((int)tab->cursor > len) tab->cursor = (uint32_t)len;
+    if (tab->cursor > len) tab->cursor = len;
 
-    // kapasite kontrol (sonda \0 dahil)
-    if (len + n >= (NOTEPAD_MAX_TEXT - 1)) return false;
+    // ihtiyaç duyulan toplam: len + n + 1 ('\0')
+    uint32_t need = len + (uint32_t)n + 1;
 
-    // shift right ( '\0' dahil )
-    memmove(tab->text + tab->cursor + n,
-            tab->text + tab->cursor,
-            (size_t)(len - (int)tab->cursor + 1));
+    // kapasite yetmiyorsa büyüt
+    if (need > tab->cap) {
+        uint32_t newcap = tab->cap;
 
-    memcpy(tab->text + tab->cursor, s, (size_t)n);
-    tab->cursor += (uint32_t)n;
+        // 2x büyüt (need'i geçene kadar)
+        while (newcap < need) {
+            uint32_t next = newcap * 2;
+            if (next <= newcap) { // overflow guard
+                newcap = need;
+                break;
+            }
+            newcap = next;
+        }
+
+        // üst sınır
+        if (newcap > (uint32_t)NOTEPAD_MAX_CAP) {
+            if (need > (uint32_t)NOTEPAD_MAX_CAP) return false;
+            newcap = (uint32_t)NOTEPAD_MAX_CAP;
+        }
+
+        char* nb = (char*)kmalloc(newcap);
+        if (!nb) return false;
+
+        // eski içeriği kopyala (len + '\0')
+        memcpy(nb, tab->text, (size_t)(len + 1));
+        kfree(tab->text);
+
+        tab->text = nb;
+        tab->cap = newcap;
+    }
+
+    // shift right: cursor'dan itibaren tail'i sağa kaydır ( '\0' dahil )
+    uint32_t cur = tab->cursor;
+    memmove(tab->text + cur + (uint32_t)n,
+            tab->text + cur,
+            (size_t)(len - cur + 1)); // +1 => '\0' da taşınır
+
+    // insert payload
+    memcpy(tab->text + cur, s, (size_t)n);
+
+    tab->cursor = cur + (uint32_t)n;
+    tab->len = len + (uint32_t)n;
+    tab->text[tab->len] = '\0';
+
     return true;
 }
 
@@ -510,19 +564,47 @@ static void notepad_on_create(app_t* self) {
     data->tab_count = 1;
     data->active_tab = 0;
 
-    // ✅ pending open init
     data->pending_open = false;
     data->pending_path[0] = '\0';
 
+    data->menu_hover_item = -1;
+    data->last_lx = -999;
+    data->last_ly = -999;
+
+    // Güvenlik: tüm tab'leri sıfırla (ileride free/cleanup yazarken işini kolaylaştırır)
+    for (int i = 0; i < NOTEPAD_MAX_TABS; i++) {
+        data->tabs[i].text = NULL;
+        data->tabs[i].len = 0;
+        data->tabs[i].cap = 0;
+        data->tabs[i].cursor = 0;
+        data->tabs[i].is_dirty = false;
+        data->tabs[i].sel_active = 0;
+        data->tabs[i].sel_anchor = 0;
+        data->tabs[i].sel_end = 0;
+        memset(data->tabs[i].file_path, 0, sizeof(data->tabs[i].file_path));
+    }
+
     notepad_tab_t* tab = &data->tabs[0];
-    memset(tab->text, 0, NOTEPAD_MAX_TEXT);
-    memset(tab->file_path, 0, sizeof(tab->file_path));
+
+    tab->cap    = NOTEPAD_INIT_CAP;
+    tab->len    = 0;
     tab->cursor = 0;
     tab->is_dirty = false;
 
     tab->sel_active = 0;
     tab->sel_anchor = 0;
     tab->sel_end    = 0;
+
+    // cap en az 2 olsun ki '\0' garanti
+    if (tab->cap < 2) tab->cap = 2;
+
+    tab->text = (char*)kmalloc(tab->cap);
+    if (!tab->text) {
+        tab->cap = 0;
+        tab->len = 0;
+        return;
+    }
+    tab->text[0] = '\0';
 }
 
 // ------------------------------------------------------------
@@ -532,6 +614,7 @@ static void notepad_on_draw(app_t* self) {
     if (!self || !self->user) return;
     notepad_t* data = (notepad_t*)self->user;
     notepad_tab_t* tab = ntab(data);
+    printk("[NP] draw len=%u\n", (unsigned)strlen(tab->text));
     if (!tab) return;
 
     // ✅ Desktop/OpenDialog open race fix: dosyayı create bittikten sonra burada oku
@@ -591,7 +674,9 @@ static void notepad_on_draw(app_t* self) {
     int lx = mx - client.x;
     int ly = my - client.y;
 
-    // --- Menü bar (client-relative) ---
+    // ------------------------------------------------------------
+    // Menü bar (client-relative)
+    // ------------------------------------------------------------
     gfx_fill_rect(0, 0, client.w, 20, 0xCCCCCC);
 
     char header_text[160];
@@ -602,16 +687,18 @@ static void notepad_on_draw(app_t* self) {
     gfx_draw_text_utf8(120, 5, 0x444444, header_text);
 
     int btn_x = 5, btn_y = 2, btn_w = 55, btn_h = 16;
-    bool is_hover = (lx >= btn_x && lx <= btn_x + btn_w && ly >= btn_y && ly <= btn_y + btn_h);
+    bool is_hover_btn = (lx >= btn_x && lx <= btn_x + btn_w && ly >= btn_y && ly <= btn_y + btn_h);
 
     if (data->menu_open) {
         gfx_fill_rect(btn_x, btn_y, btn_w, btn_h, 0xAAAAAA);
-    } else if (is_hover) {
+    } else if (is_hover_btn) {
         gfx_draw_rect(btn_x, btn_y, btn_w, btn_h, 0xFFFFFF);
     }
     gfx_draw_text_utf8(btn_x + 8, btn_y + 3, 0x000000, "Dosya");
 
-    // --- Yazı alanı ---
+    // ------------------------------------------------------------
+    // Yazı alanı
+    // ------------------------------------------------------------
     int text_y = 20;
     gfx_fill_rect(0, text_y, client.w, client.h - 20, 0xFFFFFF);
     gfx_draw_line(0, text_y, client.w, text_y, 0x808080);
@@ -649,7 +736,6 @@ static void notepad_on_draw(app_t* self) {
             }
             cx += TAB_W;
         } else {
-            // ✅ selection highlight (şeffaf mavi)
             if (has_sel && (uint32_t)i >= sa && (uint32_t)i < sb) {
                 gfx_draw_alpha_rect(CHAR_W, CHAR_H, 0, 85, 170, 120, cx, cy);
             }
@@ -662,28 +748,55 @@ static void notepad_on_draw(app_t* self) {
         if (cy > client.h - CHAR_H) break;
     }
 
-    // cursor sonda ise
     if (cur == len) { cur_x = cx; cur_y = cy; }
     gfx_draw_text(cur_x, cur_y, 0x000000, "_");
 
-    // --- Dropdown (client-relative) ---
+    // ------------------------------------------------------------
+    // Dropdown (client-relative)
+    // ------------------------------------------------------------
     if (data->menu_open) {
-        int m_x = btn_x, m_y = 20;
+        // hover state update (mouse event olmadan da)
+        if (lx != data->last_lx || ly != data->last_ly) {
+            data->last_lx = lx;
+            data->last_ly = ly;
+
+            int new_hover = -1;
+            int m_x = 5,  m_y = 20;
+            int m_w = 110, m_h = 72;
+            desktop_damage_rect(client.x + m_x, client.y + m_y, m_w, m_h);
+            desktop_request_redraw();
+
+            if (lx >= m_x && lx <= m_x + m_w &&
+                ly >= m_y && ly <= m_y + m_h) {
+                int item = (ly - m_y - 5) / 16;
+                if (item >= 0 && item < 4) new_hover = item;
+            }
+
+            if (new_hover != data->menu_hover_item) {
+                data->menu_hover_item = new_hover;
+                desktop_damage_rect(client.x + m_x, client.y + m_y, m_w, m_h);
+                desktop_request_redraw();   // ✅ bunu ekle
+            }
+        }
+
+        // draw dropdown
+        int m_x = 5, m_y = 20;
         gfx_fill_rect(m_x, m_y, 110, 72, 0xFFFFFF);
         gfx_draw_rect(m_x, m_y, 110, 72, 0x000000);
 
         for (int i = 0; i < 4; i++) {
             int item_y = m_y + 5 + (i * 16);
-            if (lx >= m_x && lx <= m_x + 110 && ly >= item_y && ly <= item_y + 16) {
+
+            if (data->menu_hover_item == i) {
                 gfx_fill_rect(m_x + 1, item_y, 108, 16, 0x000080);
                 gfx_draw_text_utf8(m_x + 10, item_y + 2, 0xFFFFFF, notepad_menu_items[i]);
             } else {
                 gfx_draw_text_utf8(m_x + 10, item_y + 2, 0x000000, notepad_menu_items[i]);
             }
         }
+    } else {
+        data->menu_hover_item = -1;
     }
-
-    gfx_draw_text(10, 10, 0xFFFFFF, "<>");
 }
 
 // ------------------------------------------------------------
@@ -711,6 +824,14 @@ static void notepad_on_mouse(app_t* self, int mx, int my,
     bool file_btn_hit = (lx >= 0 && lx <= 60 && ly >= 0 && ly <= 20);
     if (file_btn_hit) {
         data->menu_open = !data->menu_open;
+
+        data->menu_hover_item = -1;
+        data->last_lx = -999;
+        data->last_ly = -999;
+
+        // ✅ aç/kapat anında çiz
+        desktop_damage_rect(client.x + 5, client.y + 2, 55, 16);     // Dosya butonu
+        desktop_damage_rect(client.x + 5, client.y + 20, 110, 72);   // dropdown
         return;
     }
 
@@ -724,6 +845,8 @@ static void notepad_on_mouse(app_t* self, int mx, int my,
         if (menu_area_hit) {
             int item = (ly - m_y - 5) / 16;
             data->menu_open = false;
+            desktop_damage_rect(client.x + 5, client.y + 20, 110, 72);
+            desktop_damage_rect(client.x + 5, client.y + 2, 55, 16);
 
             if (item == 0) {
                 open_dialog_show("Dosya Aç", "", self->win_id, notepad_on_open_confirm);
@@ -777,55 +900,74 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
     uint8_t is_e0 = ((scancode & 0xFF00) == 0xE000);
     uint8_t sc    = (uint8_t)(scancode & 0xFF);
 
-    // break gelirse ignore (desktop şu an break'i yollamıyor olabilir ama güvenli)
+    // break gelirse ignore
     if (sc & 0x80) return;
 
     int shift = kbd_is_shift_pressed();
+    
+    #define NP_DAMAGE_CLIENT() do { \
+        ui_rect_t rc = wm_get_client_rect(self->win_id); \
+        desktop_damage_rect(rc.x, rc.y, rc.w, rc.h); \
+        printk("[NP] damage rc=%d,%d %dx%d\n", rc.x, rc.y, rc.w, rc.h); \
+    } while (0)
 
     // ✅ Arrow keys (E0)
-    // Left:  E0 4B
-    // Right: E0 4D
     if (is_e0) {
+        bool moved = false;
+
         if (sc == 0x4B) { // Left
             if (!shift) {
-                if (np_sel_has(tab)) { np_collapse_selection(tab, -1); return; }
-                np_sel_clear(tab);
-                np_move_cursor_lr(tab, -1);
-                np_sel_clear(tab);
+                if (np_sel_has(tab)) { np_collapse_selection(tab, -1); moved = true; }
+                else {
+                    np_sel_clear(tab);
+                    np_move_cursor_lr(tab, -1);
+                    np_sel_clear(tab);
+                    moved = true;
+                }
             } else {
                 if (!tab->sel_active) { tab->sel_active = 1; tab->sel_anchor = tab->cursor; }
                 np_move_cursor_lr(tab, -1);
                 tab->sel_end = tab->cursor;
+                moved = true;
             }
+
+            if (moved) NP_DAMAGE_CLIENT();
             return;
         }
 
         if (sc == 0x4D) { // Right
             if (!shift) {
-                if (np_sel_has(tab)) { np_collapse_selection(tab, +1); return; }
-                np_sel_clear(tab);
-                np_move_cursor_lr(tab, +1);
-                np_sel_clear(tab);
+                if (np_sel_has(tab)) { np_collapse_selection(tab, +1); moved = true; }
+                else {
+                    np_sel_clear(tab);
+                    np_move_cursor_lr(tab, +1);
+                    np_sel_clear(tab);
+                    moved = true;
+                }
             } else {
                 if (!tab->sel_active) { tab->sel_active = 1; tab->sel_anchor = tab->cursor; }
                 np_move_cursor_lr(tab, +1);
                 tab->sel_end = tab->cursor;
+                moved = true;
             }
+
+            if (moved) NP_DAMAGE_CLIENT();
             return;
         }
 
-        if (sc == 0x53) {
+        if (sc == 0x53) { // Delete
             bool changed = np_delete_forward(tab);
             if (changed) {
                 tab->is_dirty = true;
                 np_sel_clear(tab);
+                NP_DAMAGE_CLIENT();
             }
             return;
         }
 
-        if (sc == 0x48) { // ✅ Up (E0 48)
+        if (sc == 0x48) { // Up
             if (!shift) {
-                if (np_sel_has(tab)) { np_sel_clear(tab); }
+                if (np_sel_has(tab)) np_sel_clear(tab);
                 np_move_cursor_up(tab);
                 np_sel_clear(tab);
             } else {
@@ -833,12 +975,13 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
                 np_move_cursor_up(tab);
                 tab->sel_end = tab->cursor;
             }
+            NP_DAMAGE_CLIENT();
             return;
         }
 
-        if (sc == 0x50) { // ✅ Down (E0 50)
+        if (sc == 0x50) { // Down
             if (!shift) {
-                if (np_sel_has(tab)) { np_sel_clear(tab); }
+                if (np_sel_has(tab)) np_sel_clear(tab);
                 np_move_cursor_down(tab);
                 np_sel_clear(tab);
             } else {
@@ -846,13 +989,14 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
                 np_move_cursor_down(tab);
                 tab->sel_end = tab->cursor;
             }
+            NP_DAMAGE_CLIENT();
             return;
         }
     }
 
     bool changed = false;
 
-    // TAB: 0x0F, ENTER: 0x1C, BACKSPACE: 0x0E
+    // TAB / ENTER / BACKSPACE
     if (sc == 0x0F) {
         changed = np_insert_char(tab, '\t');
     }
@@ -865,7 +1009,6 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
     else {
         char c = kbd_scancode_to_ascii(sc);
 
-        // yazı gelecekse: selection varsa önce sil
         if (c) {
             if (c == ' ') {
                 if (np_sel_has(tab)) np_delete_selection(tab);
@@ -887,9 +1030,13 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
 
     if (changed) {
         tab->is_dirty = true;
-        // yazınca selection temizlensin (editör gibi)
         np_sel_clear(tab);
+        NP_DAMAGE_CLIENT();   // ✅ EN ÖNEMLİ SATIR: yazı görünmesi için
     }
+
+    #undef NP_DAMAGE_CLIENT
+
+    printk("[NP] key changed=%d len=%u\n", changed, (unsigned)strlen(tab->text));
 }
 
 static void notepad_on_destroy(app_t* self) {

@@ -17,6 +17,8 @@
 #include <ui/dialogs/save_dialog.h>
 #include <ui/desktop.h>
 
+#include <ui/topbar.h>
+
 #define WM_MAX_WINDOWS 20
 
 typedef struct {
@@ -261,6 +263,8 @@ void wm_close_window(int win_id) {
         g_drag_idx = -1;
     }
 
+    ui_window_t* w = &g_wins[win_id].win;
+    desktop_damage_rect(w->x, w->y, w->w, w->h);
     appmgr_on_window_closed(win_id);
 
     g_wins[win_id].owner = 0;
@@ -278,6 +282,10 @@ void wm_minimize(int win_id) {
     if (!is_alive_id(win_id)) return;
 
     ui_window_t* w = &g_wins[win_id].win;
+
+    // ✅ minimizelenen pencerenin alanı temizlenecek
+    desktop_damage_rect(w->x, w->y, w->w, w->h);
+
     if (w->state == WIN_MINIMIZED) return;
 
     if (w->state == WIN_MAXIMIZED) {
@@ -287,8 +295,18 @@ void wm_minimize(int win_id) {
 
     w->state = WIN_MINIMIZED;
 
+    int old_active = g_active;
     if (g_active == win_id) {
         g_active = find_top_non_minimized();
+    }
+
+    // ✅ active değiştiyse topbar mutlaka güncellenmeli
+    if (g_active != old_active) {
+        topbar_consume_dirty();
+
+        // yoksa en basit garanti: topbar alanını damage et
+        // (desktop tarafında topbar rect present ediliyor zaten)
+        desktop_damage_rect(0, 0, 99999, 28);
     }
 
     // Drag cancel
@@ -301,11 +319,14 @@ void wm_restore(int win_id) {
     if (!is_alive_id(win_id)) return;
 
     ui_window_t* w = &g_wins[win_id].win;
+
+    // minimize ise aç
     if (w->state == WIN_MINIMIZED) {
         w->state = WIN_NORMAL;
     }
 
     bring_to_front(win_id);
+    desktop_damage_rect(w->x, w->y, w->w, w->h);
 }
 
 void wm_toggle_minimize(int win_id) {

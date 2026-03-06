@@ -122,8 +122,56 @@ static bool g_need_redraw = true;
 
 static int g_dbg_redraw_reason = 0;
 
-static inline void desktop_request_redraw(void) {
+void desktop_request_redraw(void) {
     g_need_redraw = true;
+}
+
+// ============================================================
+// Damage (dirty rect) tracking (WM -> Desktop)
+// ============================================================
+static int g_dmg_valid = 0;
+static int g_dmg_x = 0, g_dmg_y = 0, g_dmg_w = 0, g_dmg_h = 0;
+
+static inline void dmg_union_inplace(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) return;
+
+    if (!g_dmg_valid) {
+        g_dmg_valid = 1;
+        g_dmg_x = x; g_dmg_y = y; g_dmg_w = w; g_dmg_h = h;
+        return;
+    }
+
+    int x2  = x + w;
+    int y2  = y + h;
+    int ax2 = g_dmg_x + g_dmg_w;
+    int ay2 = g_dmg_y + g_dmg_h;
+
+    int nx1 = (x < g_dmg_x) ? x : g_dmg_x;
+    int ny1 = (y < g_dmg_y) ? y : g_dmg_y;
+    int nx2 = (x2 > ax2) ? x2 : ax2;
+    int ny2 = (y2 > ay2) ? y2 : ay2;
+
+    g_dmg_x = nx1;
+    g_dmg_y = ny1;
+    g_dmg_w = nx2 - nx1;
+    g_dmg_h = ny2 - ny1;
+}
+
+void desktop_damage_rect(int x, int y, int w, int h) {
+    dmg_union_inplace(x, y, w, h);
+    desktop_request_redraw();
+}
+
+int desktop_consume_damage_rect(int* x, int* y, int* w, int* h) {
+    if (!g_dmg_valid) return 0;
+
+    if (x) *x = g_dmg_x;
+    if (y) *y = g_dmg_y;
+    if (w) *w = g_dmg_w;
+    if (h) *h = g_dmg_h;
+
+    g_dmg_valid = 0;
+    return 1;
 }
 
 // --- Debug overlay helps (desktop içi) ---
@@ -176,7 +224,6 @@ static const uint32_t DBLCLICK_MS = 350;
 static bool g_open_after_rename = false;
 static char g_open_after_rename_path[256];
 
-// ✅ Klavye/hotkey ile UI değişince bir kere full present zorla
 static bool g_force_full_present = false;
 
 static void desktop_toggle_ext(void);
@@ -880,6 +927,8 @@ void ui_desktop_handle_scancode(uint16_t sc)
 }
 
 void ui_desktop_tick(void) {
+    topbar_tick();
+
     int dx, dy;
     int wheel = 0;
     uint8_t btn;
@@ -1286,9 +1335,13 @@ void ui_desktop_tick(void) {
     if (need_full_present) {
         fb_present();
     } else {
-        // 1) Cursor: scene_redrawn=true iken cursor_overlay_step zaten present yapmıyor,
-        //    sadece backbuffer'a çiziyor. O yüzden cursor için burada bir şey yapmıyoruz.
-        //    (Mouse sadece hareket ettiğinde, üstteki cursor-only path zaten present ediyor.)
+        // 0) WM damage rect (close/minimize/move/resize/maximize)
+        // Scene bu frame yeniden çizildi -> sadece bozulmuş alanı ekrana bas.
+        int dx0=0, dy0=0, dw0=0, dh0=0;
+        if (desktop_consume_damage_rect(&dx0, &dy0, &dw0, &dh0)) {
+            const int PAD = 8; // border/shadow için biraz pay
+            present_rect_safe(dx0 - PAD, dy0 - PAD, dw0 + PAD*2, dh0 + PAD*2);
+        }
 
         // 2) Selection dirty rect (eski + yeni)
         if (prev_selecting || is_selecting) {
@@ -1332,6 +1385,10 @@ void ui_desktop_tick(void) {
 
             hover_dirty = false;
         }
+
+        if (topbar_consume_dirty()) {
+            present_rect_safe(0,0, (int)fb_get_width(), 28);
+        }
     }
 
     // Save prev selection state
@@ -1345,10 +1402,11 @@ void ui_desktop_tick(void) {
 // ============================================================
 // Legacy blocking API (kalsın ama kullanma)
 // ============================================================
+/*
 void ui_desktop_run(void) {
     ui_desktop_init();
     while (1) {
         ui_desktop_tick();
         asm volatile("hlt");
     }
-}
+}*/

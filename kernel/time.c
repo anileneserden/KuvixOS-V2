@@ -1,6 +1,7 @@
 #include <kernel/time.h>
 #include <arch/x86/io.h>
 #include <kernel/drivers/rtc/rtc.h>
+#include <ui/desktop.h>
 
 // --- Değişkenler ---
 volatile uint32_t g_ticks_ms = 0;

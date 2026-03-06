@@ -50,6 +50,17 @@ static void br_set_url(kuvix_browser_t* b, const char* s) {
     if (b->url_len >= KBROWSER_URL_MAX) b->url_len = KBROWSER_URL_MAX - 1;
 }
 
+static void br_set_addrbuf(kuvix_browser_t* b, const char* s) {
+    if (!b) return;
+    if (!s) s = "";
+    strncpy(b->addr_buf, s, sizeof(b->addr_buf) - 1);
+    b->addr_buf[sizeof(b->addr_buf) - 1] = 0;
+
+    b->addr_len = (int)strlen(b->addr_buf);
+    if (b->addr_len < 0) b->addr_len = 0;
+    if (b->addr_len >= KBROWSER_URL_MAX) b->addr_len = KBROWSER_URL_MAX - 1;
+}
+
 static void br_push_history(kuvix_browser_t* b, const char* s) {
     if (!b || !s || !s[0]) return;
 
@@ -76,8 +87,13 @@ static void br_push_history(kuvix_browser_t* b, const char* s) {
 
 static void br_navigate(kuvix_browser_t* b, const char* url) {
     if (!b) return;
+
     br_set_url(b, url);
     br_push_history(b, url);
+
+    // edit buffer = committed url
+    br_set_addrbuf(b, b->url);
+
     b->scroll_y = 0; // yeni sayfada scroll reset
     br_set_status(b, "Ready");
 }
@@ -143,7 +159,6 @@ static bool resolve_url_to_path(const char* url, char* out, int cap) {
     }
 
     // 2) resolver (home.local -> /.../home.html, deneme.local -> /.../index.html)
-    // url_resolve_to_path senin vhosts.conf / hosts sistemini kullanacak
     if (url_resolve_to_path(url, out, cap)) {
         return true;
     }
@@ -278,6 +293,7 @@ static void draw_content_html(rect_t r, const char* url, int scroll_y) {
 void kuvix_browser_open_url(app_t* app, const char* url) {
     kuvix_browser_t* b = br(app);
     if (!b) return;
+
     br_navigate(b, (url && url[0]) ? url : "local:home");
     br_set_status(b, "Opened from Fileman");
 }
@@ -324,6 +340,9 @@ static void browser_on_create(app_t* app) {
     br_set_url(b, "local:home");
     br_push_history(b, "local:home");
     br_set_status(b, "Ready");
+
+    // edit buffer init
+    br_set_addrbuf(b, b->url);
 }
 
 static void browser_on_draw(app_t* app) {
@@ -341,9 +360,11 @@ static void browser_on_draw(app_t* app) {
     draw_button(r_btn_forward(), ">", false);
     draw_button(r_btn_reload(), "R", false);
 
-    draw_addrbar(r_addr_bar(client.w), b->url, (b->addr_edit_mode != 0));
+    const char* addr_text = b->addr_edit_mode ? b->addr_buf : b->url;
+    draw_addrbar(r_addr_bar(client.w), addr_text, (b->addr_edit_mode != 0));
 
     rect_t rc = r_content(client.w, client.h);
+    // content HER ZAMAN committed url ile çizilir
     draw_content_html(rc, b->url, b->scroll_y);
 
     rect_t rs = r_status_bar(client.w, client.h);
@@ -360,8 +381,7 @@ static void browser_on_mouse(app_t* app, int mx, int my,
 
     if (!(pressed & 0x01)) return;
 
-    // ✅ GLOBAL -> CLIENT
-    ui_rect_t client = wm_get_client_rect(app->win_id);
+    // coords already client
     int lx = mx;
     int ly = my;
 
@@ -369,6 +389,7 @@ static void browser_on_mouse(app_t* app, int mx, int my,
         if (b->history_count > 0 && b->history_index > 0) {
             b->history_index--;
             br_set_url(b, b->history[b->history_index]);
+            br_set_addrbuf(b, b->url);
             b->scroll_y = 0;
             br_set_status(b, "Back");
         }
@@ -379,6 +400,7 @@ static void browser_on_mouse(app_t* app, int mx, int my,
         if (b->history_count > 0 && b->history_index < b->history_count - 1) {
             b->history_index++;
             br_set_url(b, b->history[b->history_index]);
+            br_set_addrbuf(b, b->url);
             b->scroll_y = 0;
             br_set_status(b, "Forward");
         }
@@ -393,6 +415,7 @@ static void browser_on_mouse(app_t* app, int mx, int my,
 
     if (pt_in_rect(lx, ly, r_addr_bar(b->cw))) {
         b->addr_edit_mode = 1;
+        br_set_addrbuf(b, b->url);
         br_set_status(b, "Editing address (Enter=go, Esc=cancel)");
         return;
     }
@@ -421,34 +444,44 @@ static void browser_on_key(app_t* app, uint16_t key) {
         if (sc == 0x49) { b->scroll_y -= step * 6; if (b->scroll_y < 0) b->scroll_y = 0; return; }
         if (sc == 0x51) { b->scroll_y += step * 6; return; }
 
+        // Enter'a basınca edit mode açmak istersen:
+        // if (sc == 0x1C) { b->addr_edit_mode = 1; br_set_addrbuf(b, b->url); return; }
+
         return;
     }
 
     // edit mode ON
+
+    // Enter => commit + navigate
     if (sc == 0x1C || c == '\n' || c == '\r') {
         b->addr_edit_mode = 0;
-        br_navigate(b, b->url[0] ? b->url : "local:home");
+        const char* target = b->addr_buf[0] ? b->addr_buf : "local:home";
+        br_navigate(b, target);
         return;
     }
 
-    if (sc == 0x01) { // Esc
+    // Esc => cancel edit (addr_buf reset)
+    if (sc == 0x01) {
         b->addr_edit_mode = 0;
+        br_set_addrbuf(b, b->url);
         br_set_status(b, "Ready");
         return;
     }
 
-    if (c == '\b' || (uint8_t)c == 127) {
-        if (b->url_len > 0) {
-            b->url_len--;
-            b->url[b->url_len] = '\0';
+    // Backspace
+    if (c == '\b' || (uint8_t)c == 127 || sc == 0x0E) {
+        if (b->addr_len > 0) {
+            b->addr_len--;
+            b->addr_buf[b->addr_len] = '\0';
         }
         return;
     }
 
+    // Printable
     if (c >= 32 && c <= 126) {
-        if (b->url_len < KBROWSER_URL_MAX - 1) {
-            b->url[b->url_len++] = c;
-            b->url[b->url_len] = '\0';
+        if (b->addr_len < KBROWSER_URL_MAX - 1) {
+            b->addr_buf[b->addr_len++] = c;
+            b->addr_buf[b->addr_len] = '\0';
         }
         return;
     }
