@@ -785,16 +785,15 @@ void ui_desktop_handle_scancode(uint16_t sc)
     }
 
     // ------------------------------------------------------------
-    // (İstersen geri açarsın) CTRL+SHIFT+I -> seed shortcuts
+    // CTRL+SHIFT+I -> seed shortcuts
     // Set1: I make = 0x17
     // ------------------------------------------------------------
-    /*
     if (kbd_is_ctrl_pressed() && kbd_is_shift_pressed() && sc8 == 0x17) {
         desktop_seed_default_shortcuts(false);
+        notification_show("Masaüstü ikonları yenilendi", 3);
         desktop_invalidate_full();
         return;
     }
-    */
 
     printk("[DESKTOP] sc=0x%02x\n", sc8);
 

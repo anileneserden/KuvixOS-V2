@@ -5,49 +5,78 @@
 #include <kernel/block/block.h>
 #include <kernel/printk.h>
 #include <kernel/serial.h>
-
-#include <kernel/user.h>   // ✅ eklendi
+#include <kernel/user.h>
 
 static void ensure_dir(const char* p) {
     if (!p || !p[0]) return;
-    // vfs_mkdir "zaten varsa" hata dönse bile önemli değil.
-    vfs_mkdir(p);
+
+    int rc = vfs_mkdir(p);
+    printk("[FS] mkdir %s -> %d\n", p, rc);
+
+    vfs_stat_t st;
+    int ok = vfs_stat(p, &st);
+    printk("[FS] stat  %s -> %d type=%d\n", p, ok, st.type);
 }
 
 int fs_prepare_user_layout(void) {
-    ensure_dir("/home");
-    ensure_dir(USER_HOME_PATH);
-    ensure_dir(USER_DESKTOP_PATH);
-    ensure_dir(USER_APPS_PATH);
-    ensure_dir(USER_TRASH_PATH);
+    ensure_dir("/persist/home");
+    ensure_dir("/persist/home/anil");
+    ensure_dir("/persist/home/anil/desktop");
+    ensure_dir("/persist/home/anil/apps");
+    ensure_dir("/persist/home/anil/trash");
 
-    printk("[FS] user layout ok: %s\n", USER_HOME_PATH);
+    printk("[FS] persist user layout ok: /persist/home/anil\n");
     return 1;
 }
 
 int fs_init_once(void) {
-    // 1. VFS Temel Yapısını Hazırla
+    // 1) VFS
     vfs_init();
-    printk("FS Init edildi\n");
+    printk("[FS] VFS init edildi\n");
 
-    // 2. ATA/IDE Sürücüsünü Başlat
-    if (ata_pio_init()) {
-        // 3. Sürücü hazırsa, cihaz nesnesini al ve sisteme "Kök Cihaz" yap
-        blockdev_t* dev = ata_pio_get_dev();
-        if (dev) {
-            block_set_root(dev);
+    // 2) ATA
+    if (!ata_pio_init()) {
+        printk("[FS] ATA init basarisiz\n");
+        return 0;
+    }
+
+    // 3) block root
+    blockdev_t* dev = ata_pio_get_dev();
+    if (!dev) {
+        printk("[FS] ATA device yok\n");
+        return 0;
+    }
+
+    block_set_root(dev);
+    printk("[FS] block root set edildi\n");
+
+    // 4) KVXFS init
+    if (!kvxfs_init()) {
+        printk("[FS] KVXFS init basarisiz, format deneniyor...\n");
+
+        // 5) auto format
+        if (!kvxfs_force_format()) {
+            printk("[FS] KVXFS format basarisiz\n");
+            return 0;
+        }
+
+        printk("[FS] KVXFS format OK, tekrar init deneniyor...\n");
+
+        // 6) tekrar init
+        if (!kvxfs_init()) {
+            printk("[FS] KVXFS format sonrasi init yine basarisiz\n");
+            return 0;
         }
     }
 
-    // 4. KVXFS'i Başlat
-    if (kvxfs_init()) {
-        printk("KVXFS: Disk sistemi basariyla baglandi.\n");
-    } else {
-        printk("KVXFS: Kalici disk bulunamadi veya formatli degil.\n");
+    printk("[FS] KVXFS hazir\n");
+
+    // 7) persist user tree
+    if (!fs_prepare_user_layout()) {
+        printk("[FS] user layout hazirlanamadi\n");
+        return 0;
     }
 
-    // ✅ 5. Kullanıcı dizinlerini hazırla (desktop değil kernel yapacak)
-    fs_prepare_user_layout();
-
+    printk("[FS] fs_init_once tamam\n");
     return 1;
 }

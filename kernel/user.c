@@ -24,15 +24,29 @@ static void str_append(char* out, int out_sz, const char* s) {
     out[cur + i] = '\0';
 }
 
+// "/persist/home/anil/..." -> "/home/anil/..."
+// diğer path'leri olduğu gibi bırakır
+static const char* normalize_user_visible_path(const char* abs_path) {
+    if (!abs_path) return abs_path;
+
+    if (starts_with(abs_path, "/persist/home/")) {
+        return abs_path + 8; // "/persist" kısmını atla
+    }
+
+    return abs_path;
+}
+
 void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t lang) {
     if (!out || out_sz <= 0) return;
     out[0] = '\0';
 
     if (!abs_path || !abs_path[0]) {
-        // boşsa sadece ~ diyebiliriz ya da /
         str_append(out, out_sz, "~");
         return;
     }
+
+    // Önce kullanıcıya gösterilecek mantıksal path'e normalize et
+    abs_path = normalize_user_visible_path(abs_path);
 
     // 1) Desktop özel eşleşme (en spesifik önce)
     if (starts_with(abs_path, USER_DESKTOP_PATH)) {
@@ -40,7 +54,7 @@ void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t l
         str_append(out, out_sz, (lang == USER_LANG_TR) ? "Masaustu" : "Desktop");
 
         const char* rest = abs_path + strlen(USER_DESKTOP_PATH);
-        if (rest[0] == '/') str_append(out, out_sz, rest); // alt klasörler
+        if (rest[0] == '/') str_append(out, out_sz, rest);
         return;
     }
 
@@ -66,7 +80,7 @@ void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t l
     if (starts_with(abs_path, USER_HOME_PATH)) {
         str_append(out, out_sz, "~");
         const char* rest = abs_path + strlen(USER_HOME_PATH);
-        if (rest[0]) str_append(out, out_sz, rest); // "/..." ise ekle
+        if (rest[0]) str_append(out, out_sz, rest);
         return;
     }
 
@@ -88,6 +102,6 @@ void user_format_prompt(const char* cwd_abs, char* out, int out_sz, user_lang_t 
     char pbuf[256];
     user_format_path(cwd_abs, pbuf, sizeof(pbuf), lang);
     str_append(out, out_sz, pbuf);
-    
-    commands_putc(' ');
+
+    str_append(out, out_sz, " ");
 }
