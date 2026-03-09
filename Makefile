@@ -62,6 +62,7 @@ SRC_C = \
     kernel/fs/toyfs_image.c \
     kernel/fs/toyfs.c \
     kernel/fs/vfs.c \
+    kernel/game/gameobject.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
     kernel/ui/apps/calculator.c \
@@ -72,6 +73,7 @@ SRC_C = \
     kernel/ui/apps/kuvix_store.c \
     kernel/ui/apps/memmon.c \
     kernel/ui/apps/notepad.c \
+    kernel/ui/apps/physics_lab.c \
     kernel/ui/apps/pixel_draw_app.c \
     kernel/ui/apps/run.c \
     kernel/ui/apps/scroll_demo.c \

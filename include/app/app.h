@@ -20,4 +20,6 @@ struct app {
     const app_vtbl_t* v;
     int visible;
     int id;
+
+    uint8_t wants_continuous_redraw;
 };

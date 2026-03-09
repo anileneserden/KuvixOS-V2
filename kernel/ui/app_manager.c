@@ -16,6 +16,7 @@
 #include <ui/apps/scroll_demo.h>
 #include <ui/apps/kuvix_store.h>
 #include <ui/apps/settings.h>
+#include <ui/apps/physics_lab.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -31,6 +32,8 @@ extern const app_vtbl_t demo_font_vtbl;
 extern const app_vtbl_t scroll_demo_vtbl;
 extern const app_vtbl_t kuvix_store_vtbl;
 extern const app_vtbl_t settings_vtbl;
+extern const app_vtbl_t settings_vtbl;
+extern const app_vtbl_t physics_lab_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -58,6 +61,7 @@ static app_definition_t app_registry[] = {
     { 11, "Scroll Demo",  &scroll_demo_vtbl,    120,  90, 520, 320, sizeof(scroll_demo_t)    },
     { 12, "KuvixStore",   &kuvix_store_vtbl,    160, 120, 720, 420, sizeof(kuvix_store_t)    },
     { 13, "Settings",     &settings_vtbl,       170, 120, 640, 420, sizeof(settings_t)       },
+    { 14, "Physics Lab",  &physics_lab_vtbl,    140,  90, 640, 420, sizeof(physics_lab_t)    },
     { 0,  NULL,                        NULL,      0,   0,   0,   0,                        0 }
 };
 
