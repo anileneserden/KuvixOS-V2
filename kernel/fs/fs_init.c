@@ -5,6 +5,7 @@
 #include <kernel/block/block.h>
 #include <kernel/printk.h>
 #include <kernel/serial.h>
+#include <lib/string.h>
 
 #include <kernel/user.h>   // ✅ eklendi
 
@@ -15,13 +16,26 @@ static void ensure_dir(const char* p) {
 }
 
 int fs_prepare_user_layout(void) {
-    ensure_dir("/home");
-    ensure_dir(USER_HOME_PATH);
-    ensure_dir(USER_DESKTOP_PATH);
-    ensure_dir(USER_APPS_PATH);
-    ensure_dir(USER_TRASH_PATH);
+    char home[128];
+    char desktop[160];
+    char apps[160];
+    char trash[160];
 
-    printk("[FS] user layout ok: %s\n", USER_HOME_PATH);
+    ensure_dir("/home");
+
+    strncpy(home, user_get_home(), sizeof(home) - 1);
+    home[sizeof(home) - 1] = '\0';
+
+    user_get_desktop_path(desktop, sizeof(desktop));
+    user_get_apps_path(apps, sizeof(apps));
+    user_get_trash_path(trash, sizeof(trash));
+
+    ensure_dir(home);
+    ensure_dir(desktop);
+    ensure_dir(apps);
+    ensure_dir(trash);
+
+    printk("[FS] user layout ok: %s\n", home);
     return 1;
 }
 

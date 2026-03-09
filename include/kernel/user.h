@@ -3,29 +3,27 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#ifndef CURRENT_USER
-#define CURRENT_USER "anil"
-#endif
-
-#ifndef HOST
-#define HOST "kuvixos"
-#endif
-
-// ✅ Gerçek path'ler (VFS için)
-#define USER_HOME_PATH     "/home/" CURRENT_USER
-#define USER_DESKTOP_PATH  USER_HOME_PATH "/desktop"
-#define USER_TRASH_PATH    USER_HOME_PATH "/trash"
-#define USER_APPS_PATH     USER_HOME_PATH "/apps"
-
-// Terminal'de Desktop label (istersen TR/EN seçebilirsin)
 typedef enum {
     USER_LANG_EN = 0,
     USER_LANG_TR = 1
 } user_lang_t;
 
-// ✅ "/home/anil/desktop" -> "~/Desktop" gibi dönüştürür
-// out buffer'ına yazar, her zaman null-terminate eder.
-void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t lang);
+typedef struct user_profile {
+    char username[32];
+    char hostname[32];
+    char home[128];
+} user_profile_t;
 
-// ✅ Prompt üretmek için yardımcı (anil@kuvixos:~/Desktop> )
+void user_set_defaults(void);
+bool user_load(const char* path);
+
+const char* user_get_username(void);
+const char* user_get_hostname(void);
+const char* user_get_home(void);
+
+void user_get_desktop_path(char* out, int out_sz);
+void user_get_trash_path(char* out, int out_sz);
+void user_get_apps_path(char* out, int out_sz);
+
+void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t lang);
 void user_format_prompt(const char* cwd_abs, char* out, int out_sz, user_lang_t lang);

@@ -1,4 +1,4 @@
-// kernel/ui/apps/kuvix_store.c
+// ui/apps/kuvix_store.c
 #include <ui/apps/kuvix_store.h>
 
 #include <app/app.h>

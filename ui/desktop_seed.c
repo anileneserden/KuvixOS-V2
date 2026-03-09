@@ -1,12 +1,15 @@
-// kernel/ui/desktop_seed.c
+// ui/desktop_seed.c
 
 #include <kernel/fs/vfs.h>
-#include <kernel/user.h>         // USER_HOME_PATH / USER_DESKTOP_PATH
+#include <kernel/user.h>
 #include <ui/desktop_icons.h>
 #include <lib/string.h>
 #include <stdint.h>
 #include <stdbool.h>
 
+// ------------------------------------------------------------
+// helpers
+// ------------------------------------------------------------
 static void seed_write_if_missing(const char* path, const char* data) {
     vfs_stat_t st;
     if (vfs_stat(path, &st) == 1 && st.type == VFS_T_FILE) {
@@ -15,9 +18,42 @@ static void seed_write_if_missing(const char* path, const char* data) {
     vfs_write_all(path, (const uint8_t*)data, (uint32_t)strlen(data));
 }
 
+static void kb_join2(char* out, int cap, const char* a, const char* b) {
+    if (!out || cap <= 0) return;
+    out[0] = 0;
+    if (!a) a = "";
+    if (!b) b = "";
+
+    strncpy(out, a, cap - 1);
+    out[cap - 1] = 0;
+
+    int n = (int)strlen(out);
+    if (n > 0 && out[n - 1] != '/') {
+        strncat(out, "/", (size_t)cap - strlen(out) - 1);
+    }
+    strncat(out, b, (size_t)cap - strlen(out) - 1);
+}
+
+static void get_desktop_path(char* out, int cap) {
+    if (!out || cap <= 0) return;
+    out[0] = 0;
+    user_get_desktop_path(out, cap);
+    if (!out[0]) {
+        // safety fallback
+        strncpy(out, "/home/anil/desktop", cap - 1);
+        out[cap - 1] = 0;
+    }
+}
+
+// ------------------------------------------------------------
+// HTML seed
+// ------------------------------------------------------------
 void desktop_seed_html_pages(void) {
-    // Masaüstü dizini yoksa oluştur (RAMFS için)
-    vfs_mkdir(USER_DESKTOP_PATH);
+    char desk[256];
+    get_desktop_path(desk, (int)sizeof(desk));
+
+    // Masaüstü dizini yoksa oluştur
+    vfs_mkdir(desk);
 
     static const char* home =
         "<h1>KuvixOS HTML Viewer</h1>\n"
@@ -43,30 +79,28 @@ void desktop_seed_html_pages(void) {
         "<h1>New</h1>\n"
         "<p>local:new sayfasi (masaustu dosyasi).</p>\n";
 
-    // Path'leri masaüstüne yaz
-    char p1[128], p2[128], p3[128];
-    p1[0]=0; p2[0]=0; p3[0]=0;
-
-    strncpy(p1, USER_DESKTOP_PATH, sizeof(p1)-1); p1[sizeof(p1)-1]=0;
-    strncat(p1, "/home.html", sizeof(p1)-strlen(p1)-1);
-
-    strncpy(p2, USER_DESKTOP_PATH, sizeof(p2)-1); p2[sizeof(p2)-1]=0;
-    strncat(p2, "/docs.html", sizeof(p2)-strlen(p2)-1);
-
-    strncpy(p3, USER_DESKTOP_PATH, sizeof(p3)-1); p3[sizeof(p3)-1]=0;
-    strncat(p3, "/new.html", sizeof(p3)-strlen(p3)-1);
+    char p1[256], p2[256], p3[256];
+    kb_join2(p1, (int)sizeof(p1), desk, "home.html");
+    kb_join2(p2, (int)sizeof(p2), desk, "docs.html");
+    kb_join2(p3, (int)sizeof(p3), desk, "new.html");
 
     seed_write_if_missing(p1, home);
     seed_write_if_missing(p2, docs);
     seed_write_if_missing(p3, newtab);
 }
 
+// ------------------------------------------------------------
+// hosts seed (/etc/hosts)
+// home.local=/home/<user>/desktop/home.html
+// ------------------------------------------------------------
 void seed_hosts(void) {
     vfs_mkdir("/etc");
 
-    // varsa dokunma
     vfs_stat_t st;
     if (vfs_stat("/etc/hosts", &st) == 1 && st.type == VFS_T_FILE) return;
+
+    char desk[256];
+    get_desktop_path(desk, (int)sizeof(desk));
 
     char hosts[512];
     hosts[0] = 0;
@@ -74,131 +108,147 @@ void seed_hosts(void) {
     strcat(hosts, "# KuvixOS hosts\n");
 
     strcat(hosts, "home.local=");
-    strcat(hosts, USER_DESKTOP_PATH);
+    strcat(hosts, desk);
     strcat(hosts, "/home.html\n");
 
     strcat(hosts, "docs.local=");
-    strcat(hosts, USER_DESKTOP_PATH);
+    strcat(hosts, desk);
     strcat(hosts, "/docs.html\n");
 
     strcat(hosts, "new.local=");
-    strcat(hosts, USER_DESKTOP_PATH);
+    strcat(hosts, desk);
     strcat(hosts, "/new.html\n");
 
     vfs_write_all("/etc/hosts", (const uint8_t*)hosts, (uint32_t)strlen(hosts));
 }
 
+// ------------------------------------------------------------
+// vhosts seed (/etc/vhosts.conf)
+// root runtime olduğu için conf string'i runtime build ediyoruz
+// ------------------------------------------------------------
 void seed_vhosts(void) {
     vfs_mkdir("/etc");
 
-    static const char* conf =
-        "# vhosts.conf (KuvixOS)\n"
-        "server {\n"
-        "  host home.local;\n"
-        "  root " USER_DESKTOP_PATH ";\n"
-        "  index home.html;\n"
-        "}\n"
-        "\n"
-        "server {\n"
-        "  host deneme.local;\n"
-        "  root /home/anil/web/deneme;\n"
-        "  index index.html;\n"
-        "  autoindex on;\n"
-        "}\n";
-    
-    seed_write_if_missing("/etc/vhosts.conf", conf);
+    char desk[256];
+    get_desktop_path(desk, (int)sizeof(desk));
+
+    // varsa dokunma
+    vfs_stat_t st;
+    if (vfs_stat("/etc/vhosts.conf", &st) == 1 && st.type == VFS_T_FILE) return;
+
+    char conf[768];
+    conf[0] = 0;
+
+    strcat(conf, "# vhosts.conf (KuvixOS)\n");
+    strcat(conf, "server {\n");
+    strcat(conf, "  host home.local;\n");
+    strcat(conf, "  root ");
+    strcat(conf, desk);
+    strcat(conf, ";\n");
+    strcat(conf, "  index home.html;\n");
+    strcat(conf, "}\n\n");
+
+    strcat(conf, "server {\n");
+    strcat(conf, "  host deneme.local;\n");
+    strcat(conf, "  root /home/anil/web/deneme;\n");
+    strcat(conf, "  index index.html;\n");
+    strcat(conf, "  autoindex on;\n");
+    strcat(conf, "}\n");
+
+    vfs_write_all("/etc/vhosts.conf", (const uint8_t*)conf, (uint32_t)strlen(conf));
 }
 
+// ------------------------------------------------------------
+// default shortcuts
+// ------------------------------------------------------------
 typedef struct {
-  const char* file;
-  const char* title;
-  int         app_id;   // ✅ ID ile çalışacağız
-  const char* icon;
+    const char* file;
+    const char* title;
+    int         app_id;
+    const char* icon;
 } sc_t;
 
 static const sc_t k_defaults[] = {
-  { "Terminal.ksf",  "Terminal",       1, "/system/icons/terminal.kbi"  },
-  { "Files.ksf",     "File Manager",   2, "/system/icons/files.kbi"     },
-  { "Notepad.ksf",   "Notepad",        3, "/system/icons/notepad.kbi"   },
-  { "Settings.ksf",  "Settings",      13, "/system/icons/settings.kbi"  },
-  { "Browser.ksf",   "Kuvix Browser", 15, "/system/icons/browser.kbi"   },
-  { "Controls.ksf",  "Controls",      17, "/system/icons/controls.kbi"  },
+    { "Terminal.ksf",  "Terminal",       1, "/system/icons/terminal.kbi"  },
+    { "Files.ksf",     "File Manager",   2, "/system/icons/files.kbi"     },
+    { "Notepad.ksf",   "Notepad",        3, "/system/icons/notepad.kbi"   },
+    { "Settings.ksf",  "Settings",      13, "/system/icons/settings.kbi"  },
+    { "Browser.ksf",   "Kuvix Browser", 15, "/system/icons/browser.kbi"   },
+    { "Controls.ksf",  "Controls",      17, "/system/icons/controls.kbi"  },
 };
 
 static int exists_file(const char* path) {
-  vfs_stat_t st;
-  if (!vfs_stat(path, &st)) return 0;
-  return (st.type == VFS_T_FILE);
+    vfs_stat_t st;
+    if (!vfs_stat(path, &st)) return 0;
+    return (st.type == VFS_T_FILE);
 }
 
-// RAMFS'te desktop dizinini garanti et (yazma fail olmasın)
 static void ensure_desktop_dirs(void) {
-  vfs_mkdir("/home");
-#ifdef USER_HOME_PATH
-  vfs_mkdir(USER_HOME_PATH);        // "/home/<user>"
-#endif
-  vfs_mkdir(USER_DESKTOP_PATH);     // "/home/<user>/desktop"
+    char home[256];
+    char desk[256];
+
+    strncpy(home, user_get_home(), sizeof(home) - 1);
+    home[sizeof(home) - 1] = 0;
+
+    get_desktop_path(desk, (int)sizeof(desk));
+
+    vfs_mkdir("/home");
+    if (home[0]) vfs_mkdir(home);
+    vfs_mkdir(desk);
 }
 
 void desktop_seed_default_shortcuts(bool overwrite) {
-  ensure_desktop_dirs();
+    ensure_desktop_dirs();
 
-  char path[160];
+    char desk[256];
+    get_desktop_path(desk, (int)sizeof(desk));
 
-  for (int i = 0; i < (int)(sizeof(k_defaults)/sizeof(k_defaults[0])); i++) {
-    const sc_t* s = &k_defaults[i];
+    char path[256];
 
-    // path = USER_DESKTOP_PATH + "/" + file
-    memset(path, 0, sizeof(path));
-    strncpy(path, USER_DESKTOP_PATH, sizeof(path) - 1);
-    strncat(path, "/", sizeof(path) - strlen(path) - 1);
-    strncat(path, s->file, sizeof(path) - strlen(path) - 1);
+    for (int i = 0; i < (int)(sizeof(k_defaults)/sizeof(k_defaults[0])); i++) {
+        const sc_t* s = &k_defaults[i];
 
-    if (!overwrite && exists_file(path)) continue;
-    if (overwrite && exists_file(path)) vfs_remove(path);
+        // path = desktop + "/" + file
+        kb_join2(path, (int)sizeof(path), desk, s->file);
 
-    // KSF content (ID ile)
-    char ksf[256];
-    memset(ksf, 0, sizeof(ksf));
+        if (!overwrite && exists_file(path)) continue;
+        if (overwrite && exists_file(path)) vfs_remove(path);
 
-    // Basit string build (snprintf yok)
-    strcat(ksf, "title=");  strcat(ksf, s->title); strcat(ksf, "\n");
+        char ksf[256];
+        memset(ksf, 0, sizeof(ksf));
 
-    // app_id=<n>
-    strcat(ksf, "app_id=");
-    {
-      // int -> string (küçük helper)
-      char num[16];
-      int v = s->app_id;
-      int p = 0;
+        strcat(ksf, "title=");  strcat(ksf, s->title); strcat(ksf, "\n");
 
-      memset(num, 0, sizeof(num));
-      if (v <= 0) {
-        num[p++] = '0';
-      } else {
-        // ters yaz
-        char tmp[16];
-        int tp = 0;
-        while (v > 0 && tp < (int)sizeof(tmp) - 1) {
-          tmp[tp++] = (char)('0' + (v % 10));
-          v /= 10;
+        strcat(ksf, "app_id=");
+        {
+            char num[16];
+            int v = s->app_id;
+            int p = 0;
+
+            memset(num, 0, sizeof(num));
+            if (v <= 0) {
+                num[p++] = '0';
+            } else {
+                char tmp[16];
+                int tp = 0;
+                while (v > 0 && tp < (int)sizeof(tmp) - 1) {
+                    tmp[tp++] = (char)('0' + (v % 10));
+                    v /= 10;
+                }
+                while (tp > 0 && p < (int)sizeof(num) - 1) {
+                    num[p++] = tmp[--tp];
+                }
+            }
+            num[p] = 0;
+            strcat(ksf, num);
         }
-        // düz çevir
-        while (tp > 0 && p < (int)sizeof(num) - 1) {
-          num[p++] = tmp[--tp];
-        }
-      }
-      num[p] = 0;
-      strcat(ksf, num);
+        strcat(ksf, "\n");
+
+        strcat(ksf, "icon=");   strcat(ksf, s->icon);  strcat(ksf, "\n");
+
+        vfs_write_all(path, (const uint8_t*)ksf, (uint32_t)strlen(ksf));
     }
-    strcat(ksf, "\n");
 
-    strcat(ksf, "icon=");   strcat(ksf, s->icon);  strcat(ksf, "\n");
-
-    vfs_write_all(path, (const uint8_t*)ksf, (uint32_t)strlen(ksf));
-  }
-
-  // Yeniden tara + grid snap
-  desktop_icons_init();
-  desktop_icons_snap_all();
+    desktop_icons_init();
+    desktop_icons_snap_all();
 }

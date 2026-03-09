@@ -15,6 +15,9 @@
 #include <kernel/drivers/input/keyboard.h>
 #include <kernel/drivers/input/mouse_ps2.h>
 
+#include <kernel/system/seed_files.h>
+#include <kernel/user.h>
+
 #include <kernel/time.h>
 
 #include <kernel/memory/kmalloc.h>
@@ -24,6 +27,7 @@
 #include <kernel/fs/fs_init.h>
 
 #include <ui/inputtest.h>
+
 
 extern void gdt_init(void);
 extern void idt_init(void);
@@ -104,7 +108,11 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     asm volatile("sti");
     
+    user_set_defaults();
     fs_init_once();
+
+    seed_files_run();
+    user_load("/system/config/user.cfg");
 
     // UI
     ui_session_init();

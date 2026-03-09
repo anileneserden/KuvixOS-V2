@@ -84,21 +84,61 @@ static int is_abs_path(const char* s) {
     return (s && s[0] == '/');
 }
 
-// local fallback (resolver bulamazsa)
-static const char* local_to_path(const char* url) {
-    if (!url || !url[0]) return USER_DESKTOP_PATH "/home.html";
+static void kb_get_desktop_base(char* out, int cap) {
+    if (!out || cap <= 0) return;
+    out[0] = 0;
+    user_get_desktop_path(out, cap);
+    if (!out[0]) {
+        // safety fallback
+        strncpy(out, "/home/anil/desktop", cap - 1);
+        out[cap - 1] = 0;
+    }
+}
 
-    if (is_abs_path(url)) return url;
+static void kb_join2(char* out, int cap, const char* a, const char* b) {
+    if (!out || cap <= 0) return;
+    out[0] = 0;
+    if (!a) a = "";
+    if (!b) b = "";
+    strncpy(out, a, cap - 1);
+    out[cap - 1] = 0;
+
+    int n = (int)strlen(out);
+    if (n > 0 && out[n - 1] != '/') {
+        strncat(out, "/", (size_t)cap - strlen(out) - 1);
+    }
+    strncat(out, b, (size_t)cap - strlen(out) - 1);
+}
+
+static bool local_to_path(const char* url, char* out, int cap) {
+    if (!out || cap <= 0) return false;
+    out[0] = 0;
+
+    char desktop[VFS_PATH_MAX];
+    kb_get_desktop_base(desktop, (int)sizeof(desktop));
+
+    // default
+    if (!url || !url[0]) {
+        kb_join2(out, cap, desktop, "home.html");
+        return true;
+    }
+
+    if (is_abs_path(url)) {
+        strncpy(out, url, cap - 1);
+        out[cap - 1] = 0;
+        return true;
+    }
 
     if (strncmp(url, "local:", 6) == 0) {
         const char* p = url + 6;
-        if (strcmp(p, "home") == 0) return USER_DESKTOP_PATH "/home.html";
-        if (strcmp(p, "docs") == 0) return USER_DESKTOP_PATH "/docs.html";
-        if (strcmp(p, "new")  == 0) return USER_DESKTOP_PATH "/new.html";
-        return USER_DESKTOP_PATH "/home.html";
+        if (strcmp(p, "home") == 0) { kb_join2(out, cap, desktop, "home.html"); return true; }
+        if (strcmp(p, "docs") == 0) { kb_join2(out, cap, desktop, "docs.html"); return true; }
+        if (strcmp(p, "new")  == 0) { kb_join2(out, cap, desktop, "new.html");  return true; }
+        kb_join2(out, cap, desktop, "home.html");
+        return true;
     }
 
-    return 0;
+    return false;
 }
 
 // URL -> PATH resolve (hosts + local fallback)
@@ -106,20 +146,16 @@ static bool resolve_url_to_path(const char* url, char* out, int cap) {
     if (!out || cap <= 0) return false;
     out[0] = 0;
 
+    // empty -> local home
     if (!url || !url[0]) {
-        strncpy(out, USER_DESKTOP_PATH "/home.html", cap - 1);
-        out[cap - 1] = 0;
-        return true;
+        return local_to_path("local:home", out, cap);
     }
 
     // 0) file: scheme  (file:/path veya file:///path)
     if (strncmp(url, "file:", 5) == 0) {
         const char* p = url + 5;
-
-        // file:///home/... gibi durumlarda fazla slash’ları kırp
         while (*p == '/') p++;
 
-        // başına '/' koyarak absolute path üret
         if (*p) {
             if (cap >= 2) {
                 out[0] = '/';
@@ -140,17 +176,13 @@ static bool resolve_url_to_path(const char* url, char* out, int cap) {
         return true;
     }
 
-    // 2) resolver (home.local -> /.../home.html, deneme.local -> /.../index.html)
-    // url_resolve_to_path senin vhosts.conf / hosts sistemini kullanacak
+    // 2) resolver
     if (url_resolve_to_path(url, out, cap)) {
         return true;
     }
 
     // 3) fallback local:
-    const char* p = local_to_path(url);
-    if (p) {
-        strncpy(out, p, cap - 1);
-        out[cap - 1] = 0;
+    if (local_to_path(url, out, cap)) {
         return true;
     }
 

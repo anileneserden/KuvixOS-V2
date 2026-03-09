@@ -11,7 +11,7 @@ static int file_exists(const char* path) {
     uint8_t tmp[1];
     uint32_t out_sz = 0;
     int r = vfs_read_all(path, tmp, 1, &out_sz);
-    return (r == 1); // read_all başarılıysa var say
+    return (r == 1);
 }
 
 static int write_if_missing(const char* path, const char* text) {
@@ -38,14 +38,20 @@ typedef struct {
 
 static const seed_text_t k_seed_texts[] = {
     {
+        "/system/config/user.cfg",
+        "username=anil\n"
+        "hostname=kuvixos\n"
+        "home=/home/anil\n"
+    },
+    {
         "/etc/vhost.conf",
-        "deneme.local /home/anil/html/deneme/",
-        "home.local /home/anil/html/home/"
+        "deneme.local /home/anil/html/deneme/\n"
+        "home.local /home/anil/html/home/\n"
     },
     {
         "/home/anil/html/deneme/index.html",
-        "<h1>Deneme Local</h1>",
-        "<p>KuvixBrowser local vhost test</p>"
+        "<h1>Deneme Local</h1>\n"
+        "<p>KuvixBrowser local vhost test</p>\n"
     }
 };
 

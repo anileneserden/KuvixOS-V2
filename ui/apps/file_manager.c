@@ -1,4 +1,4 @@
-// kernel/ui/apps/file_manager.c
+// ui/apps/file_manager.c
 
 #include <app/app.h>
 #include <app/app_manager.h>
@@ -34,7 +34,6 @@ extern void gfx_draw_text_utf8(int x, int y, uint32_t color, const char* s);
 #define CWD_H          20   // CWD satırına ayırdığımız alan (font 16 + boşluk)
 
 #define LIST_START_Y   (CWD_Y + CWD_H) // 55
-// İstersen biraz daha boşluk:
 #define LIST_GAP       6
 #define LIST_Y0        (LIST_START_Y + LIST_GAP) // 61
 
@@ -58,18 +57,31 @@ typedef struct {
     int last_click_index;
 
     int sidebar_sel;
+
+    // ✅ runtime sidebar paths
+    char p_desktop[PATH_MAX];
+    char p_home[PATH_MAX];
+    char p_trash[PATH_MAX];
 } file_mgr_t;
 
 typedef struct {
     const char* label_utf8;
-    const char* path;
+    const char* path; // NULL ise runtime (state içinden) alınır
 } sidebar_link_t;
 
+enum {
+    SID_DESKTOP = 0,
+    SID_HOME    = 1,
+    SID_ROOT    = 2,
+    SID_TRASH   = 3,
+    SID_REM     = 4
+};
+
 static const sidebar_link_t g_sidebar[] = {
-    { "Masaüstü",   USER_DESKTOP_PATH },
-    { "Ana Dizin",  USER_HOME_PATH },
+    { "Masaüstü",   0 },
+    { "Ana Dizin",  0 },
     { "Sistem",     "/" },
-    { "Çöp Kutusu", USER_TRASH_PATH },
+    { "Çöp Kutusu", 0 },
     { "Çıkartılabilir Disk", "/removable" },
 };
 
@@ -159,6 +171,21 @@ static bool fm_removable_ready(void) {
     return (vfs_list("/removable", 0, 0) == 1);
 }
 
+static const char* fm_sidebar_path(file_mgr_t* st, int idx) {
+    if (!st) return 0;
+    if (idx < 0 || idx >= g_sidebar_count) return 0;
+
+    const char* p = g_sidebar[idx].path;
+    if (p) return p;
+
+    // runtime entries
+    if (idx == SID_DESKTOP) return st->p_desktop;
+    if (idx == SID_HOME)    return st->p_home;
+    if (idx == SID_TRASH)   return st->p_trash;
+
+    return 0;
+}
+
 // ------------------------------------------------------------
 // VFS List Callback
 // ------------------------------------------------------------
@@ -169,7 +196,6 @@ static int fm_list_cb(const char* full_path, uint32_t size, void* u) {
     if (st->count >= MAX_ITEMS) return 0;
 
     if (!fm_is_direct_child_of(st->cwd, full_path)) return 1;
-
     if (strcmp(full_path, st->cwd) == 0) return 1;
 
     const char* name = fm_basename(full_path);
@@ -198,10 +224,11 @@ static void fm_refresh(app_t* app) {
 
     fm_clear_items(st);
 
+    // kullanıcı dizinleri garanti olsun
     vfs_mkdir("/home");
-    vfs_mkdir(USER_HOME_PATH);
-    vfs_mkdir(USER_DESKTOP_PATH);
-    vfs_mkdir(USER_TRASH_PATH);
+    vfs_mkdir(st->p_home);
+    vfs_mkdir(st->p_desktop);
+    vfs_mkdir(st->p_trash);
 
     vfs_list(st->cwd, fm_list_cb, st);
 }
@@ -225,7 +252,6 @@ static int fm_hit_item(file_mgr_t* st, int x, int y) {
     int list_x = SIDEBAR_WIDTH + PAD_X;
     if (x < list_x) return -1;
 
-    // ✅ draw ile aynı başlangıç
     int start_y = LIST_Y0;
     if (y < start_y) return -1;
 
@@ -242,9 +268,16 @@ static void file_mgr_on_create(app_t* app) {
     file_mgr_t* st = (file_mgr_t*)app->user;
     memset(st, 0, sizeof(*st));
 
-    fm_set_cwd(st, USER_DESKTOP_PATH);
+    // ✅ runtime paths
+    user_get_desktop_path(st->p_desktop, sizeof(st->p_desktop));
+    strncpy(st->p_home, user_get_home(), sizeof(st->p_home) - 1);
+    st->p_home[sizeof(st->p_home) - 1] = 0;
+    user_get_trash_path(st->p_trash, sizeof(st->p_trash));
+
+    fm_set_cwd(st, st->p_desktop);
+
     st->selected = -1;
-    st->sidebar_sel = 0;
+    st->sidebar_sel = SID_DESKTOP;
 
     fm_refresh(app);
 }
@@ -278,19 +311,18 @@ static void file_mgr_on_draw(app_t* app) {
         bool sel = (i == st->sidebar_sel);
         int iy = sy + i * ITEM_HEIGHT;
 
-        // ✅ sadece removable item disable olsun
-        bool is_rem = (strcmp(g_sidebar[i].path, "/removable") == 0);
+        const char* p = fm_sidebar_path(st, i);
+        bool is_rem = (p && strcmp(p, "/removable") == 0);
         bool enabled = (!is_rem) || removable_ok;
 
         if (sel) {
-            // seçili ama disabled ise farklı gösterebiliriz:
             uint32_t bg = enabled ? 0xFF0055AA : 0xFFAAAAAA;
             uint32_t fg = 0xFFFFFFFF;
 
             gfx_fill_rect(6, iy, SIDEBAR_WIDTH - 12, ITEM_HEIGHT, bg);
             gfx_draw_text_utf8(14, iy + 6, fg, g_sidebar[i].label_utf8);
         } else {
-            uint32_t fg = enabled ? 0xFF333333 : 0xFF999999; // ✅ gri
+            uint32_t fg = enabled ? 0xFF333333 : 0xFF999999;
             gfx_draw_text_utf8(14, iy + 6, fg, g_sidebar[i].label_utf8);
         }
     }
@@ -302,10 +334,10 @@ static void file_mgr_on_draw(app_t* app) {
     gfx_draw_text_utf8(hx + 200, HEADER_TEXT_Y, 0xFF777777, "Boyut");
     gfx_fill_rect(hx, HEADER_LINE_Y, c.w - hx - PAD_X, 1, 0xFFEEEEEE);
 
-    // --- CWD area (ayrı satır olarak) ---
-    gfx_fill_rect(hx, CWD_Y - 2, c.w - hx - PAD_X, CWD_H, 0xFFFFFFFF); // temiz alan
+    // --- CWD area ---
+    gfx_fill_rect(hx, CWD_Y - 2, c.w - hx - PAD_X, CWD_H, 0xFFFFFFFF);
     gfx_draw_text_utf8(hx, CWD_Y, 0xFF999999, st->cwd);
-    gfx_fill_rect(hx, LIST_START_Y, c.w - hx - PAD_X, 1, 0xFFF0F0F0); // cwd alt çizgi
+    gfx_fill_rect(hx, LIST_START_Y, c.w - hx - PAD_X, 1, 0xFFF0F0F0);
 
     // --- Items ---
     int start_y = LIST_Y0;
@@ -321,7 +353,6 @@ static void file_mgr_on_draw(app_t* app) {
         uint32_t name_col = selected ? 0xFFFFFFFF : 0xFF111111;
         uint32_t size_col = selected ? 0xFFE8F1FF : 0xFF666666;
 
-        // ✅ İsim çizimi (sen comment etmişsin, geri açıyoruz)
         char line[NAME_MAX + 8];
         if (st->items[i].is_dir) {
             strcpy(line, "[DIR] ");
@@ -380,15 +411,18 @@ static void file_mgr_on_mouse(app_t* app, int mx, int my,
 
     int s = fm_hit_sidebar(x, y);
     if (s != -1) {
-        // ✅ removable disable ise tıklama yok
-        bool is_rem = (strcmp(g_sidebar[s].path, "/removable") == 0);
+        const char* p = fm_sidebar_path(st, s);
+        bool is_rem = (p && strcmp(p, "/removable") == 0);
+
         if (is_rem && !fm_removable_ready()) {
             printk("[FileMgr] removable not present\n");
             return;
         }
 
         st->sidebar_sel = s;
-        fm_set_cwd(st, g_sidebar[s].path);
+
+        if (!p) return;
+        fm_set_cwd(st, p);
         fm_refresh(app);
         return;
     }

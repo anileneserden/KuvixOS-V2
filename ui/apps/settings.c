@@ -1,4 +1,4 @@
-// kernel/ui/apps/settings.c
+// ui/apps/settings.c
 #include <ui/apps/settings.h>
 
 #include <app/app.h>

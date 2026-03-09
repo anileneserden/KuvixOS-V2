@@ -1,4 +1,4 @@
-// kernel/ui/apps/fileman_v2.c
+// ui/apps/fileman_v2.c
 #include <ui/apps/fileman_v2.h>
 
 #include <app/app.h>
@@ -12,16 +12,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// senin ikon header'ın (path'i gerekirse değiştir)
 #include <ui/desktop_icons/folder_icon.h>
 
 #include <app/app_manager.h>
 #include <ui/apps/kuvix_browser.h>
 
-// terminal'deki gibi (scancode -> ascii)
 extern char kbd_scancode_to_ascii(uint8_t scancode);
-
-// milisaniye tick (wm.c zaten extern etmiş)
 extern uint32_t g_ticks_ms;
 
 // ------------------------------------------------------------
@@ -38,8 +34,8 @@ static uint32_t fm_ticks_ms(void) {
 static void fm_set_status(fileman_v2_t* f, const char* s) {
     if (!f) return;
     if (!s) s = "";
-    strncpy(f->status, s, sizeof(f->status)-1);
-    f->status[sizeof(f->status)-1] = 0;
+    strncpy(f->status, s, sizeof(f->status) - 1);
+    f->status[sizeof(f->status) - 1] = 0;
 }
 
 static const char* fm_basename(const char* path) {
@@ -51,7 +47,7 @@ static const char* fm_basename(const char* path) {
 static void fm_parent_dir(const char* in, char* out, int cap) {
     if (!out || cap <= 0) return;
     out[0] = 0;
-    if (!in || !in[0]) { strncpy(out, "/", cap-1); out[cap-1]=0; return; }
+    if (!in || !in[0]) { strncpy(out, "/", cap - 1); out[cap - 1] = 0; return; }
 
     strncpy(out, in, cap - 1);
     out[cap - 1] = 0;
@@ -60,7 +56,7 @@ static void fm_parent_dir(const char* in, char* out, int cap) {
     while (n > 1 && out[n - 1] == '/') { out[n - 1] = 0; n--; }
 
     char* p = strrchr(out, '/');
-    if (!p) { strncpy(out, "/", cap-1); out[cap-1]=0; return; }
+    if (!p) { strncpy(out, "/", cap - 1); out[cap - 1] = 0; return; }
 
     if (p == out) { out[1] = 0; return; } // "/"
     *p = 0;
@@ -103,46 +99,34 @@ static int fm_list_cb(const char* entry_path, uint32_t size, void* u) {
         if (rest[0] == '/') rest++;
 
         if (strchr(rest, '/')) {
-            // "/home/anil/desktop/home.html" gibi -> skip
             return 1;
         }
     }
 
-    // -------------------------------------------------
-    // 1) "." ve ".." gibi entry’leri gösterme
-    // -------------------------------------------------
+    // "." ve ".." gizle
     if (!strcmp(base, ".") || !strcmp(base, "..")) {
         return 1;
     }
 
-    // -------------------------------------------------
-    // 2) bulunduğun klasörün kendisini gösterme
-    //    örn: /home/anil içindeyken "anil" gözükmesin
-    // -------------------------------------------------
-
-    // a) entry_path tam current path ise
+    // current path'i gösterme
     if (!strcmp(entry_path, f->path)) {
         return 1;
     }
 
-    // b) /home/anil/anil gibi self-child geliyorsa
+    // "/home/anil" içindeyken "anil" gelmesin gibi self-child
     const char* cur_base = fm_basename(f->path);
     if (cur_base && cur_base[0] && !strcmp(base, cur_base)) {
         return 1;
     }
 
-    // -------------------------------------------------
-    // normal ekleme
-    // -------------------------------------------------
-
     fm2_item_t* it = &f->items[f->item_count];
     memset(it, 0, sizeof(*it));
 
-    strncpy(it->full, entry_path, sizeof(it->full)-1);
-    it->full[sizeof(it->full)-1] = 0;
+    strncpy(it->full, entry_path, sizeof(it->full) - 1);
+    it->full[sizeof(it->full) - 1] = 0;
 
-    strncpy(it->name, base, sizeof(it->name)-1);
-    it->name[sizeof(it->name)-1] = 0;
+    strncpy(it->name, base, sizeof(it->name) - 1);
+    it->name[sizeof(it->name) - 1] = 0;
 
     vfs_stat_t st;
     it->is_dir = (vfs_stat(entry_path, &st) && st.type == VFS_T_DIR);
@@ -155,14 +139,13 @@ static void fm_load_dir(fileman_v2_t* f, const char* path) {
     if (!f) return;
     if (!path || !path[0]) path = "/";
 
-    // validate dir
     if (!fm_is_dir(path)) {
         fm_set_status(f, "Invalid folder");
         return;
     }
 
-    strncpy(f->path, path, sizeof(f->path)-1);
-    f->path[sizeof(f->path)-1] = 0;
+    strncpy(f->path, path, sizeof(f->path) - 1);
+    f->path[sizeof(f->path) - 1] = 0;
 
     f->item_count = 0;
     f->selected = -1;
@@ -231,21 +214,14 @@ static void draw_icon20_scaled(int x, int y,
     }
 }
 
-// fallback file icon (simple 20x20) scaled
 static void draw_simple_file_icon20_scaled(int x, int y, int scale) {
-    // draw a 16x20 sheet inside 20x20 then scale it
     for (int iy = 0; iy < 20; iy++) {
         for (int ix = 0; ix < 20; ix++) {
-            // transparent by default
             int inside = (ix >= 2 && ix <= 17 && iy >= 0 && iy <= 19);
             if (!inside) continue;
 
             uint32_t col = 0xFF2A2A2A;
-
-            // border
             if (iy == 0 || iy == 19 || ix == 2 || ix == 17) col = 0xFF707070;
-
-            // folded corner hint
             if ((ix == 16 && iy == 1) || (ix == 15 && iy == 2) || (ix == 16 && iy == 2)) col = 0xFFA0A0A0;
 
             for (int sy = 0; sy < scale; sy++) {
@@ -300,7 +276,6 @@ static void draw_toolbar_ui(fileman_v2_t* f) {
     const char* show = f->path_edit_mode ? f->path_buf : f->path;
     draw_pathbar(r_pathbar(f->cw), show, (f->path_edit_mode != 0));
 
-    // status (right bottom-ish)
     gfx_draw_text_utf8(f->cw - 110, 40, 0x808080, f->status);
 }
 
@@ -334,28 +309,26 @@ static void draw_item_cell(int x, int y, const fm2_item_t* it, bool selected) {
         gfx_draw_rect(x + 6, y + 6, CELL_W - 12, CELL_H - 12, 0xFF6A00);
     }
 
-    // icon (centered)
     int ix = x + (CELL_W - ICON20_W) / 2;
     int iy = y + 10;
 
     if (it->is_dir) {
         draw_icon20_scaled(ix, iy, folder_icon,
-                           0xFF8A4A00, // outline
-                           0xFFFFB24A, // fill
-                           0xFF6A3200, // shadow
+                           0xFF8A4A00,
+                           0xFFFFB24A,
+                           0xFF6A3200,
                            ICON20_SCALE);
     } else {
         draw_simple_file_icon20_scaled(ix, iy, ICON20_SCALE);
     }
 
-    // label (truncate)
     char display_name[FM2_NAME_MAX];
 
-    const int max_chars = 12; // 96px cell için ~12 char (8px font varsayımı)
+    const int max_chars = 12;
     int len = (int)strlen(it->name);
 
     if (len > max_chars) {
-        int keep = max_chars - 3; // "..." için yer
+        int keep = max_chars - 3;
         if (keep < 1) keep = 1;
 
         strncpy(display_name, it->name, (size_t)keep);
@@ -403,25 +376,19 @@ static void fm_open_selected(app_t* app) {
 
     fm2_item_t* it = &f->items[f->selected];
 
-    // klasörse içine gir
     if (it->is_dir) {
         fm_load_dir(f, it->full);
         return;
     }
 
-    // -------------------------
-    // HTML -> Kuvix Browser
-    // -------------------------
     if (ends_with(it->name, ".html") || ends_with(it->name, ".htm")) {
         char url[FM2_PATH_MAX + 8];
         url[0] = 0;
 
-        // "file:" + fullpath
         strncpy(url, "file:", sizeof(url) - 1);
         url[sizeof(url) - 1] = 0;
         strncat(url, it->full, sizeof(url) - strlen(url) - 1);
 
-        // Browser app id: app_manager.c registry’de 15
         app_t* bapp = appmgr_start_app(15);
         if (bapp) {
             kuvix_browser_open_url(bapp, url);
@@ -432,9 +399,6 @@ static void fm_open_selected(app_t* app) {
         return;
     }
 
-    // -------------------------
-    // TODO: TXT -> Notepad vs.
-    // -------------------------
     fm_set_status(f, "Open file: no handler");
 }
 
@@ -451,10 +415,13 @@ static void fileman_on_create(app_t* app) {
     f->last_click_tick_ms = 0;
     f->path_edit_mode = 0;
 
-    // default: USER_DESKTOP_PATH parent ("/home/anil" gibi)
+    // ✅ default: user's desktop parent ("/home/anil" gibi)
+    char desktop[FM2_PATH_MAX];
     char start[FM2_PATH_MAX];
-    fm_parent_dir(USER_DESKTOP_PATH, start, (int)sizeof(start));
-    if (!start[0]) strncpy(start, "/", sizeof(start)-1);
+
+    user_get_desktop_path(desktop, (int)sizeof(desktop));
+    fm_parent_dir(desktop, start, (int)sizeof(start));
+    if (!start[0]) strncpy(start, "/", sizeof(start) - 1);
 
     fm_load_dir(f, start);
 }
@@ -481,7 +448,6 @@ static void fileman_on_mouse(app_t* app, int mx, int my,
     if (!f) return;
     if (!(pressed & 0x01)) return;
 
-    // toolbar clicks
     if (pt_in(r_btn_up(), mx, my)) {
         char parent[FM2_PATH_MAX];
         fm_parent_dir(f->path, parent, (int)sizeof(parent));
@@ -498,27 +464,24 @@ static void fileman_on_mouse(app_t* app, int mx, int my,
     if (pt_in(r_pathbar(f->cw), mx, my)) {
         f->path_edit_mode = 1;
 
-        strncpy(f->path_buf, f->path, sizeof(f->path_buf)-1);
-        f->path_buf[sizeof(f->path_buf)-1] = 0;
+        strncpy(f->path_buf, f->path, sizeof(f->path_buf) - 1);
+        f->path_buf[sizeof(f->path_buf) - 1] = 0;
         f->path_len = (int)strlen(f->path_buf);
 
         fm_set_status(f, "Editing path (Enter=open, Esc=cancel)");
         return;
     }
 
-    // click outside pathbar -> exit edit mode
     if (f->path_edit_mode) {
         f->path_edit_mode = 0;
         fm_set_status(f, "Ready");
     }
 
-    // item clicks
     int idx = fm_hit_item(f, mx, my);
     if (idx < 0) return;
 
     f->selected = idx;
 
-    // double click
     uint32_t now = fm_ticks_ms();
     if (f->last_click_index == idx) {
         uint32_t dt = now - f->last_click_tick_ms;
@@ -538,27 +501,21 @@ static void fileman_on_key(app_t* app, uint16_t key) {
     if (!f) return;
 
     uint8_t sc = (uint8_t)(key & 0xFF);
-    if (sc & 0x80) return; // break ignore
+    if (sc & 0x80) return;
 
-    // -------------------------
-    // PATH EDIT MODE
-    // -------------------------
     if (f->path_edit_mode) {
-        // Enter
         if (sc == 0x1C) {
             f->path_edit_mode = 0;
             fm_load_dir(f, f->path_buf[0] ? f->path_buf : "/");
             return;
         }
 
-        // Esc
         if (sc == 0x01) {
             f->path_edit_mode = 0;
             fm_set_status(f, "Ready");
             return;
         }
 
-        // Backspace (set1: 0x0E)
         if (sc == 0x0E) {
             if (f->path_len > 0) {
                 f->path_len--;
@@ -567,7 +524,6 @@ static void fileman_on_key(app_t* app, uint16_t key) {
             return;
         }
 
-        // Printable
         char c = kbd_scancode_to_ascii(sc);
         if (c >= 32 && c <= 126) {
             if (f->path_len < FM2_PATH_MAX - 1) {
@@ -580,17 +536,9 @@ static void fileman_on_key(app_t* app, uint16_t key) {
         return;
     }
 
-    // -------------------------
-    // NORMAL MODE
-    // -------------------------
-
-    // Enter -> open selected
     if (sc == 0x1C) { fm_open_selected(app); return; }
-
-    // F5 refresh
     if (sc == 0x3F) { fm_load_dir(f, f->path); fm_set_status(f, "Refreshed"); return; }
 
-    // Backspace -> up
     if (sc == 0x0E) {
         char parent[FM2_PATH_MAX];
         fm_parent_dir(f->path, parent, (int)sizeof(parent));

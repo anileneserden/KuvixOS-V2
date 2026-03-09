@@ -1,4 +1,4 @@
-// kernel/ui/desktop.c
+// ui/desktop.c
 #include <ui/desktop.h>
 #include <ui/desktop_icons.h>
 #include <ui/dialogs/messagebox.h>
@@ -96,6 +96,33 @@ uint32_t desktop_get_bg_color(void) {
 void desktop_set_bg_color(uint32_t argb) {
     ui_set_desktop_bg(argb);
     desktop_invalidate_full();
+}
+
+static char g_desktop_path[256];
+
+static void desktop_cache_paths(void) {
+    if (g_desktop_path[0]) return;
+    user_get_desktop_path(g_desktop_path, (int)sizeof(g_desktop_path));
+    if (!g_desktop_path[0]) {
+        strncpy(g_desktop_path, "/home/anil/desktop", sizeof(g_desktop_path) - 1);
+        g_desktop_path[sizeof(g_desktop_path) - 1] = 0;
+    }
+}
+
+static void join2(char* out, int cap, const char* a, const char* b) {
+    if (!out || cap <= 0) return;
+    out[0] = 0;
+    if (!a) a = "";
+    if (!b) b = "";
+
+    strncpy(out, a, cap - 1);
+    out[cap - 1] = 0;
+
+    int n = (int)strlen(out);
+    if (n > 0 && out[n - 1] != '/') {
+        strncat(out, "/", (size_t)cap - strlen(out) - 1);
+    }
+    strncat(out, b, (size_t)cap - strlen(out) - 1);
 }
 
 static bool is_selecting = false;
@@ -509,16 +536,23 @@ void desktop_handle_rename_confirm(const char* new_name) {
     const char* old_full_path = desktop_icons_get_path(rename_target_index);
     if (!old_full_path || !old_full_path[0]) return;
 
-    char new_full_path[256];
+    desktop_cache_paths();
 
-    // Uzantı kontrolü
+    char fname[160];
+    fname[0] = 0;
+
+    // Uzantı yoksa .txt ekle
     if (!strstr(new_name, ".txt")) {
-        printk(new_full_path, sizeof(new_full_path),
-                 "%s/%s.txt", USER_DESKTOP_PATH, new_name);
+        strncpy(fname, new_name ? new_name : "", sizeof(fname) - 1);
+        fname[sizeof(fname) - 1] = 0;
+        strncat(fname, ".txt", sizeof(fname) - strlen(fname) - 1);
     } else {
-        printk(new_full_path, sizeof(new_full_path),
-                 "%s/%s", USER_DESKTOP_PATH, new_name);
+        strncpy(fname, new_name ? new_name : "", sizeof(fname) - 1);
+        fname[sizeof(fname) - 1] = 0;
     }
+
+    char new_full_path[256];
+    join2(new_full_path, (int)sizeof(new_full_path), g_desktop_path, fname);
 
     if (vfs_rename(old_full_path, new_full_path) == 1) {
 
@@ -556,7 +590,8 @@ static void desktop_handle_create_file(void) {
     char base[256];
     char final_path[256];
 
-    strcpy(base, USER_DESKTOP_PATH);
+    desktop_cache_paths();
+    strcpy(base, g_desktop_path);
     strcat(base, "/yeni_not");
 
     get_unique_filename(base, ".txt", final_path);
@@ -585,8 +620,9 @@ static void desktop_handle_create_file(void) {
 
 static void desktop_handle_create_folder(void) {
     char base[256];
-    strcpy(base, USER_DESKTOP_PATH);
-    strcat(base, "/Yeni_Klasor");
+    desktop_cache_paths();
+    strcpy(base, g_desktop_path);
+    strcat(base, "/yeni_not");
 
     char final_path[256];
     strcpy(final_path, base);
@@ -679,6 +715,8 @@ void ui_desktop_init(void) {
 
     desktop_icons_init();
     desktop_icons_snap_all();
+
+    desktop_cache_paths();
     
     g_last_btn = 0;
     g_lmb_down = 0;
@@ -701,9 +739,9 @@ void ui_desktop_init(void) {
         ata_pio_read(dev, 2000, disk_buffer, 1);
 
         if (disk_buffer[0] != '\0' && disk_buffer[0] != (char)0xFF) {
+            desktop_cache_paths();
             char rec_path[256];
-            strcpy(rec_path, USER_DESKTOP_PATH);
-            strcat(rec_path, "/notum.txt");
+            join2(rec_path, (int)sizeof(rec_path), g_desktop_path, "notum.txt");
             if (!file_exists(rec_path)) {
                 vfs_file_t* recover_f = 0;
                 if (vfs_open(rec_path, VFS_O_CREAT | VFS_O_WRONLY, &recover_f) == 1) {

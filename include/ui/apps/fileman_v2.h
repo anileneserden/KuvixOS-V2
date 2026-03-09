@@ -1,4 +1,4 @@
-// kernel/ui/apps/fileman_v2.h
+// ui/apps/fileman_v2.h
 #pragma once
 #include <stdint.h>
 

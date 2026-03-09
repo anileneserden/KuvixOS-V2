@@ -1,4 +1,4 @@
-// kernel/ui/apps/terminal.c
+// ui/apps/terminal.c
 
 #include <ui/apps/terminal.h>
 
@@ -197,8 +197,7 @@ static void terminal_on_create(app_t* app) {
 
     memset(t, 0, sizeof(*t));
 
-    strncpy(t->cwd, USER_DESKTOP_PATH, sizeof(t->cwd) - 1);
-    t->cwd[sizeof(t->cwd) - 1] = '\0';
+    user_get_desktop_path(t->cwd, sizeof(t->cwd));
     t->lang = USER_LANG_EN;
 
     // defaults until first draw recalculates

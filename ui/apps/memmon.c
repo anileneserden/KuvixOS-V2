@@ -1,4 +1,4 @@
-// kernel/ui/apps/memmon.c
+// ui/apps/memmon.c
 #include <ui/apps/memmon.h>
 
 #include <kernel/memory/kmalloc.h>
