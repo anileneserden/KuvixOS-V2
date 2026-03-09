@@ -122,10 +122,6 @@ static int g_dbg_wheel_total = 0;
 
 static bool g_need_redraw = true;
 
-static inline void desktop_request_redraw(void) {
-    g_need_redraw = true;
-}
-
 // --- Debug overlay helps (desktop içi) ---
 static bool g_dbg_overlay = false;
 
@@ -183,6 +179,10 @@ static void desktop_toggle_ext(void);
 
 void desktop_invalidate_full(void) {
     g_force_full_present = true;
+    g_need_redraw = true;
+}
+
+void desktop_request_redraw(void) {
     g_need_redraw = true;
 }
 

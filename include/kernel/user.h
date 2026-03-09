@@ -13,9 +13,11 @@
 
 // ✅ Gerçek path'ler (VFS için)
 #define USER_HOME_PATH     "/home/" CURRENT_USER
-#define USER_DESKTOP_PATH  USER_HOME_PATH "/desktop"
-#define USER_TRASH_PATH    USER_HOME_PATH "/trash"
-#define USER_APPS_PATH     USER_HOME_PATH "/apps"
+#define USER_DESKTOP_PATH       USER_HOME_PATH "/desktop"
+#define USER_TRASH_PATH         USER_HOME_PATH "/trash"
+#define USER_APPS_PATH          USER_HOME_PATH "/apps"
+#define USER_HTML_PATH          USER_HOME_PATH "/html"
+#define USER_HTML_TEST_PATH     USER_HTML_PATH "/deneme"
 
 // Terminal'de Desktop label (istersen TR/EN seçebilirsin)
 typedef enum {

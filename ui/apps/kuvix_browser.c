@@ -30,6 +30,17 @@ static kuvix_browser_t* br(app_t* app) {
     return (app && app->user) ? (kuvix_browser_t*)app->user : NULL;
 }
 
+static bool parse_http_url(const char* url, uint32_t* out_ip_be, uint16_t* out_port, const char** out_path) {
+    if (!url || strncmp(url, "http://", 7) != 0) return false;
+    const char* p = url + 7;
+
+    int a=0,b=0,c=0,d=0;
+    int n = 0;
+    (void)n;
+
+    return false;
+}
+
 static void br_set_status(kuvix_browser_t* b, const char* s) {
     if (!b) return;
     if (!s) s = "";
