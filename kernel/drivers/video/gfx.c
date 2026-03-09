@@ -148,7 +148,7 @@ void gfx_fill_polygon(int* x_coords, int* y_coords, int num_vertices, uint32_t c
 
     // 2. Ekran sınırlarını aşmasın
     // fb_get_height() veya senin sistemindeki karşılığını kullan
-    int screen_h = 600; // Örnek değer, kendi sistemine göre güncelle
+    int screen_h = fb_get_height(); // Örnek değer, kendi sistemine göre güncelle
     if (min_y < 0) min_y = 0;
     if (max_y >= screen_h) max_y = screen_h - 1;
 

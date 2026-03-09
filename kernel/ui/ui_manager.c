@@ -30,6 +30,6 @@ void ui_manager_update() {
     if (g_current_mode == MODE_DESKTOP) {
         ui_desktop_run(); 
     } else {
-        debug_3d_render_loop(800, 600);
+        debug_3d_render_loop();
     }
 }

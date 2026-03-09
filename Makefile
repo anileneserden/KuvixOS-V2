@@ -52,6 +52,7 @@ SRC_C = \
     kernel/drivers/vga_font.c \
     kernel/drivers/input/keyboard.c \
     kernel/drivers/input/mouse_ps2.c \
+    kernel/drivers/input/input_manager.c \
     kernel/drivers/rtc/rtc.c \
     kernel/drivers/power.c \
     kernel/drivers/input/keymaps/layout.c \

@@ -15,7 +15,7 @@ enum {
 void     kbd_init(void);
 void     kbd_set_layout_trq(void);   // şimdilik TRQ
 void     kbd_handle_byte(uint8_t sc);
-uint16_t kbd_pop_event(void);
+extern uint16_t kbd_pop_event(void);
 int      kbd_get_key(void);          // 0 yoksa, aksi halde char veya 0xFF00|KBD_Fn
 void     kbd_debug_set(int enabled);
 int      kbd_debug_get(void);

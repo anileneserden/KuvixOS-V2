@@ -1,125 +1,162 @@
+#include <kernel/drivers/input/input_manager.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
-#include <kernel/drivers/input/keyboard.h>
+#include <kernel/time.h>
 #include <lib/math.h>
+#include <stdint.h>
+#include <stdbool.h>
 
-// 1. Köşeler (8 adet)
-static int vertices[8][3] = {
-    {-30, -30, -30}, {30, -30, -30}, {30, 30, -30}, {-30, 30, -30},
-    {-30, -30,  30}, {30, -30,  30}, {30, 30,  30}, {-30, 30,  30}
+typedef struct { int x, y, z; } Point3D;
+typedef struct { int x, y; } Point2D;
+
+static Point3D cube_vertices[] = {
+    {-50, -50, -50}, { 50, -50, -50},
+    { 50,  50, -50}, {-50,  50, -50},
+    {-50, -50,  50}, { 50, -50,  50},
+    { 50,  50,  50}, {-50,  50,  50}
 };
 
-// 2. Yüzeyler (6 adet kare yüzey)
-static int faces[6][4] = {
-    {0, 1, 2, 3}, // Arka
-    {4, 5, 6, 7}, // Ön
-    {0, 4, 7, 3}, // Sol
-    {1, 5, 6, 2}, // Sağ
-    {3, 2, 6, 7}, // Üst
-    {0, 1, 5, 4}  // Alt
+static int cube_faces[6][4] = {
+    {0, 1, 2, 3},
+    {1, 5, 6, 2},
+    {5, 4, 7, 6},
+    {4, 0, 3, 7},
+    {3, 2, 6, 7},
+    {4, 5, 1, 0}
 };
 
 static uint32_t face_colors[6] = {
-    0xFF0000, // Kırmızı
-    0x00FF00, // Yeşil
-    0x0000FF, // Mavi
-    0xFFFF00, // Sarı
-    0xFF00FF, // Magenta
-    0x00FFFF  // Cyan
+    0xFF0000, 0x00FF00, 0x0000FF,
+    0xFFFF00, 0xFF00FF, 0x00FFFF
 };
 
-static int angle_x = 0;
-static int angle_y = 0;
-static int zoom = 150;
+static Point2D project(Point3D p) {
+    Point2D out;
 
-void debug_3d_render_loop(int screen_width, int screen_height) {
-    // Sıralama yapısı
-    typedef struct {
-        int index;
-        int z;
-    } face_z_t;
+    int fov = 256;
+    int viewer_dist = 220;
 
-    face_z_t sorted_faces[6];
-    int proj_x[8], proj_y[8], rot_z[8];
+    int width  = (int)fb_get_width();
+    int height = (int)fb_get_height();
 
-    // 1. INPUT (WASD + QE)
-    while (kbd_has_character()) {
-        uint16_t event = kbd_pop_event();
-        uint8_t scancode = event & 0x7F;
-        int pressed = !(event & 0x80);
+    int denom = (p.z + viewer_dist);
+    if (denom < 10) denom = 10;
 
-        if (pressed) {
-            if (scancode == 0x11) angle_x -= 10; // W
-            if (scancode == 0x1F) angle_x += 10; // S
-            if (scancode == 0x1E) angle_y -= 10; // A
-            if (scancode == 0x20) angle_y += 10; // D
-            if (scancode == 0x10) zoom -= 10;    // Q
-            if (scancode == 0x12) zoom += 10;    // E
-        }
+    int aspect_mul = (width * 100) / (height ? height : 1);
+
+    out.x = (((p.x * fov) * aspect_mul) / 100) / denom + (width / 2);
+    out.y = ((p.y * fov) / denom) + (height / 2);
+    return out;
+}
+
+static Point3D rotate(Point3D p, int ax, int ay) {
+    Point3D res = p;
+    int s, c;
+    int tmp;
+
+    s = math_sin(ax);
+    c = math_cos(ax);
+    tmp   = (res.y * c - res.z * s) / 100;
+    res.z = (res.y * s + res.z * c) / 100;
+    res.y = tmp;
+
+    s = math_sin(ay);
+    c = math_cos(ay);
+    tmp   = (res.x * c + res.z * s) / 100;
+    res.z = (-res.x * s + res.z * c) / 100;
+    res.x = tmp;
+
+    return res;
+}
+
+void debug_3d_render_loop(void) {
+    static uint32_t last_ms = 0;
+
+    static int angle_x = 25;
+    static int angle_y = 45;
+
+    static int32_t acc_x = 0;
+    static int32_t acc_y = 0;
+
+    const int32_t speed_x_deg_s = 60;
+    const int32_t speed_y_deg_s = 90;
+
+    const int mouse_sens = 1;
+
+    // --- dt ---
+    uint32_t now = g_ticks_ms;
+
+    uint32_t dt_ms;
+    if (last_ms == 0) {
+        dt_ms = 16;
+    } else {
+        dt_ms = now - last_ms;
+        if (dt_ms == 0) dt_ms = 16;
+        if (dt_ms > 100) dt_ms = 100;
+    }
+    last_ms = now;
+
+    // --- Mouse (frame delta + buttons) ---
+    int mdx = 0, mdy = 0;
+    input_mouse_frame_delta(&mdx, &mdy);
+    uint8_t btn = input_mouse_buttons();
+
+    // Eğer sol click mask farklıysa test için geçici: (btn != 0)
+    bool dragging = (btn & 0x01) != 0;
+
+    // İstersen dev delta’ları clamp et:
+    if (mdx > 60) mdx = 60;
+    if (mdx < -60) mdx = -60;
+    if (mdy > 60) mdy = 60;
+    if (mdy < -60) mdy = -60;
+
+    if (dragging) {
+        angle_y -= (mdx * mouse_sens);
+        angle_x -= (mdy * mouse_sens);
+
+        // mouse bırakınca auto yumuşak dönsün
+        acc_x = 0;
+        acc_y = 0;
+    } else {
+        acc_x += speed_x_deg_s * (int32_t)dt_ms;
+        acc_y += speed_y_deg_s * (int32_t)dt_ms;
+
+        while (acc_x >= 1000) { angle_x++; acc_x -= 1000; }
+        while (acc_y >= 1000) { angle_y++; acc_y -= 1000; }
     }
 
-    // --- OTOMATİK DÖNDÜRME ---
-    // Her karede açıları biraz artıralım (Hızı buradan ayarlayabilirsin)
-    angle_x = (angle_x + 1) % 360; 
-    angle_y = (angle_y + 2) % 360;
+    angle_x %= 360; if (angle_x < 0) angle_x += 360;
+    angle_y %= 360; if (angle_y < 0) angle_y += 360;
 
-    // --- MATEMATİKSEL HAZIRLIK ---
-    int sx = math_sin(angle_x), cx = math_cos(angle_x);
-    int sy = math_sin(angle_y), cy = math_cos(angle_y);
+    // --- render ---
+    gfx_clear(0x050510);
 
-    // 3. KOORDİNAT HESAPLAMA (X ve Y Rotasyonu + Projeksiyon)
+    Point2D projected[8];
     for (int i = 0; i < 8; i++) {
-        int x = vertices[i][0];
-        int y = vertices[i][1];
-        int z = vertices[i][2];
-
-        // X Rotasyonu
-        int y1 = (y * cx - z * sx) / 100;
-        int z1 = (y * sx + z * cx) / 100;
-
-        // Y Rotasyonu
-        int x2 = (x * cy + z1 * sy) / 100;
-        int z2 = (-x * sy + z1 * cy) / 100;
-
-        rot_z[i] = z2; // Sıralama için derinlik bilgisini tut
-
-        // Projeksiyon
-        int z_depth = z2 + zoom;
-        if (z_depth <= 0) z_depth = 1;
-        proj_x[i] = (x2 * 300) / z_depth + (screen_width / 2);
-        proj_y[i] = (y1 * 300) / z_depth + (screen_height / 2);
+        Point3D r = rotate(cube_vertices[i], angle_x, angle_y);
+        projected[i] = project(r);
     }
 
-    // 4. Z-SORTING (Painter's Algorithm)
     for (int i = 0; i < 6; i++) {
-        sorted_faces[i].index = i;
-        sorted_faces[i].z = (rot_z[faces[i][0]] + rot_z[faces[i][1]] + 
-                             rot_z[faces[i][2]] + rot_z[faces[i][3]]) / 4;
-    }
+        int x[4], y[4];
+        for (int j = 0; j < 4; j++) {
+            int idx = cube_faces[i][j];
+            x[j] = projected[idx].x;
+            y[j] = projected[idx].y;
+        }
 
-    for (int i = 0; i < 5; i++) {
-        for (int j = i + 1; j < 6; j++) {
-            if (sorted_faces[i].z < sorted_faces[j].z) {
-                face_z_t temp = sorted_faces[i];
-                sorted_faces[i] = sorted_faces[j];
-                sorted_faces[j] = temp;
+        int v1x = x[1] - x[0];
+        int v1y = y[1] - y[0];
+        int v2x = x[2] - x[0];
+        int v2y = y[2] - y[0];
+
+        if ((v1x * v2y - v1y * v2x) > 0) {
+            gfx_fill_polygon(x, y, 4, face_colors[i]);
+            for (int j = 0; j < 4; j++) {
+                int n = (j + 1) & 3;
+                gfx_draw_line(x[j], y[j], x[n], y[n], 0x000000);
             }
         }
-    }
-
-    // 5. ÇİZİM
-    fb_clear(0x000000);
-
-    for (int i = 0; i < 6; i++) {
-        int f = sorted_faces[i].index;
-        int x_coords[4], y_coords[4];
-
-        for (int v = 0; v < 4; v++) {
-            x_coords[v] = proj_x[faces[f][v]];
-            y_coords[v] = proj_y[faces[f][v]];
-        }
-        
-        gfx_fill_polygon(x_coords, y_coords, 4, face_colors[f]);
     }
 
     fb_present();
