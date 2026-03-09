@@ -98,10 +98,18 @@ void fb_console_init(uint32_t fg, uint32_t bg) {
     }
 }
 
+static void clear_current_line(void) {
+    gfx_fill_rect(0, cur_y, screen_w(), CHAR_H, g_bg);
+}
+
 void fb_console_putc(char c) {
     if (!g_enabled) return;
 
-    if (c == '\r') return;
+    if (c == '\r') {
+        cur_x = 0;
+        clear_current_line();
+        return;
+    }
 
     if (c == '\n') {
         newline();
@@ -123,10 +131,8 @@ void fb_console_putc(char c) {
 
     uint8_t uc = (uint8_t)c;
 
-    // kontrol karakterleri '?'
     if (uc < 32) uc = (uint8_t)'?';
 
-    // boş glyph ise '?' (space hariç)
     if (uc != (uint8_t)' ' && glyph8_is_empty(uc)) {
         uc = (uint8_t)'?';
     }

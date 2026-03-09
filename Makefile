@@ -139,6 +139,7 @@ SRC_C = \
     lib/service/service.c \
     lib/shell/shell.c \
     lib/string/string.c \
+    lib/tty_progress.c \
 
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)

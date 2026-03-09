@@ -1,25 +1,49 @@
-#include <kernel/fs/vfs.h>
-#include <kernel/fs/kvxfs.h>
 #include <kernel/printk.h>
+#include <lib/tty_progress.h>
 #include <lib/commands.h>
+#include <stdint.h>
 
-void cmd_install(int argc, char** argv) {
-    (void)argc; (void)argv;
-    commands_puts("KuvixOS Kurulumu Başlatılıyor...\n");
-
-    // 1. Gerekli klasörleri oluştur
-    commands_puts("Sistem dizinleri oluşturuluyor...\n");
-    kvxfs_mkdir("/persist/system");
-    kvxfs_mkdir("/persist/boot");
-
-    // 2. Kernel'ı kopyala (Şimdilik sembolik, ileride vfs_read ile kernel.elf kopyalanacak)
-    // Test amaçlı bir sistem dosyası yazalım
-    const char* config_data = "KuvixOS V2 - Installed\nBootMode=ATA_PIO\n";
-    if (kvxfs_write_all("/persist/system/os.conf", (uint8_t*)config_data, 42)) {
-        commands_puts("Kurulum Tamamlandı! /persist/system/os.conf oluşturuldu.\n");
-    } else {
-        commands_puts("HATA: Dosya yazılamadı.\n");
+static void fake_delay(void) {
+    for (volatile uint32_t i = 0; i < 30000000u; i++) {
+        __asm__ __volatile__("" ::: "memory");
     }
 }
 
-REGISTER_COMMAND(install, cmd_install, "Sistemi diske kurar");
+static void install_run_demo(void) {
+    printk("KuvixOS install demo started.\n");
+
+    tty_progress_begin("Installer Demo");
+
+    for (uint32_t i = 0; i <= 100; i++) {
+        tty_progress_step("Preparing disk", i, 100);
+        fake_delay();
+    }
+
+    for (uint32_t i = 0; i <= 100; i++) {
+        tty_progress_step("Writing system image", i, 100);
+        fake_delay();
+    }
+
+    for (uint32_t i = 0; i <= 100; i++) {
+        tty_progress_step("Creating user config", i, 100);
+        fake_delay();
+    }
+
+    for (uint32_t i = 0; i <= 100; i++) {
+        tty_progress_step("Finalizing install", i, 100);
+        fake_delay();
+    }
+
+    tty_progress_end();
+
+    printk("Installation completed.\n");
+}
+
+static void cmd_install(int argc, char** argv) {
+    (void)argc;
+    (void)argv;
+
+    install_run_demo();
+}
+
+REGISTER_COMMAND(install, cmd_install, "Sistemi diske kurar (DEMO)");

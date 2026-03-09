@@ -16,11 +16,11 @@ static inline void outc(char c) {
     vga_putc(c);
     serial_putc(c);
 
-    if (gui_mode_enabled) {
-        fb_console_putc(c);
-        if (c == '\n')
-            fb_console_flush();
-    }
+if (gui_mode_enabled) {
+    fb_console_putc(c);
+    if (c == '\n' || c == '\r')
+        fb_console_flush();
+}
 }
 
 static void print_int(int value, int base) {
