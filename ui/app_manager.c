@@ -16,7 +16,6 @@
 #include <ui/apps/notepad.h>
 #include <ui/apps/file_manager.h>
 #include <ui/apps/kuvix_browser.h>
-#include <ui/apps/fileman_v2.h>
 #include <ui/apps/terminal.h>
 #include <ui/apps/pixel_draw_app.h>
 #include <ui/apps/demo_font.h>
@@ -45,7 +44,6 @@ extern const app_vtbl_t designer_vtbl;
 extern const app_vtbl_t kuvix_browser_vtbl;
 extern const app_vtbl_t kbi_viewer_vtbl;
 extern const app_vtbl_t controls_test_vtbl;
-extern const app_vtbl_t fileman_v2_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -77,7 +75,6 @@ static app_definition_t app_registry[] = {
     { 15, "Kuvix Browser", &kuvix_browser_vtbl,   160, 120, 820, 520, sizeof(kuvix_browser_t)   },
     { 16, "KBI Viewer",    &kbi_viewer_vtbl,      160, 120, 820, 520, sizeof(kbi_viewer_t)      },
     { 17, "Controls test", &controls_test_vtbl,   160, 120, 820, 520, sizeof(controls_test_t)   },
-    { 18, "Fileman V2",    &fileman_v2_vtbl,      160, 120, 820, 520, sizeof(fileman_v2_t)      },
     {  0, NULL,            NULL,                    0,   0,   0,   0, 0                         }
 };
 
