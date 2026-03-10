@@ -33,13 +33,23 @@ void commands_set_output(commands_out_fn_t fn, void* user) {
     g_out_user = user;
 }
 
+// commands.c içine bu prototipleri ekle
+extern void wm_draw(void);
+extern void desktop_request_redraw(void); // Masaüstünü çizmek için gerekebilir
+extern void fb_present(void);   // Çizilenleri ekrana basmak için (Video Buffer)
+
 void commands_puts(const char* s) {
     if (!s) return;
 
     if (g_out) {
         g_out(g_out_user, s);
+
+        // ✅ KRİTİK NOKTA: Döngü devam ederken ekranı tazele
+        // Bu sayede progress bar her karakterde güncellenir
+        desktop_request_redraw(); // Arka plan
+        wm_draw();      // Pencereler ve terminal
+        fb_present();   // Fiziksel ekran günellemesi
     } else {
-        // fallback: seri/VGA
         printk("%s", s);
     }
 }
