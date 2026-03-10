@@ -18,6 +18,7 @@ int fs_prepare_user_layout(void) {
     ensure_dir(USER_HOME_PATH);
     ensure_dir(USER_DESKTOP_PATH);
     ensure_dir(USER_APPS_PATH);
+    ensure_dir(USER_DOWNLOAD_PATH);
     ensure_dir(USER_TRASH_PATH);
     ensure_dir(USER_HTML_PATH);
     ensure_dir(USER_HTML_TEST_PATH);

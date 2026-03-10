@@ -51,12 +51,23 @@ static int parse_ip4_be(const char* s, uint32_t* out_be) {
     return 1;
 }
 
+static void print_ip_be(uint32_t ip_be) {
+    printk("%u.%u.%u.%u",
+        (unsigned)((ip_be >> 24) & 0xFF),
+        (unsigned)((ip_be >> 16) & 0xFF),
+        (unsigned)((ip_be >>  8) & 0xFF),
+        (unsigned)( ip_be        & 0xFF));
+}
+
 // req buffer'a string append (taşarsa 0 döner)
 static int buf_append(char* buf, int cap, int* io_len, const char* s) {
     if (!buf || !io_len || !s) return 0;
     int n = *io_len;
     for (int i=0; s[i]; i++) {
-        if (n >= cap - 1) { buf[cap-1] = 0; return 0; }
+        if (n >= cap - 1) {
+            buf[cap - 1] = 0;
+            return 0;
+        }
         buf[n++] = s[i];
     }
     buf[n] = 0;
@@ -71,23 +82,64 @@ static int buf_append_path_line(char* buf, int cap, int* io_len, const char* pat
     return 1;
 }
 
+static int build_http_request(char* req, int req_cap, const char* host, const char* path, int* out_len) {
+    int n = 0;
+    req[0] = 0;
+
+    if (!buf_append_path_line(req, req_cap, &n, path)) return 0;
+
+    if (!buf_append(req, req_cap, &n, "Host: ")) return 0;
+    if (!buf_append(req, req_cap, &n, host)) return 0;
+    if (!buf_append(req, req_cap, &n, "\r\n")) return 0;
+
+    if (!buf_append(req, req_cap, &n, "Connection: close\r\n")) return 0;
+    if (!buf_append(req, req_cap, &n, "\r\n")) return 0;
+
+    if (out_len) *out_len = n;
+    return 1;
+}
+
 static void cmd_wget(int argc, char** argv) {
     if (argc < 4) {
-        commands_puts("Kullanim: wget <ip> <port> </path>\n");
-        commands_puts("Ornek  : wget 10.0.2.2 8080 /test.txt\n");
+        commands_puts("Kullanim: wget <host|ip> <port> </path>\n");
+        commands_puts("Ornek   : wget 10.0.2.2 8080 /test.txt\n");
+        commands_puts("Ornek   : wget example.com 80 /\n");
+        return;
+    }
+
+    const char* host = argv[1];
+    const char* port_str = argv[2];
+    const char* path = argv[3];
+
+    if (!path || path[0] != '/') {
+        commands_puts("Path '/' ile baslamali. Ornek: /test.txt\n");
+        return;
+    }
+
+    uint16_t port = 0;
+    if (!parse_u16(port_str, &port)) {
+        commands_puts("Port gecersiz.\n");
         return;
     }
 
     uint32_t ip_be = 0;
-    uint16_t port = 0;
-    if (!parse_ip4_be(argv[1], &ip_be) || !parse_u16(argv[2], &port)) {
-        commands_puts("IP/port gecersiz.\n");
-        return;
-    }
-    const char* path = argv[3];
-    if (!path || path[0] != '/') {
-        commands_puts("Path '/' ile baslamali. Ornek: /test.txt\n");
-        return;
+
+    // Önce IP mi diye bak
+    if (!parse_ip4_be(host, &ip_be)) {
+        // IP değilse DNS çöz
+        uint32_t dns_ip_be = 0x0A000203; // 10.0.2.3 (QEMU slirp DNS)
+        printk("[WGET] DNS resolving: %s via ", host);
+        print_ip_be(dns_ip_be);
+        printk("\n");
+
+        if (!net_dns_resolve_a(host, dns_ip_be, &ip_be)) {
+            commands_puts("DNS resolve basarisiz.\n");
+            return;
+        }
+
+        printk("[WGET] %s -> ", host);
+        print_ip_be(ip_be);
+        printk("\n");
     }
 
     if (!net_tcp_connect(ip_be, port)) {
@@ -97,15 +149,14 @@ static void cmd_wget(int argc, char** argv) {
 
     // HTTP request build
     char req[512];
-    req[0] = 0;
-    int n = 0;
+    int req_len = 0;
+    if (!build_http_request(req, (int)sizeof(req), host, path, &req_len)) {
+        commands_puts("Request buffer tasdi (host/path cok uzun?).\n");
+        net_tcp_close();
+        return;
+    }
 
-    if (!buf_append_path_line(req, (int)sizeof(req), &n, path)) goto send_fail;
-    // Host header (slirp için IP yazmak yeter)
-    if (!buf_append(req, (int)sizeof(req), &n, "Host: 10.0.2.2\r\n")) goto send_fail;
-    if (!buf_append(req, (int)sizeof(req), &n, "\r\n")) goto send_fail;
-
-    if (!net_tcp_send((const uint8_t*)req, (uint16_t)n)) {
+    if (!net_tcp_send((const uint8_t*)req, (uint16_t)req_len)) {
         commands_puts("TCP send basarisiz.\n");
         net_tcp_close();
         return;
@@ -116,7 +167,7 @@ static void cmd_wget(int argc, char** argv) {
     int header_done = 0;
     int printed_any = 0;
 
-    // header split olabileceği için küçük state tutalım
+    // header split olabileceği için küçük state
     uint8_t last4[4] = {0,0,0,0};
 
     while (1) {
@@ -124,15 +175,16 @@ static void cmd_wget(int argc, char** argv) {
         if (r <= 0) break;
 
         int i = 0;
+
         if (!header_done) {
             for (; i < r; i++) {
-                // sliding window \r\n\r\n
                 last4[0] = last4[1];
                 last4[1] = last4[2];
                 last4[2] = last4[3];
                 last4[3] = buf[i];
 
-                if (last4[0]=='\r' && last4[1]=='\n' && last4[2]=='\r' && last4[3]=='\n') {
+                if (last4[0] == '\r' && last4[1] == '\n' &&
+                    last4[2] == '\r' && last4[3] == '\n') {
                     header_done = 1;
                     i++; // body başlangıcı
                     break;
@@ -150,11 +202,6 @@ static void cmd_wget(int argc, char** argv) {
 
     if (printed_any) printk("\n");
     net_tcp_close();
-    return;
-
-send_fail:
-    commands_puts("Request buffer tasdi (cok uzun path?).\n");
-    net_tcp_close();
 }
 
-REGISTER_COMMAND(wget, cmd_wget, "HTTP ile dosya ceker (wget <ip> <port> </path>)");
+REGISTER_COMMAND(wget, cmd_wget, "HTTP ile dosya ceker (wget <host|ip> <port> </path>)");
