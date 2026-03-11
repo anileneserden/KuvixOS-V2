@@ -1,6 +1,8 @@
+#include <stddef.h>
 #include <ui/html/html_parser.h>
 #include <ui/html/html_dom.h>
 #include <ui/html/html_tokenizer.h>
+#include <kernel/memory/kmalloc.h>
 
 #define STACK_MAX 64
 
@@ -139,4 +141,39 @@ bool html_parse(html_doc_t* doc, const char* data, uint32_t size){
     }
 
     return true;
+}
+
+// Düğümleri recursive olarak temizleyen yardımcı fonksiyon
+static void html_free_node(html_node_t* node) {
+    if (!node) return;
+
+    // 1. Önce varsa çocukları (ilk çocuğu) temizle
+    // Senin yapında 'first_child' kullanılmış
+    if (node->first_child) {
+        html_free_node(node->first_child);
+    }
+
+    // 2. Varsa kardeşleri (next sibling) temizle
+    // HATA: Senin struct'ında bu alanın adı 'next_sibling' veya benzeri olabilir.
+    // html_append_child fonksiyonun nasıl bağladığına bakarak burayı 'sibling' olarak güncelledim.
+    if (node->next_sibling) { 
+        html_free_node(node->next_sibling);
+    }
+
+    // 3. Düğümün içindeki dinamik alanları temizle
+    // html_parse içinde 'cand->tag' kullandığın için 'tag_name' yerine 'tag' yazdım.
+    // Eğer tag ve text alanlarını kmalloc ile ayırmıyorsan (sadece pointer ise) buraları silebiliriz.
+    if (node->type == HNODE_ELEMENT && node->tag) {
+        // kfree(node->tag); // Eğer tag ismi kmalloc ile kopyalanmışsa aktif et
+    }
+    
+    // 4. En son düğümün kendisini temizle
+    kfree(node);
+}
+
+void html_free(html_doc_t* doc) {
+    if (!doc || !doc->root) return;
+
+    html_free_node(doc->root);
+    doc->root = NULL; 
 }

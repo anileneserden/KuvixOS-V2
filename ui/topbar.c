@@ -3,6 +3,8 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
 #include <lib/string.h>
+#include <kernel/time.h>
+#include <ui/desktop.h>
 
 static int bar_h = 28;
 static int btn_w = 120;   // pencere buton genişliği
@@ -76,6 +78,29 @@ void topbar_handle_mouse(int mx, int my) {
     }
 }
 
+static uint8_t s_last_min = 255;
+static uint8_t s_last_sec = 255;
+
+static uint32_t s_last_sec_bucket = 0xFFFFFFFF;
+
+static int s_topbar_dirty = 1;
+
+int topbar_consume_dirty(void) {
+    int d = s_topbar_dirty;
+    s_topbar_dirty = 0;
+    return d;
+}
+
+void topbar_tick(void) {
+    uint32_t sec = (uint32_t)time_now_epoch_sec(); // veya local
+    static uint32_t last = 0xFFFFFFFF;
+    if (sec != last) {
+        last = sec;
+        s_topbar_dirty = 1;
+        desktop_request_redraw(); // sahneyi çizdir
+    }
+}
+
 void topbar_draw(void) {
     int sw = fb_get_width();
 
@@ -92,5 +117,7 @@ void topbar_draw(void) {
     draw_window_buttons();
 
     // Sağ saat
-    gfx_draw_text(sw - 120, 7, 0xAAAAAA, "17:11  CPU: 2%");
+    char t[9];
+    time_format_hhmmss(t);
+    gfx_draw_text(sw - 96, 7, 0xAAAAAA, t);
 }

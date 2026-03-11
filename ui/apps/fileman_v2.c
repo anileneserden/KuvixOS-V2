@@ -1,4 +1,4 @@
-// kernel/ui/apps/fileman_v2.c
+// ui/apps/fileman_v2.c
 #include <ui/apps/fileman_v2.h>
 
 #include <app/app.h>

@@ -38,12 +38,11 @@ void desktop_icons_select_in_rect(int x1, int y1, int x2, int y2);
 void desktop_icons_delete_selected(void);
 bool desktop_icons_is_selected(int index);
 void desktop_icons_toggle_select(int index);
-
-// --- EKLENENLER ---
 void desktop_icons_begin_edit(int index);
 bool desktop_icons_is_any_editing(void);
 void desktop_icons_handle_key(uint16_t scancode, char ascii);
 
 const char* desktop_icons_get_path(int index);
+bool desktop_icons_get_rect(int index, int* x, int* y, int* w, int* h);
 
 #endif

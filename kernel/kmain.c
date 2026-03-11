@@ -25,6 +25,8 @@
 
 #include <ui/inputtest.h>
 
+#include <ui/theme.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -101,14 +103,18 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     ps2_mouse_init();
 
     timer_init(1000);
+    time_set_tz_offset_sec(3 * 3600);
+    time_init_from_rtc();
 
     asm volatile("sti");
-    
+
     fs_init_once();
+
+    ui_theme_bootstrap_default();
 
     // UI
     ui_session_init();
-    ui_session_switch(UI_SESSION_TTY1);
+    ui_session_switch(UI_SESSION_DESKTOP);
 
     while (1) {
         // klavye event dispatch

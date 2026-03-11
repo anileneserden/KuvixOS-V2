@@ -1,4 +1,4 @@
-// kernel/ui/apps/demo_app.c
+// ui/apps/demo_app.c
 
 #include <app/app.h>
 #include <ui/wm.h>

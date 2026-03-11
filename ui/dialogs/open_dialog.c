@@ -1,4 +1,4 @@
-// kernel/ui/dialogs/open_dialog.c
+// ui/dialogs/open_dialog.c
 
 #include <ui/dialogs/open_dialog.h>
 #include <kernel/drivers/video/gfx.h>
@@ -10,6 +10,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <kernel/printk.h>
+
+#include <ui/desktop.h>
 
 extern void desktop_icons_reset_selection(void);
 extern void desktop_reset_selection_state(void);
@@ -50,6 +52,9 @@ static const int g_row_h = 18;         // satır yüksekliği
 static bool g_scroll_drag = false;
 static int  g_scroll_drag_off = 0;
 
+// ------------------------------------------------------------
+// helpers
+// ------------------------------------------------------------
 static bool hit(int mx, int my, int x, int y, int w, int h) {
     return (mx >= x && mx <= x + w && my >= y && my <= y + h);
 }
@@ -73,10 +78,13 @@ static bool selected_is_dir(void) {
     return g_items[g_selected].is_dir;
 }
 
+// dx,dy,dw,dh = dialog rect
+// lx,ly,lw,lh = list rect
 static void list_metrics(int* out_dx, int* out_dy, int* out_dw, int* out_dh,
-                         int* out_lx, int* out_ly, int* out_lw, int* out_lh) {
+                         int* out_lx, int* out_ly, int* out_lw, int* out_lh)
+{
     int dw = 400, dh = 310;
-    int dx = (fb_get_width() - dw) / 2;
+    int dx = (fb_get_width()  - dw) / 2;
     int dy = (fb_get_height() - dh) / 2;
 
     int list_y = dy + 60;
@@ -107,6 +115,40 @@ static int get_scroll_max(int list_h) {
 
 static void scroll_clamp(int list_h) {
     g_scroll = clampi(g_scroll, 0, get_scroll_max(list_h));
+}
+
+// ✅ full dialog damage
+static void open_dialog_damage_full(void) {
+    int dx, dy, dw, dh;
+    list_metrics(&dx, &dy, &dw, &dh, 0,0,0,0);
+
+    const int PAD = 6;
+    desktop_damage_rect(dx - PAD, dy - PAD, dw + PAD * 2, dh + PAD * 2);
+}
+
+// ✅ sadece list area damage (scroll/seçim için daha ucuz)
+static void open_dialog_damage_list(void) {
+    int dx, dy, dw, dh, lx, ly, lw, lh;
+    list_metrics(&dx, &dy, &dw, &dh, &lx, &ly, &lw, &lh);
+
+    const int PAD = 4;
+    desktop_damage_rect(lx - PAD, ly - PAD, lw + PAD * 2, lh + PAD * 2);
+}
+
+// ✅ sadece input satırı (dosya adı) damage
+static void open_dialog_damage_input(void) {
+    int dx, dy, dw, dh, lx, ly, lw, lh;
+    list_metrics(&dx, &dy, &dw, &dh, &lx, &ly, &lw, &lh);
+
+    int input_y = ly + lh + 15;
+
+    // input rect: dx+90 .. (dw-190) genişlik, 20 yükseklik
+    const int ix = dx + 90;
+    const int iw = dw - 190;
+    const int ih = 20;
+
+    const int PAD = 4;
+    desktop_damage_rect(ix - PAD, input_y - PAD, iw + PAD * 2, ih + PAD * 2);
 }
 
 static void draw_scrollbar(int lx, int ly, int lw, int lh) {
@@ -187,6 +229,9 @@ void open_dialog_refresh(void) {
     g_scroll = 0;
     g_scroll_drag = false;
     g_scroll_drag_off = 0;
+
+    // ✅ dialog içeriği değişti
+    open_dialog_damage_full();
 }
 
 static void open_dialog_enter_dir(const char* name) {
@@ -212,7 +257,7 @@ static void open_dialog_enter_dir(const char* name) {
     g_selected = -1;
     g_dlg.buffer[0] = '\0';
 
-    open_dialog_refresh();
+    open_dialog_refresh(); // ✅ refresh zaten full damage yapıyor
 }
 
 static void open_dialog_go_back(void) {
@@ -245,6 +290,9 @@ static void open_dialog_do_open_file(void) {
     if (len > 0 && full[len - 1] != '/') strcat(full, "/");
     strcat(full, g_dlg.buffer);
 
+    // kapanırken son görüntüyü sildirmek için
+    open_dialog_damage_full();
+
     g_active = false;
     g_dlg.on_open(full);
 }
@@ -266,12 +314,14 @@ static void open_dialog_do_pick_dir(void) {
         if (len > 0 && full[len - 1] != '/') strcat(full, "/");
         strcat(full, g_items[g_selected].name);
 
+        open_dialog_damage_full();
         g_active = false;
         g_dlg.on_open(full);
         return;
     }
 
     // hiç seçim yoksa: bulunduğun klasörü seç
+    open_dialog_damage_full();
     g_active = false;
     g_dlg.on_open(g_path);
 }
@@ -286,9 +336,15 @@ void open_dialog_handle_wheel(int step) {
     int dx, dy, dw, dh, lx, ly, lw, lh;
     list_metrics(&dx, &dy, &dw, &dh, &lx, &ly, &lw, &lh);
 
+    int old = g_scroll;
+
     // 2 satır gibi
     g_scroll += step * 36;
     scroll_clamp(lh);
+
+    if (g_scroll != old) {
+        open_dialog_damage_list();
+    }
 }
 
 // ------------------------------------------------------------
@@ -319,6 +375,8 @@ void open_dialog_handle_mouse_move(int mx, int my, uint8_t btns) {
     int travel = track_h - knob_h;
     if (travel <= 0) return;
 
+    int old = g_scroll;
+
     int knob_y = my - g_scroll_drag_off;
     int target = knob_y - track_y;
     target = clampi(target, 0, travel);
@@ -328,7 +386,10 @@ void open_dialog_handle_mouse_move(int mx, int my, uint8_t btns) {
 
     scroll_clamp(lh);
 
-    // güvenlik: track dışına çıkarsa da kalsın
+    if (g_scroll != old) {
+        open_dialog_damage_list();
+    }
+
     (void)track_x;
 }
 
@@ -341,12 +402,12 @@ void open_dialog_handle_mouse(int mx, int my, bool clicked) {
     int dx, dy, dw, dh, lx, ly, lw, lh;
     list_metrics(&dx, &dy, &dw, &dh, &lx, &ly, &lw, &lh);
 
-    // drag state: her click öncesi resetleme, move bitiriyor zaten
     if (!clicked) return;
 
     // X
     if (mx >= dx + dw - 22 && mx <= dx + dw - 4 &&
         my >= dy + 4 && my <= dy + 20) {
+        open_dialog_damage_full(); // kapanınca temizlensin
         g_active = false;
         g_newdir_mode = false;
         g_scroll_drag = false;
@@ -358,14 +419,13 @@ void open_dialog_handle_mouse(int mx, int my, bool clicked) {
     // back
     if (mx >= dx + 15 && mx <= dx + 37 &&
         my >= nav_y && my <= nav_y + 22) {
-        if (!g_newdir_mode) open_dialog_go_back();
+        if (!g_newdir_mode) open_dialog_go_back(); // refresh + damage
         return;
     }
 
     // ------------------------------------------------------------
     // LIST: scrollbar click / list click
     // ------------------------------------------------------------
-    // scrollbar hit test
     {
         int content_h = g_item_count * g_row_h;
         if (content_h > lh) {
@@ -394,10 +454,14 @@ void open_dialog_handle_mouse(int mx, int my, bool clicked) {
                 }
 
                 // track'e tık: o noktaya zıplat
+                int old = g_scroll;
+
                 int target = my - track_y - knob_h / 2;
                 target = clampi(target, 0, travel);
                 g_scroll = (max_scroll > 0) ? (target * max_scroll) / travel : 0;
                 scroll_clamp(lh);
+
+                if (g_scroll != old) open_dialog_damage_list();
                 return;
             }
         }
@@ -413,18 +477,31 @@ void open_dialog_handle_mouse(int mx, int my, bool clicked) {
             uint32_t now = g_ticks_ms;
             bool is_dbl = (g_last_click_idx == idx) && ((now - g_last_click_ms) < DBLCLICK_MS);
 
+            int old_sel = g_selected;
+
             g_selected = idx;
             g_last_click_idx = idx;
             g_last_click_ms = now;
 
+            // seçim değiştiyse list’i yenile
+            if (g_selected != old_sel) {
+                open_dialog_damage_list();
+                if (!g_pick_dir_mode) open_dialog_damage_input(); // dosya adı alanı da değişebilir
+            }
+
             if (g_items[idx].is_dir) {
                 g_dlg.buffer[0] = '\0';
+                if (!g_pick_dir_mode) open_dialog_damage_input();
+
                 if (is_dbl) {
                     open_dialog_enter_dir(g_items[idx].name);
                 }
             } else {
-                strncpy(g_dlg.buffer, g_items[idx].name, 63);
-                g_dlg.buffer[63] = '\0';
+                if (!g_pick_dir_mode) {
+                    strncpy(g_dlg.buffer, g_items[idx].name, 63);
+                    g_dlg.buffer[63] = '\0';
+                    open_dialog_damage_input();
+                }
 
                 if (is_dbl) {
                     open_dialog_do_open_file();
@@ -456,6 +533,7 @@ void open_dialog_handle_mouse(int mx, int my, bool clicked) {
 
     // iptal
     if (hit(mx, my, btn_x, input_y + 30, 70, 22)) {
+        open_dialog_damage_full();
         g_active = false;
         g_scroll_drag = false;
         return;
@@ -575,7 +653,7 @@ void open_dialog_show(const char* title, const char* initial_name, int owner_win
     desktop_icons_reset_selection();
 
     strcpy(g_path, USER_DESKTOP_PATH);
-    open_dialog_refresh();
+    open_dialog_refresh(); // refresh -> full damage
 }
 
 void open_dialog_show_dirpicker(const char* title, const char* initial_path, int owner_win_id, open_callback_t cb) {
@@ -602,6 +680,7 @@ void open_dialog_handle_key(uint16_t scancode, char c) {
 
     // Esc
     if (scancode == 0x01) {
+        open_dialog_damage_full();
         g_active = false;
         g_newdir_mode = false;
         g_scroll_drag = false;
@@ -621,7 +700,10 @@ void open_dialog_handle_key(uint16_t scancode, char c) {
     // Backspace
     if (c == '\b') {
         int len = (int)strlen(g_dlg.buffer);
-        if (len > 0) g_dlg.buffer[len - 1] = '\0';
+        if (len > 0) {
+            g_dlg.buffer[len - 1] = '\0';
+            open_dialog_damage_input();
+        }
         return;
     }
 
@@ -631,6 +713,7 @@ void open_dialog_handle_key(uint16_t scancode, char c) {
         if (len < 63) {
             g_dlg.buffer[len] = c;
             g_dlg.buffer[len + 1] = '\0';
+            open_dialog_damage_input();
         }
         return;
     }

@@ -186,13 +186,9 @@ void* kmalloc(size_t size) {
 
             void* p = hdr_to_payload(b);
 
-            // optional: log big allocs
-            if (want >= (256u * 1024u)) {
-                printk("[KMALLOC] big alloc want=%u -> %p caller=%p\n",
-                       (unsigned)want,
-                       p,
-                       __builtin_return_address(0));
-            }
+            // ✅ BU LOGU EKLE:
+            printk("[KM_DBG] ALLOC: %u bytes (aligned %u) at %p\n", 
+                (unsigned)size, (unsigned)want, p);
 
             return p;
         }
@@ -215,6 +211,9 @@ void* kmalloc(size_t size) {
 
 void kfree(void* ptr) {
     if (!ptr) return;
+
+    // ✅ BU LOGU EKLE:
+    printk("[KM_DBG] FREE: %p\n", ptr);
 
     block_hdr_t* b = payload_to_hdr(ptr);
 

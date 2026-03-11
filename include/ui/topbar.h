@@ -5,7 +5,8 @@
 
 void topbar_init(void);
 void topbar_draw(void);
-// İleride saat veya menü tıklaması için:
 void topbar_handle_mouse(int mx, int my);
+void topbar_tick();
+int topbar_consume_dirty(void);
 
 #endif

@@ -7,10 +7,16 @@
 
 #define NOTEPAD_MAX_TEXT 4096
 #define NOTEPAD_MAX_TABS 8
+#define NOTEPAD_INIT_CAP 1024
+#define NOTEPAD_MAX_CAP  65536
 
 typedef struct {
     char     file_path[128];
-    char     text[NOTEPAD_MAX_TEXT];
+    
+    char*    text;
+    uint32_t len;
+    uint32_t cap;
+
     uint32_t cursor;
     bool     is_dirty;
 
@@ -27,16 +33,17 @@ typedef struct {
 
     int  window_id;
     bool active;
-    bool menu_open;      // Menü açık mı?
+    bool menu_open;
 
-    // close prompt state
     bool close_pending;
     bool close_after_save;
     int  pending_close_win_id;
 
-    // ✅ desktop open race fix
     bool pending_open;
     char pending_path[128];
+
+    int menu_hover_item;
+    int last_lx, last_ly;
 } notepad_t;
 
 void notepad_init(void);

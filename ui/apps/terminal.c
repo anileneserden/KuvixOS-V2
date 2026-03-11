@@ -1,4 +1,4 @@
-// kernel/ui/apps/terminal.c
+// ui/apps/terminal.c
 
 #include <ui/apps/terminal.h>
 

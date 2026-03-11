@@ -1,4 +1,4 @@
-// kernel/ui/apps/kuvix_browser.h
+// ui/apps/kuvix_browser.h
 #pragma once
 #include <stdint.h>
 

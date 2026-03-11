@@ -1,4 +1,4 @@
-// kernel/ui/desktop_seed.c
+// ui/desktop_seed.c
 
 #include <kernel/fs/vfs.h>
 #include <kernel/user.h>         // USER_HOME_PATH / USER_DESKTOP_PATH

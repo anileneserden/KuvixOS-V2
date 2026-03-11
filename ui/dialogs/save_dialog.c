@@ -1,4 +1,4 @@
-// kernel/ui/dialogs/save_dialog.c
+// ui/dialogs/save_dialog.c
 
 #include <ui/dialogs/save_dialog.h>
 #include <kernel/drivers/video/gfx.h>

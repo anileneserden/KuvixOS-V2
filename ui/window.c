@@ -1,4 +1,4 @@
-// kernel/ui/window/window.c  (ui_window_draw içi düzeltildi)
+// ui/window/window.c  (ui_window_draw içi düzeltildi)
 
 #include <ui/window/window.h>
 #include <ui/window_chrome.h>

@@ -1,4 +1,4 @@
-// kernel/ui/desktop_icons.c
+// ui/desktop_icons.c
 
 #include <ui/desktop_icons.h>
 #include <ui/desktop.h>
@@ -384,12 +384,33 @@ void desktop_icons_select(int index) {
 }
 
 void desktop_icons_move_dragging(int mx, int my) {
+    const int W = 72;
+    const int H = 72;
+    const int PAD = 6;
+
     for (int i = 0; i < icon_count; i++) {
         if (icons[i].dragging) {
-            icons[i].x = mx - drag_off_x[i];
-            icons[i].y = my - drag_off_y[i];
+            int oldx = icons[i].x;
+            int oldy = icons[i].y;
+
+            int newx = mx - drag_off_x[i];
+            int newy = my - drag_off_y[i];
+
+            if (newx == oldx && newy == oldy) continue;
+
+            // 1) eski yeri temizle
+            desktop_damage_rect(oldx - PAD, oldy - PAD, W + PAD*2 + 2, H + PAD*2 + 2);
+
+            // update
+            icons[i].x = newx;
+            icons[i].y = newy;
+
+            // 2) yeni yeri çiz
+            desktop_damage_rect(newx - PAD, newy - PAD, W + PAD*2 + 2, H + PAD*2 + 2);
         }
     }
+
+    desktop_request_redraw();
 }
 
 void desktop_icons_set_dragging(int index, bool state, int mx, int my) {
@@ -476,4 +497,15 @@ const char* desktop_icons_get_name(int index) {
         return icons[index].label;
     }
     return "";
+}
+
+bool desktop_icons_get_rect(int index, int* x, int* y, int* w, int* h) {
+    if (index < 0 || index >= icon_count) return false;
+    if (!x || !y || !w || !h) return false;
+
+    *x = icons[index].x;
+    *y = icons[index].y;
+    *w = 72;
+    *h = 72;
+    return true;
 }
