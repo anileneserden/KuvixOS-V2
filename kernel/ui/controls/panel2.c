@@ -1,4 +1,4 @@
-// kernel/ui/controls/panel2.c
+// ui/controls/panel2.c
 #include <ui/controls/panel2.h>
 #include <kernel/drivers/video/gfx.h>
 

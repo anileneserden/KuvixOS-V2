@@ -1,4 +1,4 @@
-// kernel/ui/apps/notepad.c
+// ui/apps/notepad.c
 
 #include <app/app.h>
 #include <app/app_manager.h>

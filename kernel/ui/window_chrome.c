@@ -1,4 +1,4 @@
-// kernel/ui/window_chrome.c
+// ui/window_chrome.c
 #include <ui/window_chrome.h>
 #include <ui/theme.h>
 

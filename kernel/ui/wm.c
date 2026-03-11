@@ -1,4 +1,4 @@
-// kernel/ui/wm.c
+// ui/wm.c
 
 #include <stdint.h>
 #include <stdbool.h>

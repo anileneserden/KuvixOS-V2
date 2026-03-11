@@ -1,4 +1,4 @@
-// kernel/ui/apps/demo_font.c
+// ui/apps/demo_font.c
 #include <app/app.h>
 #include <ui/wm.h>
 #include <kernel/drivers/video/gfx.h>

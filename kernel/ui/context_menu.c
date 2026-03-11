@@ -1,4 +1,4 @@
-// kernel/ui/context_menu.c
+// ui/context_menu.c
 #include <ui/context_menu.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>

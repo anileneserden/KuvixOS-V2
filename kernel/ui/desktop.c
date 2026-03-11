@@ -1,4 +1,4 @@
-// kernel/ui/desktop.c
+// ui/desktop.c
 #include <ui/desktop.h>
 #include <ui/desktop_icons.h>
 #include <ui/dialogs/messagebox.h>
