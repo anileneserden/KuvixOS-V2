@@ -1,4 +1,4 @@
-// kernel/ui/apps/controls_test.c
+// ui/apps/controls_test.c
 
 #include <ui/apps/controls_test.h>
 

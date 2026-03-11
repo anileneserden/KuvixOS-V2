@@ -1,4 +1,4 @@
-// kernel/ui/apps/file_manager.c
+// ui/apps/file_manager.c
 
 #include <app/app.h>
 #include <app/app_manager.h>

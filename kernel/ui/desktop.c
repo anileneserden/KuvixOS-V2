@@ -1,4 +1,4 @@
-// kernel/ui/desktop.c
+// ui/desktop.c
 #include <ui/desktop.h>
 #include <ui/desktop_icons.h>
 #include <ui/dialogs/messagebox.h>
@@ -121,6 +121,8 @@ static int g_dbg_wheel_total = 0;
 static bool g_need_redraw = true;
 
 static int g_dbg_redraw_reason = 0;
+
+static bool g_dbg_visualize_dirty = false;
 
 void desktop_request_redraw(void) {
     g_need_redraw = true;
@@ -890,6 +892,16 @@ void ui_desktop_handle_scancode(uint16_t sc)
     }
 
     // ------------------------------------------------------------
+    // F9 -> Dirty Region Visualization Toggle (Set1: 0x43)
+    // ------------------------------------------------------------
+    if (sc8 == 0x43) {
+        g_dbg_visualize_dirty = !g_dbg_visualize_dirty;
+        notification_show(g_dbg_visualize_dirty ? "Debug: Dirty Rects ON" : "Debug: Dirty Rects OFF", 100);
+        desktop_invalidate_full();
+        return;
+    }
+
+    // ------------------------------------------------------------
     // (İstersen geri açarsın) CTRL+SHIFT+I -> seed shortcuts
     // Set1: I make = 0x17
     // ------------------------------------------------------------
@@ -1333,6 +1345,9 @@ void ui_desktop_tick(void) {
     if (force_full) need_full_present = true;
 
     if (need_full_present) {
+        if (g_dbg_visualize_dirty) {
+            gfx_draw_rect(0, 0, fb_get_width(), fb_get_height(), 0x00FF0000);
+        }
         fb_present();
     } else {
         // 0) WM damage rect (close/minimize/move/resize/maximize)
@@ -1365,9 +1380,11 @@ void ui_desktop_tick(void) {
             a_w += 1; a_h += 1;
             b_w += 1; b_h += 1;
 
-            // ✅ alpha/outline kenarları için biraz daha büyük pad
             const int SEL_PAD = 10;
-
+            if (g_dbg_visualize_dirty) {
+                gfx_draw_rect(a_x - SEL_PAD, a_y - SEL_PAD, a_w + SEL_PAD * 2, a_h + SEL_PAD * 2, 0x000000FF); // Mavi
+                gfx_draw_rect(b_x - SEL_PAD, b_y - SEL_PAD, b_w + SEL_PAD * 2, b_h + SEL_PAD * 2, 0x000000FF);
+            }
             present_rect_safe(a_x - SEL_PAD, a_y - SEL_PAD, a_w + SEL_PAD * 2, a_h + SEL_PAD * 2);
             present_rect_safe(b_x - SEL_PAD, b_y - SEL_PAD, b_w + SEL_PAD * 2, b_h + SEL_PAD * 2);
         }
@@ -1376,18 +1393,20 @@ void ui_desktop_tick(void) {
         if (hover_dirty) {
             int x, y, w, h;
             const int HOV_PAD = 4;
-
-            if (desktop_icons_get_rect(hover_old, &x, &y, &w, &h))
+            if (desktop_icons_get_rect(hover_old, &x, &y, &w, &h)) {
+                if (g_dbg_visualize_dirty) gfx_draw_rect(x-HOV_PAD, y-HOV_PAD, w+HOV_PAD*2, h+HOV_PAD*2, 0x00FFFF00); // Sarı (Eski)
                 present_rect_safe(x - HOV_PAD, y - HOV_PAD, w + HOV_PAD * 2, h + HOV_PAD * 2);
-
-            if (desktop_icons_get_rect(hover_new, &x, &y, &w, &h))
+            }
+            if (desktop_icons_get_rect(hover_new, &x, &y, &w, &h)) {
+                if (g_dbg_visualize_dirty) gfx_draw_rect(x-HOV_PAD, y-HOV_PAD, w+HOV_PAD*2, h+HOV_PAD*2, 0x0000FF00); // Yeşil (Yeni)
                 present_rect_safe(x - HOV_PAD, y - HOV_PAD, w + HOV_PAD * 2, h + HOV_PAD * 2);
-
+            }
             hover_dirty = false;
         }
 
         if (topbar_consume_dirty()) {
-            present_rect_safe(0,0, (int)fb_get_width(), 28);
+            if (g_dbg_visualize_dirty) gfx_draw_rect(0, 0, (int)fb_get_width(), 28, 0x00FF00FF); // Magenta
+            present_rect_safe(0, 0, (int)fb_get_width(), 28);
         }
     }
 

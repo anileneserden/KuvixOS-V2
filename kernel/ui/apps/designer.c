@@ -1,4 +1,4 @@
-// kernel/ui/apps/designer.c
+// ui/apps/designer.c
 #include <ui/apps/designer.h>
 
 #include <app/app.h>               // ✅ struct app tamam (incomplete type hatası gider)

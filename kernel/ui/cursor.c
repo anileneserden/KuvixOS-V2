@@ -1,4 +1,4 @@
-// kernel/ui/cursor.c
+// ui/cursor.c
 #include <kernel/drivers/video/fb.h>
 #include <ui/cursor.h>
 

@@ -1,4 +1,4 @@
-// kernel/ui/apps/kuvix_browser.c
+// ui/apps/kuvix_browser.c
 
 #include <ui/apps/kuvix_browser.h>
 

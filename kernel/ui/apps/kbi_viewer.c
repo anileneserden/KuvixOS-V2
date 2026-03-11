@@ -1,4 +1,4 @@
-// kernel/ui/apps/kbi_viewer.c
+// ui/apps/kbi_viewer.c
 
 #include <ui/apps/kbi_viewer.h>
 

@@ -1,4 +1,4 @@
-// kernel/ui/html/url_resolver.c
+// ui/html/url_resolver.c
 #include <ui/html/url_resolver.h>
 
 #include <kernel/fs/vfs.h>

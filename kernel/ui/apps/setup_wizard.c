@@ -1,4 +1,4 @@
-// kernel/ui/apps/setup_wizard.c
+// ui/apps/setup_wizard.c
 
 #include <ui/apps/setup_wizard.h>
 

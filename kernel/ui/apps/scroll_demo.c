@@ -1,4 +1,4 @@
-// kernel/ui/apps/scroll_demo.c
+// ui/apps/scroll_demo.c
 #include <ui/apps/scroll_demo.h>
 
 #include <app/app.h>

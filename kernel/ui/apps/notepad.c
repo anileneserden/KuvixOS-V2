@@ -1,4 +1,4 @@
-// kernel/ui/apps/notepad.c
+// ui/apps/notepad.c
 
 #include <app/app.h>
 #include <app/app_manager.h>
@@ -1040,7 +1040,26 @@ static void notepad_on_key(app_t* self, uint16_t scancode) {
 }
 
 static void notepad_on_destroy(app_t* self) {
-    (void)self;
+    if (!self || !self->user) return;
+
+    notepad_t* data = (notepad_t*)self->user;
+
+    // 1. Tüm tablardaki dinamik metin alanlarını temizle
+    for (int i = 0; i < NOTEPAD_MAX_TABS; i++) {
+        if (data->tabs[i].text != NULL) {
+            kfree(data->tabs[i].text);
+            data->tabs[i].text = NULL;
+        }
+    }
+
+    // 2. Ana notepad yapısını (notepad_t) temizle
+    // Bu yapı zaten ~1.2 KB civarı olduğu için kmalloc muhtemelen 2 KB slot ayırıyor
+    kfree(data);
+
+    // 3. Pointer sızıntısını önle
+    self->user = NULL;
+
+    printk("[Notepad] Tum bellek alanlari (struct + tab buffers) iade edildi.\n");
 }
 
 // ------------------------------------------------------------

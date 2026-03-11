@@ -1,4 +1,4 @@
-// kernel/ui/desktop_icons.c
+// ui/desktop_icons.c
 
 #include <ui/desktop_icons.h>
 #include <ui/desktop.h>

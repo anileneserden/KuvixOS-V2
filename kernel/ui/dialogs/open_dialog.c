@@ -1,4 +1,4 @@
-// kernel/ui/dialogs/open_dialog.c
+// ui/dialogs/open_dialog.c
 
 #include <ui/dialogs/open_dialog.h>
 #include <kernel/drivers/video/gfx.h>

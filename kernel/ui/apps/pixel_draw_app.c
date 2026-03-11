@@ -1,4 +1,4 @@
-// kernel/ui/apps/pixel_draw_app.c
+// ui/apps/pixel_draw_app.c
 //
 // Pixel Draw (mini pixel editor)
 // - Üst toolbar (panel) + "Clear" butonu
