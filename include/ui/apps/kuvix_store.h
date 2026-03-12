@@ -1,4 +1,4 @@
-// kernel/ui/apps/kuvix_store.h
+// ui/apps/kuvix_store.h
 #ifndef KUVIX_STORE_H
 #define KUVIX_STORE_H
 
