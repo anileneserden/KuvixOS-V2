@@ -74,7 +74,6 @@ SRC_C = \
     ui/apps/designer.c \
     ui/apps/demo_font.c \
     ui/apps/file_manager.c \
-    ui/apps/fileman_v2.c \
     ui/apps/grid_demo.c \
     ui/apps/kbi_viewer.c \
     ui/apps/kuvix_browser.c \
