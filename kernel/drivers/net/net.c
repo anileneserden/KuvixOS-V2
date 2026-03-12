@@ -234,13 +234,13 @@ static void tcp_send_segment(const uint8_t dst_mac[6], uint32_t dst_ip,
 }
 
 static void tcp_handle_ipv4_tcp(const uint8_t* frame, uint16_t len) {
+    printk("[TCP] Bir paket geldi!\n");
     if (len < 14 + 20) return;
 
     const uint8_t* ip = frame + 14;
     uint8_t ihl = (ip[0] & 0x0F) * 4;
-    if (ihl < 20) return;
-    if (len < 14 + ihl + 20) return;
-    if (ip[9] != 6) return; // TCP
+    if (ihl < 20 || len < 14 + ihl + 20) return;
+    if (ip[9] != 6) return; // Sadece TCP
 
     uint32_t src_ip = rd32be(ip + 12);
     uint32_t dst_ip = rd32be(ip + 16);
@@ -249,68 +249,71 @@ static void tcp_handle_ipv4_tcp(const uint8_t* frame, uint16_t len) {
     const uint8_t* t = ip + ihl;
     uint16_t src_port = rd16be(t + 0);
     uint16_t dst_port = rd16be(t + 2);
-    uint32_t seq = rd32be(t + 4);
-    uint8_t off = (t[12] >> 4) * 4;
-    uint8_t flags = t[13];
+    
+    // Filtreleme: Sadece bizim açtığımız bağlantıya ait paketleri logla
+    if (dst_port == g_tcp.src_port && src_ip == g_tcp.dst_ip) {
+        uint32_t seq = rd32be(t + 4);
+        uint32_t ack_in = rd32be(t + 8);
+        uint8_t flags = t[13];
+        uint8_t off = (t[12] >> 4) * 4;
+        
+        uint16_t ip_total = rd16be(ip + 2);
+        uint16_t tcp_total = (ip_total >= ihl) ? (ip_total - ihl) : 0;
+        uint16_t data_len = (tcp_total > off) ? (tcp_total - off) : 0;
 
-    if (dst_port != g_tcp.src_port) return;
-    if (src_ip != g_tcp.dst_ip) return;
-    if (src_port != g_tcp.dst_port) return;
+        // DEBUG LOGU: Sunucudan ne geliyor?
+        printk("[TCP_IN] F:0x%x SEQ:%u ACK:%u LEN:%d\n", flags, seq, ack_in, data_len);
 
-    uint16_t ip_total = rd16be(ip + 2);
-    uint16_t tcp_total = (ip_total >= ihl) ? (ip_total - ihl) : 0;
-    if (tcp_total < off) return;
+        uint32_t next_hop = same_subnet(g_ip, g_tcp.dst_ip) ? g_tcp.dst_ip : g_gw;
 
-    uint16_t data_len = (tcp_total > off) ? (tcp_total - off) : 0;
-    const uint8_t* data = t + off;
-
-    uint32_t next_hop = same_subnet(g_ip, g_tcp.dst_ip) ? g_tcp.dst_ip : g_gw;
-
-    // SYN+ACK
-    if (g_tcp.st == TCP_SYN_SENT &&
-        (flags & (TCP_FLAG_SYN | TCP_FLAG_ACK)) == (TCP_FLAG_SYN | TCP_FLAG_ACK)) {
-
-        g_tcp.ack = seq + 1;
-
-        uint8_t mac[6];
-        if (!arp_get(next_hop, mac)) return;
-
-        tcp_send_segment(mac, g_tcp.dst_ip, g_tcp.src_port, g_tcp.dst_port,
-                         g_tcp.seq, g_tcp.ack, TCP_FLAG_ACK, 0, 0);
-
-        g_tcp.st = TCP_ESTABLISHED;
-        g_tcp.connected = 1;
-        return;
-    }
-
-    if (g_tcp.st == TCP_ESTABLISHED) {
-        // data
-        if (data_len > 0 && !g_tcp.rxready) {
-            if (data_len > sizeof(g_tcp.rxbuf)) data_len = sizeof(g_tcp.rxbuf);
-
-            memcpy(g_tcp.rxbuf, data, data_len);
-            g_tcp.rxlen = data_len;
-            g_tcp.rxready = 1;
-
-            g_tcp.ack = seq + data_len;
-
+        // 1. Durum: SYN+ACK (Bağlantı Kuruluyor)
+        if (g_tcp.st == TCP_SYN_SENT && (flags & TCP_FLAG_SYN) && (flags & TCP_FLAG_ACK)) {
+            g_tcp.ack = seq + 1;
             uint8_t mac[6];
             if (arp_get(next_hop, mac)) {
                 tcp_send_segment(mac, g_tcp.dst_ip, g_tcp.src_port, g_tcp.dst_port,
                                  g_tcp.seq, g_tcp.ack, TCP_FLAG_ACK, 0, 0);
+                g_tcp.st = TCP_ESTABLISHED;
+                g_tcp.connected = 1;
+                printk("[TCP] ESTABLISHED.\n");
             }
+            return;
         }
 
-        if (flags & TCP_FLAG_FIN) {
-            g_tcp.ack = seq + 1;
-
-            uint8_t mac[6];
-            if (arp_get(next_hop, mac)) {
-                tcp_send_segment(mac, g_tcp.dst_ip, g_tcp.src_port, g_tcp.dst_port,
-                                 g_tcp.seq, g_tcp.ack, TCP_FLAG_ACK, 0, 0);
+        // 2. Durum: Veri Alımı (Established)
+        if (g_tcp.st == TCP_ESTABLISHED) {
+            // Eğer paket sadece bir ACK ise (data_len == 0), kendi SEQ numaramızı güncellemeliyiz
+            if (data_len == 0 && (flags & TCP_FLAG_ACK)) {
+                // Sunucu bizim verimizi aldığını onayladı (HTTP isteğimize gelen ACK)
+                if (ack_in > g_tcp.seq) {
+                    // g_tcp.seq = ack_in; // İsteğe bağlı: Seq numarasını senkronize et
+                }
             }
 
-            g_tcp.closed = 1;
+            // Gelen veri varsa tampona al
+            if (data_len > 0 && !g_tcp.rxready) {
+                if (data_len > sizeof(g_tcp.rxbuf)) data_len = sizeof(g_tcp.rxbuf);
+                memcpy(g_tcp.rxbuf, t + off, data_len);
+                g_tcp.rxlen = data_len;
+                g_tcp.rxready = 1;
+                g_tcp.ack = seq + data_len;
+
+                uint8_t mac[6];
+                if (arp_get(next_hop, mac)) {
+                    tcp_send_segment(mac, g_tcp.dst_ip, g_tcp.src_port, g_tcp.dst_port,
+                                     g_tcp.seq, g_tcp.ack, TCP_FLAG_ACK, 0, 0);
+                }
+            }
+
+            if (flags & TCP_FLAG_FIN) {
+                g_tcp.ack = seq + 1;
+                uint8_t mac[6];
+                if (arp_get(next_hop, mac)) {
+                    tcp_send_segment(mac, g_tcp.dst_ip, g_tcp.src_port, g_tcp.dst_port,
+                                     g_tcp.seq, g_tcp.ack, TCP_FLAG_ACK, 0, 0);
+                }
+                g_tcp.closed = 1;
+            }
         }
     }
 }
@@ -653,42 +656,55 @@ int net_ping_ipv4(uint32_t dst_ip_be) {
     return 0;
 }
 
-int net_tcp_connect(uint32_t dst_ip_be, uint16_t dst_port) {
-    if (!e1000_is_ready()) {
-        printk("[TCP] e1000 not ready\n");
-        return 0;
-    }
-
-    memset(&g_tcp, 0, sizeof(g_tcp));
-    g_tcp.dst_ip = dst_ip_be;
-    g_tcp.dst_port = dst_port;
-    g_tcp.src_port = 40000;
-    g_tcp.seq = 0x1000;
+int net_tcp_connect(uint32_t ip_be, uint16_t port) {
+    g_tcp.connected = 0;
+    
+    // 1. TCP durumunu hazırla
+    g_tcp.dst_ip = ip_be;
+    g_tcp.dst_port = port;
+    g_tcp.src_port = 51000; // Rastgele bir kaynak port
+    g_tcp.seq = 100;        // Başlangıç seq numarası
     g_tcp.ack = 0;
     g_tcp.st = TCP_SYN_SENT;
 
-    uint32_t next_hop = same_subnet(g_ip, dst_ip_be) ? dst_ip_be : g_gw;
-
+    // 2. MAC adresini bul (ARP)
     uint8_t mac[6];
+    uint32_t next_hop = same_subnet(g_ip, ip_be) ? ip_be : g_gw;
     if (!arp_get(next_hop, mac)) {
         send_arp_who_has(next_hop);
-        for (int i=0;i<8000000;i++) net_poll_once();
+        // ARP yanıtı için kısa bir süre bekle
+        for (int i=0; i<5000000; i++) net_poll_once();
         if (!arp_get(next_hop, mac)) {
-            printk("[TCP] ARP resolve failed\n");
+            printk("[TCP] Hata: MAC adresi bulunamadi (ARP).\n");
             return 0;
         }
     }
 
-    tcp_send_segment(mac, dst_ip_be, g_tcp.src_port, g_tcp.dst_port,
-                     g_tcp.seq, 0, TCP_FLAG_SYN, 0, 0);
-    g_tcp.seq += 1;
+    // 3. SYN Gönder (Tam 9 parametre ile!)
+    tcp_send_segment(mac, ip_be, g_tcp.src_port, port, 
+                     g_tcp.seq, g_tcp.ack, TCP_FLAG_SYN, NULL, 0);
+    
+    printk("[TCP] SYN gonderildi, yanit bekleniyor...\n");
 
-    for (int i=0;i<12000000;i++) {
-        net_poll_once();
-        if (g_tcp.connected) return 1;
+    // 4. Bağlantı Döngüsü
+    for (int retry = 0; retry < 3; retry++) {
+        for (int i = 0; i < 30000000; i++) {
+            net_poll_once();
+            if (g_tcp.connected) {
+                printk("[TCP] Baglanti kuruldu!\n");
+                g_tcp.seq++; // SYN paketi 1 seq tüketir
+                return 1;
+            }
+        }
+        
+        if (retry < 2) {
+            printk("[TCP] Yanit gecikti, tekrar deneniyor (%d/3)...\n", retry + 1);
+            tcp_send_segment(mac, ip_be, g_tcp.src_port, port, 
+                             g_tcp.seq, g_tcp.ack, TCP_FLAG_SYN, NULL, 0);
+        }
     }
 
-    printk("[TCP] connect timeout\n");
+    printk("[TCP] Baglanti zaman asimina ugradi.\n");
     return 0;
 }
 
@@ -706,18 +722,22 @@ int net_tcp_send(const uint8_t* data, uint16_t len) {
     return 1;
 }
 
-int net_tcp_recv(uint8_t* out, uint16_t maxlen, uint32_t spin_timeout) {
-    for (uint32_t i=0;i<spin_timeout;i++) {
+int net_tcp_recv(uint8_t* buf, int max_len, uint32_t timeout) {
+    for (uint32_t i = 0; i < timeout; i++) {
         net_poll_once();
+
         if (g_tcp.rxready) {
-            uint16_t n = g_tcp.rxlen;
-            if (n > maxlen) n = maxlen;
-            memcpy(out, g_tcp.rxbuf, n);
-            g_tcp.rxready = 0;
+            int len = g_tcp.rxlen;
+            if (len > max_len) len = max_len;
+
+            memcpy(buf, g_tcp.rxbuf, len);
+            
+            // Bayrakları temizle
+            g_tcp.rxready = 0; 
             g_tcp.rxlen = 0;
-            return (int)n;
+
+            return len;
         }
-        if (g_tcp.closed) return 0;
     }
     return 0;
 }
@@ -747,11 +767,89 @@ void net_get_ipv4(uint32_t* ip_be, uint32_t* mask_be, uint32_t* gw_be) {
     if (gw_be)   *gw_be   = g_gw;
 }
 
-// Basit stub; istersen sonra gerçek implement ederiz
 int net_http_get_to_buf(uint32_t ip_be, uint16_t port, const char* path,
                         char* out, int out_cap, int* out_len)
 {
-    (void)ip_be; (void)port; (void)path; (void)out; (void)out_cap;
+    printk("[DEBUG] HTTP Fonksiyonu tetiklendi!\n");
     if (out_len) *out_len = 0;
-    return 0;
+
+    // 1. TCP Bağlantısını kur
+    if (!net_tcp_connect(ip_be, port)) {
+        return 0;
+    }
+
+    // KRİTİK DÜZELTME: SYN paketi 1 byte tüketir. 
+    // Eğer net_tcp_connect içinde g_tcp.seq artırılmadıysa burada düzeltiyoruz.
+    // g_tcp.seq++; 
+
+    // 2. HTTP İsteği oluşturma
+    char req[512];
+    memset(req, 0, 512);
+    
+    if (path[0] == '/') {
+        strcpy(req, "GET "); strcat(req, path);
+    } else {
+        strcpy(req, "GET /"); strcat(req, path);
+    }
+    strcat(req, " HTTP/1.1\r\n");
+    strcat(req, "Host: kuvixos.com.tr\r\n");
+    strcat(req, "User-Agent: KuvixOS/2.0\r\n");
+    strcat(req, "Connection: close\r\n\r\n");
+
+    uint8_t mac[6];
+    uint32_t next_hop = same_subnet(g_ip, ip_be) ? ip_be : g_gw;
+    if (!arp_get(next_hop, mac)) {
+        printk("[HTTP] ARP hatasi!\n");
+        return 0;
+    }
+
+    // 3. İsteği gönder (PSH + ACK)
+    printk("[HTTP] Istek gonderiliyor (SEQ:%u ACK:%u)\n", g_tcp.seq, g_tcp.ack);
+    
+    tcp_send_segment(mac, ip_be, g_tcp.src_port, port, 
+                     g_tcp.seq, g_tcp.ack, TCP_FLAG_PSH | TCP_FLAG_ACK, 
+                     (const uint8_t*)req, (uint16_t)strlen(req));
+    
+    // Gönderdiğimiz veri miktarı kadar SEQ numarasını ilerletiyoruz
+    g_tcp.seq += strlen(req);
+
+    // 4. Veri toplama döngüsü
+    int total = 0;
+    int timeout_count = 0;
+    printk("[HTTP] Yanit bekleniyor...");
+
+    // g_tcp.rxready bayrağını temizle (önceki paketlerden kalmış olabilir)
+    g_tcp.rxready = 0;
+
+    while (total < out_cap) {
+        // net_tcp_recv fonksiyonu içinde net_poll_once() çağrıldığına emin ol
+        int n = net_tcp_recv((uint8_t*)out + total, out_cap - total, 1500000);
+        
+        if (n > 0) {
+            total += n;
+            timeout_count = 0; 
+            printk("."); // Veri geldikçe ekrana nokta bas
+        } else {
+            timeout_count++;
+            // recv içinde yeterince poll yapılmıyorsa burada manuel dürtüyoruz
+            net_poll_once();
+        }
+
+        // Sunucu bağlantıyı kapattıysa (FIN geldiyse) döngüden çık
+        if (g_tcp.closed) {
+            printk("\n[HTTP] Sunucu baglantiyi kapatti.");
+            break;
+        }
+
+        // Yaklaşık 10-15 saniye veri gelmezse pes et
+        if (timeout_count > 200) {
+            printk("\n[HTTP] Zaman asimi!");
+            break;
+        }
+    }
+
+    if (out_len) *out_len = total;
+    printk("\n[HTTP] Islem bitti. Alinan: %d byte\n", total);
+
+    return (total > 0);
 }

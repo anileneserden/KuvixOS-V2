@@ -1,80 +1,78 @@
 #include <kernel/printk.h>
 #include <kernel/drivers/net/net.h>
+#include <kernel/fs/kvxfs.h> 
 #include <lib/commands.h>
 #include <lib/string.h>
 #include <stdint.h>
 
-// Loading Bar Çizici
-void print_progress_bar(int current, int total) {
-    const int bar_width = 20;
-    commands_puts("\r[");
-    int pos = (current * bar_width) / total;
-    for (int i = 0; i < bar_width; ++i) {
-        if (i < pos) commands_puts("=");
-        else if (i == pos) commands_puts(">");
-        else commands_puts(" ");
-    }
-    commands_puts("] ");
-    // Yüzde hesapla ve bas
-}
-
 static void cmd_wget(int argc, char** argv) {
     if (argc < 2) {
         commands_puts("Kullanim: wget <dosya_adi>\n");
-        commands_puts("Ornek: wget index.html\n");
         return;
     }
 
     char* filename = argv[1];
     uint32_t server_ip = 0;
     char* host = "kuvixos.com.tr";
-    char path[128] = "/";
-    strncat(path, filename, 120);
+    
+    char full_path[128];
+    memset(full_path, 0, 128);
+    strcpy(full_path, "/files/");
+    strcat(full_path, filename);
 
     commands_puts("Sunucuya baglaniliyor: "); commands_puts(host); commands_puts("\n");
 
-    // DNS Çözümleme (Google DNS kullanarak)
+    // 1. DNS Çözümleme
     if (!net_dns_resolve_a(host, 0x08080808, &server_ip)) {
-        commands_puts("Hata: Host bulunamadi.\n");
+        commands_puts("Hata: Host bulunamadi (DNS).\n");
         return;
     }
 
-    // İndirme hazırlığı
-    static char download_buf[65536]; // 64KB'a çıkardık
+    printk("[DEBUG] Sunucu IP: %d.%d.%d.%d\n", 
+           (server_ip >> 24) & 0xFF, (server_ip >> 16) & 0xFF, 
+           (server_ip >> 8) & 0xFF, server_ip & 0xFF);
+
+    static char download_buf[65536]; 
     int downloaded_len = 0;
     
-    commands_puts("Indiriliyor...\n");
+    commands_puts("Istek gonderiliyor: "); commands_puts(full_path); commands_puts("\n");
     
-    // Simülatif veya net_http_get_to_buf içinden çağrılan loading bar
-    // Not: net_http_get_to_buf içinde callback varsa oraya bağlamak daha iyi olur
-    for(int i = 0; i <= 100; i += 20) { 
-        print_progress_bar(i, 100);
-        // Burada gerçek net_http_get_to_buf çağrısı yapılacak
-    }
+    // 2. HTTP İndirme
+    int ok = net_http_get_to_buf(server_ip, 80, full_path, download_buf, sizeof(download_buf), &downloaded_len);
 
-    int ok = net_http_get_to_buf(server_ip, 80, path, download_buf, sizeof(download_buf), &downloaded_len);
+    if (ok && downloaded_len > 0) {
+        // C string işlemleri yapabilmek için sonuna null koyalım (tamponda yerimiz var)
+        if (downloaded_len < sizeof(download_buf)) download_buf[downloaded_len] = '\0';
 
-    if (ok) {
-        commands_puts("\nTamamlandi! Boyut: ");
-        // printk ile sayısal boyutu basabilirsin
+        // 3. HTTP Header Ayıklama
+        // "\r\n\r\n" dizisinden sonrasını buluyoruz
+        char* body = strstr(download_buf, "\r\n\r\n");
+        uint8_t* save_ptr = (uint8_t*)download_buf;
+        uint32_t save_len = (uint32_t)downloaded_len;
+
+        if (body) {
+            body += 4; // Header ayıracını geç
+            save_ptr = (uint8_t*)body;
+            save_len = (uint32_t)(downloaded_len - (body - download_buf));
+            printk("[BİLGİ] HTTP Header ayiklandi, sadece icerik kaydediliyor.\n");
+        }
         
-        char full_path[256] = "/home/anil/desktop/";
-        strncat(full_path, filename, 64);
-
-        commands_puts("\nMasaustune kaydediliyor: "); commands_puts(full_path); commands_puts("\n");
-
-        /* BURADA DOSYA YAZMA İŞLEMİ:
-           int fd = vfs_open(full_path, VFS_WRITE | VFS_CREATE);
-           if (fd >= 0) {
-               vfs_write(fd, download_buf, downloaded_len);
-               vfs_close(fd);
-           }
-        */
+        printk("[TAMAM] Toplam indirme: %d byte, Kaydedilecek: %u byte\n", downloaded_len, save_len);
         
-        commands_puts("Dosya basariyla olusturuldu.\n");
+        // 4. KVXFS'e Kaydetme
+        char persist_path[128] = "/persist/";
+        strcat(persist_path, filename);
+
+        if (kvxfs_write_all(persist_path, save_ptr, save_len)) {
+            commands_puts("KVXFS'e kaydedildi: ");
+            commands_puts(persist_path);
+            commands_puts("\n");
+        } else {
+            commands_puts("Hata: Diske yazilamadi!\n");
+        }
     } else {
         commands_puts("\nHata: HTTP istegi basarisiz.\n");
     }
 }
 
-REGISTER_COMMAND(wget, cmd_wget, "Web sitesinden dosya indirir ve masaustune koyar.");
+REGISTER_COMMAND(wget, cmd_wget, "Sunucudan dosya indirir ve kaydeder.");

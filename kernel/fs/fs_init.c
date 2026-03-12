@@ -38,10 +38,20 @@ int fs_init_once(void) {
         }
     }
 
+    // KVXFS'i başlatmayı dene
     if (kvxfs_init()) {
         printk("KVXFS: Disk sistemi basariyla baglandi.\n");
     } else {
-        printk("KVXFS: Kalici disk bulunamadi veya formatli degil.\n");
+        // BAĞLANAMADIYSA: Muhtemelen disk boş veya magic hatalı.
+        printk("KVXFS: Magic hatasi! Disk otomatik formatlaniyor...\n");
+        
+        if (kvxfs_format()) {
+            printk("KVXFS: Disk basariyla formatlandi ve hazir.\n");
+            // Format sonrası tekrar init et ki g_inited = 1 olsun
+            kvxfs_init(); 
+        } else {
+            printk("KVXFS: KRITIK HATA! Disk formatlanamadi.\n");
+        }
     }
 
     fs_prepare_user_layout();
