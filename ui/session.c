@@ -4,6 +4,7 @@
 #include <kernel/drivers/video/fb_console.h>
 #include <ui/icons.h>
 #include <ui/ui_init.h>
+#include <kernel/printk.h>
 
 static ui_session_t g_current = UI_SESSION_NONE;
 

@@ -23,9 +23,16 @@ typedef enum {
     USER_LANG_TR = 1
 } user_lang_t;
 
+void user_init(void);
+const char* user_get_current_name(void);
+
 // ✅ "/home/anil/desktop" -> "~/Desktop" gibi dönüştürür
 // out buffer'ına yazar, her zaman null-terminate eder.
 void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t lang);
 
 // ✅ Prompt üretmek için yardımcı (anil@kuvixos:~/Desktop> )
 void user_format_prompt(const char* cwd_abs, char* out, int out_sz, user_lang_t lang);
+
+bool user_authenticate(const char* username, const char* password);
+void user_init(void);
+const char* user_get_current_name(void);

@@ -6,23 +6,42 @@
 #include <kernel/drivers/input/keyboard.h>
 #include <lib/string.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <kernel/user.h>
+#include <kernel/drivers/rtc/rtc.h>
+#include <kernel/power.h>
 
-static char g_username[32] = "root";
+/* Shell Durum Yönetimi */
+typedef enum {
+    STATE_LOGIN,
+    STATE_PASSWORD,
+    STATE_NORMAL
+} shell_state_t;
+
+static shell_state_t g_shell_state = STATE_NORMAL;
+static bool g_auth_required = true; // ✅ Burayı false yaparsan şifre sormaz
+
+static char g_username[32] = "";
 static char g_hostname[32] = "kuvix";
 static char g_cwd[128]     = "/home";
 
-/* line state */
+// Shutdown takibi için hedef zaman değişkenleri
+int g_shutdown_target_hour = -1;
+int g_shutdown_target_min  = -1;
+
+/* Geçici Giriş Tamponları */
+static char g_input_user[32];
+static char g_input_pass[32];
+
 static char g_line[128];
 static int  g_len = 0;
-static int  g_prompt = 0;
 
-void shell_set_username(const char* u) { if (u) { strncpy(g_username,u,sizeof(g_username)-1); g_username[31]=0; } }
-void shell_set_hostname(const char* h) { if (h) { strncpy(g_hostname,h,sizeof(g_hostname)-1); g_hostname[31]=0; } }
-void shell_set_cwd(const char* p)      { if (p) { strncpy(g_cwd,p,sizeof(g_cwd)-1); g_cwd[127]=0; } }
+extern char kbd_scancode_to_ascii(uint8_t sc);
 
-// -----------------------------------------
-// Commands routing: Shell output + clear
-// -----------------------------------------
+// ---------------------------------------------------------
+// Komut Çıktı Yönlendirme Fonksiyonları (Eksik olanlar)
+// ---------------------------------------------------------
+
 static void shell_cmd_out(void* u, const char* s) {
     (void)u;
     if (!s) return;
@@ -36,90 +55,144 @@ static void shell_cmd_clear(void* u) {
     fb_console_flush();
 }
 
+// ---------------------------------------------------------
+
 static void shell_print_prompt(void) {
-    fb_console_set_color(0x0000FF00, 0x00000000);
+    fb_console_set_color(0x0000FF00, 0x00000000); // Yeşil
     printk("%s", g_username);
     printk("@%s", g_hostname);
     printk(":%s", g_cwd);
-
-    fb_console_set_color(0x00FFFFFF, 0x00000000);
+    
+    fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz
     printk("$ ");
     fb_console_flush();
 }
 
 void shell_init(void) {
-    printk("KuvixOS Shell V2 Hazir!\n");
-    printk("Komutlar icin 'help' yazabilirsiniz.\n");
-    fb_console_flush();
-
-    // ✅ Shell aktifken commands çıktısı + clear hedefi shell olsun
-    commands_set_output(shell_cmd_out, NULL);
-    commands_set_clear(shell_cmd_clear, NULL);
-
     g_len = 0;
-    g_line[0] = 0;
-    g_prompt = 0;
+    memset(g_line, 0, sizeof(g_line));
+
+    // Varsayılan kullanıcıyı al
+    const char* disk_user = user_get_current_name();
+    strncpy(g_username, (disk_user ? disk_user : "root"), 31);
+
+    if (g_auth_required) {
+        g_shell_state = STATE_LOGIN;
+        fb_console_clear();
+        fb_console_set_color(0x0000FF00, 0x00000000);
+        printk("KuvixOS Login Manager\n");
+        printk("---------------------\n");
+        printk("Username: ");
+    } else {
+        g_shell_state = STATE_NORMAL;
+        shell_print_prompt();
+    }
+    fb_console_flush();
 }
 
-void shell_tick(void) {
-    /* şimdilik boş (cursor blink vs burada olur) */
-}
-
-/* NEW: session -> shell input */
 void shell_handle_scancode(uint16_t ev) {
-    uint8_t sc = (uint8_t)ev;
-
-    /* break ignore */
+    uint8_t sc = (uint8_t)(ev & 0xFF);
     if (sc & 0x80) return;
 
-    if (!g_prompt) {
-        shell_print_prompt();
-        g_prompt = 1;
+    char c = kbd_scancode_to_ascii(sc);
+    
+    /* Fallback (Eğer tabloda yoksa manuel eşleştirme) */
+    if (!c) {
+        if (sc == 0x1E) c = 'a';
+        else if (sc == 0x30) c = 'b';
+        else if (sc == 0x1C) c = '\n';
+        else if (sc == 0x0E) c = '\b';
+        else if (sc == 0x39) c = ' ';
     }
 
-    /* char decode: senin kbd sistemi layout çözüyor */
-    char c = kbd_get_char();
     if (!c) return;
 
-    /* ENTER */
+    /* ENTER TUŞU */
     if (c == '\n' || c == '\r') {
         g_line[g_len] = '\0';
         printk("\n");
-        fb_console_flush();
 
-        if (g_len > 0) {
-            // ✅ komutlar shell’e basacak + clear shell’i temizleyecek
-            commands_set_output(shell_cmd_out, NULL);
-            commands_set_clear(shell_cmd_clear, NULL);
-            // commands_set_cwd(t->cwd);
+        if (g_shell_state == STATE_LOGIN) {
+            strncpy(g_input_user, g_line, 31);
+            g_len = 0;
+            g_shell_state = STATE_PASSWORD;
+            printk("Password: ");
+        } 
+        else if (g_shell_state == STATE_PASSWORD) {
+            strncpy(g_input_pass, g_line, 31);
+            g_len = 0;
 
-            commands_execute(g_line);
-            fb_console_flush();
+            // Şimdilik basit bir kontrol (Bunu user.c'ye bağlayacağız)
+            if (user_authenticate(g_input_user, g_input_pass)) {
+                strncpy(g_username, g_input_user, 31);
+                g_shell_state = STATE_NORMAL;
+                printk("Welcome to KuvixOS, %s!\n\n", g_username);
+                shell_print_prompt();
+            } else {
+                printk("Login incorrect!\n\nUsername: ");
+                g_shell_state = STATE_LOGIN;
+            }
+        } 
+        else {
+            if (g_len > 0) {
+                // Komutların nereye yazacağını ve nasıl temizleneceğini bildiriyoruz
+                commands_set_output(shell_cmd_out, NULL);
+                commands_set_clear(shell_cmd_clear, NULL);
+                
+                commands_execute(g_line);
+            }
+            g_len = 0;
+            shell_print_prompt();
         }
-
-        g_len = 0;
-        g_line[0] = 0;
-        g_prompt = 0;
+        fb_console_flush();
         return;
     }
 
     /* BACKSPACE */
-    if (c == '\b' || (uint8_t)c == 127) {
+    if (c == '\b' || (uint8_t)c == 8 || (uint8_t)c == 127) {
         if (g_len > 0) {
             g_len--;
-            g_line[g_len] = '\0';
             printk("\b \b");
             fb_console_flush();
         }
         return;
     }
 
-    /* normal */
-    uint8_t uc = (uint8_t)c;
-    if (uc >= 32 && g_len < (int)sizeof(g_line) - 1) {
-        g_line[g_len++] = (char)uc;
-        g_line[g_len] = '\0';
-        printk("%c", (unsigned char)uc);
+    /* KARAKTER YAZMA */
+    if ((uint8_t)c >= 32 && g_len < 127) {
+        g_line[g_len++] = c;
+        
+        if (g_shell_state == STATE_PASSWORD) {
+            printk("*"); // Şifreyi gizle
+        } else {
+            printk("%c", c);
+        }
         fb_console_flush();
+    }
+}
+
+void shell_tick(void) {
+    // Eğer bir kapatma planı yapılmışsa (yani -1 değilse)
+    if (g_shutdown_target_min != -1) {
+        rtc_datetime_t now;
+        
+        // RTC'den mevcut saati oku
+        if (rtc_read_datetime(&now)) {
+            // Hedef saat ve dakikaya ulaştık mı?
+            if (now.hour == g_shutdown_target_hour && now.min == g_shutdown_target_min) {
+                
+                // Kullanıcıya son bir mesaj bas
+                fb_console_set_color(0x00FF0000, 0x00000000); // Kırmızı
+                printk("\n\n[!] ZAMAN DOLDU. SISTEM KAPATILIYOR...\n");
+                fb_console_flush();
+                
+                // Sonsuz döngüye girmemesi için hedefi temizle
+                g_shutdown_target_min = -1;
+                g_shutdown_target_hour = -1;
+                
+                // Gerçek kapatma komutu
+                power_shutdown();
+            }
+        }
     }
 }
