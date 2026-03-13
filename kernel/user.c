@@ -4,8 +4,8 @@
 #include <kernel/fs/vfs.h>
 #include <stdbool.h>
 
-static char g_active_username[32] = "guest";
-static char g_active_password[32] = ""; // Diskten okunan şifreyi burada tutacağız
+static char g_active_username[32] = "anil"; // Varsayılan kullanıcı
+static char g_active_password[32] = ""; 
 
 // Küçük yardımcı: prefix match
 static bool starts_with(const char* s, const char* pre) {
@@ -29,66 +29,101 @@ static void str_append(char* out, int out_sz, const char* s) {
 }
 
 // ---------------------------------------------------------
-// ✅ YENİ: Login Doğrulama Fonksiyonu
+// ✅ GÜNCELLENDİ: Satır Satır Kimlik Doğrulama (Linux Mantığı)
 // ---------------------------------------------------------
 bool user_authenticate(const char* username, const char* password) {
-    // Eğer diskten okunan kullanıcı ve şifreyle eşleşiyorsa true dön
-    if (strcmp(username, g_active_username) == 0 && 
-        strcmp(password, g_active_password) == 0) {
+    // 1. Acil Durum / Fallback (Dosya sistemi bozulursa diye)
+    if (strcmp(username, "anil") == 0 && strcmp(password, "123") == 0) {
+        strncpy(g_active_username, "anil", 31);
         return true;
     }
-    
-    // Güvenlik için: anil/123 her zaman çalışsın (acil durum kapısı)
-    if (strcmp(username, "anil") == 0 && strcmp(password, "123") == 0) {
+    if (strcmp(username, "root") == 0 && strcmp(password, "root") == 0) {
+        strncpy(g_active_username, "root", 31);
         return true;
+    }
+
+    // 2. Dosyadan Tarama
+    uint8_t buf[512];
+    uint32_t nread = 0;
+    if (!vfs_read_all("/persist/system/config/users.cfg", buf, 511, &nread)) {
+        return false;
+    }
+    buf[nread] = '\0';
+
+    char* line = (char*)buf;
+    while (line && *line) {
+        // Bir sonraki satırın başlangıcını bul
+        char* next_line = strchr(line, '\n');
+        if (next_line) *next_line = '\0'; // Mevcut satırı geçici olarak sonlandır
+
+        // Satırı ':' işaretine göre böl (user:pass)
+        char* colon = strchr(line, ':');
+        if (colon) {
+            *colon = '\0';
+            char* pass_part = colon + 1;
+
+            // Satır sonu karakterlerini (\r) temizle
+            int p_len = strlen(pass_part);
+            if (p_len > 0 && pass_part[p_len-1] == '\r') pass_part[p_len-1] = '\0';
+
+            // Eşleşme kontrolü
+            if (strcmp(line, username) == 0 && strcmp(pass_part, password) == 0) {
+                strncpy(g_active_username, username, 31);
+                return true;
+            }
+        }
+
+        // Bir sonraki satıra geç
+        if (!next_line) break;
+        line = next_line + 1;
     }
 
     return false;
 }
 
 // ---------------------------------------------------------
-// ✅ GÜNCELLENDİ: user_init artık şifreyi de hafızaya alıyor
+// ✅ GÜNCELLENDİ: users.cfg Temizliği ve Başlatma
 // ---------------------------------------------------------
 void user_init(void) {
-    char buf[64];
-    uint32_t nread = 0;
+    // KRİTİK: users.cfg dosyasındaki karmaşayı temizlemek için 
+    // sistem her açıldığında varsayılanları yazar. 
+    // (İstersen bir kez çalıştırdıktan sonra bu vfs_write_all satırını silebilirsin)
+    const char* default_config = "root:root\nanil:123\nemre:123\n";
+    vfs_write_all("/persist/system/config/users.cfg", (const uint8_t*)default_config, strlen(default_config));
 
-    // "/persist/system/config/users.cfg" dosyasını oku
-    int success = vfs_read_all("/persist/system/config/users.cfg", (uint8_t*)buf, 63, &nread);
-
-    if (success && nread > 0) {
-        buf[nread] = '\0';
-        
-        // "anil:1234" gibi bir içerikten ismi ve şifreyi ayıklayalım
-        char* colon = strchr(buf, ':');
-        if (colon) {
-            *colon = '\0'; // ':' yerine NULL koyarak stringi ikiye bölüyoruz
-            char* pass_part = colon + 1;
-
-            // Sondaki olası \n veya \r karakterlerini temizle
-            for(int i = 0; pass_part[i]; i++) {
-                if(pass_part[i] == '\n' || pass_part[i] == '\r') pass_part[i] = '\0';
-            }
-
-            strncpy(g_active_username, buf, 31);
-            strncpy(g_active_password, pass_part, 31);
-        } else {
-            // Dosyada ':' yoksa sadece kullanıcı adı var kabul et
-            strncpy(g_active_username, buf, 31);
-            strncpy(g_active_password, "", 31); // Şifre boş
-        }
-    } else {
-        // Dosya yoksa varsayılanlar
-        strncpy(g_active_username, "anil", 31);
-        strncpy(g_active_password, "123", 31);
-    }
+    // Başlangıçta anil olarak oturum aç
+    strncpy(g_active_username, "anil", 31);
 }
 
 const char* user_get_current_name(void) {
     return g_active_username;
 }
 
-// Yol formatlama (Aynen kaldı)
+// ---------------------------------------------------------
+// ✅ GÜNCELLENDİ: Prompt Formatlama (Root için '#' işareti)
+// ---------------------------------------------------------
+void user_format_prompt(const char* cwd_abs, char* out, int out_sz, user_lang_t lang) {
+    if (!out || out_sz <= 0) return;
+    out[0] = '\0';
+
+    // Kullanıcı adı ve Host
+    str_append(out, out_sz, g_active_username);
+    str_append(out, out_sz, "@kuvixos:");
+
+    // Yol formatlama (~/Desktop gibi)
+    char pbuf[256];
+    user_format_path(cwd_abs, pbuf, sizeof(pbuf), lang);
+    str_append(out, out_sz, pbuf);
+
+    // ✅ Linux Geleneği: Root ise '#', normal kullanıcı ise '$'
+    if (strcmp(g_active_username, "root") == 0) {
+        str_append(out, out_sz, "# ");
+    } else {
+        str_append(out, out_sz, "$ ");
+    }
+}
+
+// Yol formatlama (Sabit kaldı)
 void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t lang) {
     if (!out || out_sz <= 0) return;
     out[0] = '\0';
@@ -110,17 +145,4 @@ void user_format_path(const char* abs_path, char* out, int out_sz, user_lang_t l
         return;
     }
     str_append(out, out_sz, abs_path);
-}
-
-// Prompt formatlama (Aynen kaldı)
-void user_format_prompt(const char* cwd_abs, char* out, int out_sz, user_lang_t lang) {
-    if (!out || out_sz <= 0) return;
-    out[0] = '\0';
-    str_append(out, out_sz, g_active_username);
-    str_append(out, out_sz, "@");
-    str_append(out, out_sz, "kuvix"); // HOST yerine doğrudan yazdım
-    str_append(out, out_sz, ":");
-    char pbuf[256];
-    user_format_path(cwd_abs, pbuf, sizeof(pbuf), lang);
-    str_append(out, out_sz, pbuf);
 }

@@ -58,7 +58,12 @@ static void shell_cmd_clear(void* u) {
 // ---------------------------------------------------------
 
 static void shell_print_prompt(void) {
+    // ✅ Eğer login ekranındaysak prompt basılmasın
+    if (g_shell_state == STATE_LOGIN || g_shell_state == STATE_PASSWORD) return;
+
     fb_console_set_color(0x0000FF00, 0x00000000); // Yeşil
+    
+    // user.c'deki yeni formatı kullanmak daha iyi olur ama senin mevcut yapın:
     printk("%s", g_username);
     printk("@%s", g_hostname);
     printk(":%s", g_cwd);
@@ -122,7 +127,6 @@ void shell_handle_scancode(uint16_t ev) {
             strncpy(g_input_pass, g_line, 31);
             g_len = 0;
 
-            // Şimdilik basit bir kontrol (Bunu user.c'ye bağlayacağız)
             if (user_authenticate(g_input_user, g_input_pass)) {
                 strncpy(g_username, g_input_user, 31);
                 g_shell_state = STATE_NORMAL;
@@ -135,13 +139,22 @@ void shell_handle_scancode(uint16_t ev) {
         } 
         else {
             if (g_len > 0) {
-                // Komutların nereye yazacağını ve nasıl temizleneceğini bildiriyoruz
                 commands_set_output(shell_cmd_out, NULL);
                 commands_set_clear(shell_cmd_clear, NULL);
                 
                 commands_execute(g_line);
             }
+            
             g_len = 0;
+
+            // ✅ KRİTİK DEĞİŞİKLİK BURADA:
+            // Eğer komut (logout) shell durumunu STATE_LOGIN yaptıysa, 
+            // prompt basma ve direkt çık!
+            if (g_shell_state == STATE_LOGIN) {
+                fb_console_flush();
+                return; 
+            }
+
             shell_print_prompt();
         }
         fb_console_flush();
@@ -195,4 +208,14 @@ void shell_tick(void) {
             }
         }
     }
+}
+
+void shell_logout(void) {
+    g_shell_state = STATE_LOGIN;
+    fb_console_clear();
+    fb_console_set_color(0x0000FF00, 0x00000000); // Yeşil
+    printk("KuvixOS Login Manager (Oturum Kapatildi)\n");
+    printk("---------------------\n");
+    printk("Username: ");
+    fb_console_flush();
 }
