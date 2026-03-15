@@ -1,5 +1,6 @@
 // kernel/ui/context_menu.c
 #include <ui/context_menu.h>
+#include <ui/desktop.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
 #include <lib/string.h>
@@ -214,24 +215,30 @@ context_menu_t* context_menu_add_submenu_to(context_menu_t* menu, const char* te
 }
 
 void context_menu_show(int x, int y) {
+    // 1. ESKİ MENÜYÜ TEMİZLE: Eğer menü zaten açıksa, eski yerini damage işaretle
+    if (g_root.visible) {
+        desktop_damage_rect(g_root.x, g_root.y, g_root.w, g_root.h);
+    }
+
     g_root.visible = true;
     g_root.hover = -1;
     menu_close_child(&g_root);
 
-#if CONTEXT_MENU_TEST_RECT
-    // TEST: sadece sabit boyutlu beyaz kutu
-    g_root.count = 0;   // item çizilmeyecek
-    g_root.w = TEST_W;
-    g_root.h = TEST_H;
-    menu_place_root_raw(&g_root, x, y);   // ✅ ölçmeden clamp
-#else
+    // 2. YENİ KONUMU BELİRLE VE ÖLÇ (Test modunu kapatman şart!)
     menu_place_root_measured(&g_root, x, y);
-#endif
+
+    // 3. YENİ MENÜYÜ ÇİZDİR: Yeni konumu damage işaretle ve redraw iste
+    desktop_damage_rect(g_root.x, g_root.y, g_root.w, g_root.h);
+    desktop_request_redraw();
 }
 
 void context_menu_hide(void) {
-    menu_close_child(&g_root);
-    g_root.visible = false;
+    if (g_root.visible) {
+        g_root.visible = false;
+        // Kapandığı yeri temizlemesi için damage bildir
+        desktop_damage_rect(g_root.x, g_root.y, g_root.w, g_root.h);
+        desktop_request_redraw();
+    }
 }
 
 bool context_menu_is_visible(void) {

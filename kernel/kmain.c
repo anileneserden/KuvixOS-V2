@@ -15,6 +15,8 @@
 #include <kernel/drivers/input/keyboard.h>
 #include <kernel/drivers/input/mouse_ps2.h>
 
+#include <kernel/drivers/net/net.h>
+
 #include <kernel/time.h>
 
 #include <kernel/memory/kmalloc.h>
@@ -23,7 +25,7 @@
 
 #include <kernel/fs/fs_init.h>
 
-#include <ui/inputtest.h>
+#include <kernel/system/seed_files.h>
 
 #include <ui/theme.h>
 
@@ -102,6 +104,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     kbd_init();
     ps2_mouse_init();
 
+    net_init();
+
     timer_init(1000);
     time_set_tz_offset_sec(3 * 3600);
     time_init_from_rtc();
@@ -109,6 +113,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     asm volatile("sti");
 
     fs_init_once();
+    seed_files_run();
 
     ui_theme_bootstrap_default();
 

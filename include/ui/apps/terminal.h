@@ -25,4 +25,8 @@ typedef struct {
     char cwd[128];
     user_lang_t lang;
     int suppress_next_prompt;
+
+    int is_running_cmd;
+    int progress_val;
+    int progress_msg[64];
 } terminal_t;

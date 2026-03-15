@@ -28,6 +28,14 @@ typedef struct {
     int scroll_y;
 
     int cx, cy, cw, ch;
+
+    // network loaded content cache
+    int   net_loaded;
+    int   net_is_text;
+    char  net_url[KBROWSER_URL_MAX];
+    char* net_buf;
+    int   net_len;
+    char  net_err[64];
 } kuvix_browser_t;
 
 // vtbl dışarıya

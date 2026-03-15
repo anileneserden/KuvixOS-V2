@@ -66,19 +66,18 @@ extern uint32_t g_ticks_ms;
 
 static inline void present_rect_safe(int x, int y, int w, int h) {
     if (w <= 0 || h <= 0) return;
-
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-
+    
     int W = (int)fb_get_width();
     int H = (int)fb_get_height();
 
+    // Sınır kontrolleri
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
     if (x >= W || y >= H) return;
     if (x + w > W) w = W - x;
     if (y + h > H) h = H - y;
 
     if (w <= 0 || h <= 0) return;
-
     fb_present_rect(x, y, w, h);
 }
 
@@ -339,6 +338,20 @@ static inline void cursor_overlay_step(int x, int y, bool scene_redrawn) {
 static inline void cursor_overlay_reset(void) {
     s_cur_prev_x = -1;
     s_cur_prev_y = -1;
+}
+
+static void desktop_draw_selection_rect(void) {
+    if (!is_selecting) return;
+
+    int rx = min(sel_start_x, mouse_x);
+    int ry = min(sel_start_y, mouse_y);
+    int rw = abs(mouse_x - sel_start_x) + 1;
+    int rh = abs(mouse_y - sel_start_y) + 1;
+
+    // Şeffaf mavi dolgu
+    gfx_draw_alpha_rect(rw, rh, 0, 85, 170, 150, rx, ry);
+    // İnce kenarlık (isteğe bağlı, daha belirgin yapar)
+    gfx_draw_rect(rx, ry, rw, rh, 0x00AAFF);
 }
 
 // ============================================================
@@ -987,484 +1000,205 @@ void ui_desktop_handle_scancode(uint16_t sc)
 }
 
 void ui_desktop_tick(void) {
-    topbar_tick();
+    // 1. Durum Kontrolleri
+    topbar_tick(); 
+    bool topbar_is_dirty = topbar_consume_dirty();
 
-    int dx, dy;
-    int wheel = 0;
+    int dx, dy, wheel = 0; 
     uint8_t btn;
-
-    // --- State tracking (selection + icon hover) ---
-    static bool prev_selecting = false;
-    static int  prev_sel_start_x = 0, prev_sel_start_y = 0;
-    static int  prev_sel_end_x   = 0, prev_sel_end_y   = 0;
-    static int  sel_dirty_old = -1;
-    static int  sel_dirty_new = -1;
-    static bool sel_dirty = false;
+    static bool hover_dirty = false;
+    static int hover_old = -1, hover_new = -1, prev_hover_hit = -2;
+    static int last_mouse_x = 0, last_mouse_y = 0;
 
     bool need_full_present = false;
-    bool had_mouse_event   = false;
+    bool had_mouse_event = false;
 
-    // ---------- Mouse ----------
+    // Mouse verilerini çek
     ps2_mouse_poll();
     btn = g_last_btn;
-
     while (ps2_mouse_pop(&dx, &dy, &wheel, &btn)) {
         had_mouse_event = true;
+        mouse_x += dx; mouse_y += dy;
+        
+        // Ekran sınırları
+        if (mouse_x < 0) mouse_x = 0; if (mouse_y < 0) mouse_y = 0;
+        if (mouse_x > (int)fb_get_width()-1) mouse_x = (int)fb_get_width()-1;
+        if (mouse_y > (int)fb_get_height()-1) mouse_y = (int)fb_get_height()-1;
 
-        mouse_x += dx;
-        mouse_y += dy;
-        g_dbg_last_dx = dx;
-        g_dbg_last_dy = dy;
-
-        if (mouse_x < 0) mouse_x = 0;
-        if (mouse_y < 0) mouse_y = 0;
-        if (mouse_x > (int)(fb_get_width()  - 1)) mouse_x = (int)fb_get_width()  - 1;
-        if (mouse_y > (int)(fb_get_height() - 1)) mouse_y = (int)fb_get_height() - 1;
-
-        // ---- WHEEL ----
         if (wheel != 0) {
             int step = (wheel > 0) ? -1 : 1;
-            g_dbg_wheel_step  = step;
-            g_dbg_wheel_total += step;
-            if (g_dbg_wheel_total >  500) g_dbg_wheel_total =  500;
-            if (g_dbg_wheel_total < -500) g_dbg_wheel_total = -500;
-
             wm_handle_mouse_wheel(mouse_x, mouse_y, step, btn);
-            need_full_present = true;
             desktop_request_redraw();
         }
-
-        // ---- MOVE ----
+        
         if (dx != 0 || dy != 0) {
-            wm_handle_mouse_move(mouse_x, mouse_y);
-
-            // selection sürüyorsa redraw gerekir
-            if (is_selecting && (btn & 1)) {
-                desktop_request_redraw();
+            // ✅ OPTİMİZASYON: Hover kontrolünü burada yapalım ki 
+            // sadece değişim varsa redraw isteyelim.
+            int current_hover = -1;
+            if (wm_find_window_at(mouse_x, mouse_y) == -1 && !context_menu_is_visible()) {
+                current_hover = desktop_icons_get_hit(mouse_x, mouse_y);
             }
-        }
 
-        uint8_t pressed  = btn & ~g_last_btn;
-        uint8_t released = g_last_btn & ~btn;
-
-        // 0) Modal dialoglar
-        if (save_dialog_is_active()) {
-            need_full_present = true;
-            save_dialog_handle_mouse(mouse_x, mouse_y, (pressed & 1));
-            g_last_btn = btn;
-            continue;
-        }
-        if (open_dialog_is_active()) {
-            need_full_present = true;
-            open_dialog_handle_mouse(mouse_x, mouse_y, (pressed & 1));
-            g_last_btn = btn;
-            continue;
-        }
-
-        // 1) Topbar
-        if ((pressed & 1) && mouse_y < 28) {
-            need_full_present = true;
-            topbar_handle_mouse(mouse_x, mouse_y);
-            g_last_btn = btn;
-            continue;
-        }
-
-        // 2) Messagebox
-        messagebox_handle_mouse(mouse_x, mouse_y, (pressed & 1));
-        if (messagebox_is_visible()) {
-            need_full_present = true;
-            g_last_btn = btn;
-            continue;
-        }
-
-        // 3) WM
-        wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
-        if (wm_did_consume_mouse()) {
-            if ((pressed | released) || wm_is_dragging_window()) {
-                need_full_present = true;
+            if (current_hover != prev_hover_hit) {
+                hover_old = prev_hover_hit; 
+                hover_new = current_hover; 
+                hover_dirty = true;
+                prev_hover_hit = current_hover; 
+                g_need_redraw = true; // Sadece hover değişince çizim iste
+                
+                // İkonların olduğu bölgeleri hasarlı işaretle
+                int x, y, w, h;
+                if (desktop_icons_get_rect(hover_old, &x, &y, &w, &h)) desktop_damage_rect(x, y, w, h);
+                if (desktop_icons_get_rect(hover_new, &x, &y, &w, &h)) desktop_damage_rect(x, y, w, h);
             }
-            desktop_request_redraw();
 
-            is_selecting = false;
-            g_lmb_down   = 0;
-            g_dragging   = 0;
-            g_down_hit   = -1;
-
-            g_last_btn = btn;
-            continue;
-        }
-
-        // 4) Desktop alanı (WM capture yoksa)
-        if (!wm_is_any_window_captured()) {
-
-            // Context menu açıkken hover/submenu update
             if (context_menu_is_visible()) {
-                need_full_present = true;
-                desktop_request_redraw();
                 context_menu_handle_mouse(mouse_x, mouse_y, false);
             }
 
-            // Sağ tık: context menu aç
-            if (pressed & 2) {
-                need_full_present = true;
-
-                g_lmb_down = 0;
-                g_dragging = 0;
-                g_down_hit = -1;
-                is_selecting = false;
-
-                int hit = desktop_icons_get_hit(mouse_x, mouse_y);
-                g_ctx_icon_index = hit;
-
-                desktop_icons_deselect_all();
-                desktop_request_redraw();
-                need_full_present = true;
-                if (hit != -1) desktop_icons_select(hit);
-
-                context_menu_reset();
-
-                if (hit != -1) {
-                    context_menu_add_item("Ac", desktop_handle_open);
-                    context_menu_add_item("Ad Degistir", desktop_handle_rename);
-                    context_menu_add_item("Sil", desktop_icons_delete_selected);
-                } else {
-                    context_menu_t* view = context_menu_add_submenu("Gorunum");
-                    context_menu_add_item_to(
-                        view,
-                        ui_get_show_extensions() ? "Dosya uzantilarini gizle" : "Dosya uzantilarini goster",
-                        desktop_toggle_ext
-                    );
-
-                    context_menu_add_item("Yeni Metin Belgesi", desktop_handle_create_file);
-                    context_menu_add_item("Yeni Klasor", desktop_handle_create_folder);
+            wm_handle_mouse_move(mouse_x, mouse_y);
+            
+            if (g_lmb_down) {
+                if (g_down_hit != -1) {
+                    if (!g_dragging && (abs(mouse_x - g_down_x) > 4 || abs(mouse_y - g_down_y) > 4)) {
+                        g_dragging = true;
+                        if (!desktop_icons_is_selected(g_down_hit)) {
+                            desktop_icons_deselect_all();
+                            desktop_icons_select(g_down_hit);
+                        }
+                    }
+                    if (g_dragging) {
+                        desktop_icons_move_selected(mouse_x - last_mouse_x, mouse_y - last_mouse_y);
+                        g_need_redraw = true;
+                    }
+                } else if (is_selecting) {
+                    desktop_damage_rect(min(sel_start_x, mouse_x) - 2, min(sel_start_y, mouse_y) - 2, 
+                                        abs(mouse_x - sel_start_x) + 4, abs(mouse_y - sel_start_y) + 4);
+                    desktop_icons_select_in_rect(sel_start_x, sel_start_y, mouse_x, mouse_y);
+                    g_need_redraw = true;
                 }
+            }        
+        }
 
-                context_menu_show(mouse_x, mouse_y);
+        uint8_t pressed = btn & ~g_last_btn;
+        uint8_t released = g_last_btn & ~btn;
 
+        // Context Menu Click
+        if (context_menu_is_visible()) {
+            if (pressed & 1 || pressed & 2) {
+                context_menu_handle_mouse(mouse_x, mouse_y, true);
+                if (!context_menu_is_visible()) need_full_present = true;
                 g_last_btn = btn;
+                last_mouse_x = mouse_x; last_mouse_y = mouse_y;
                 continue;
-            }
-
-            // Menü açıkken sol tık menüye gider
-            if (context_menu_is_visible()) {
-                if (pressed & 1) {
-                    need_full_present = true;
-                    context_menu_handle_mouse(mouse_x, mouse_y, true);
-                    g_last_btn = btn;
-                    continue;
-                }
-                g_last_btn = btn;
-                continue;
-            }
-
-            // ------------------------------------------------------------
-            // Menü kapalı: normal desktop input
-            // ------------------------------------------------------------
-            // Sol tık pressed
-            if (pressed & 1) {
-                // Click event -> en az 1 frame redraw iste
-                bool selection_changed = false;
-
-                int hit = desktop_icons_get_hit(mouse_x, mouse_y);
-
-                g_lmb_down = 1;
-                g_dragging = 0;
-                g_down_x   = mouse_x;
-                g_down_y   = mouse_y;
-                g_down_hit = hit;
-
-                bool ctrl = kbd_is_ctrl_pressed();   // ✅ CTRL kontrolü
-
-                if (hit != -1) {
-                    if (!ctrl) {
-                        // ✅ CTRL yoksa: tek seçime zorla (eski seçimi düşür)
-                        // (zaten seçiliyse bile redraw zararsız)
-                        desktop_icons_deselect_all();
-                        desktop_icons_select(hit);
-                        selection_changed = true;
-                    } else {
-                        // ✅ CTRL varsa: toggle
-                        desktop_icons_toggle_select(hit);
-                        selection_changed = true; // ✅ EKSİK OLAN BUYDU
-                    }
-
-                    // double click (CTRL yokken)
-                    uint32_t now = g_ticks_ms;
-                    if (!ctrl && g_last_click_hit == hit && (now - g_last_click_ms) < DBLCLICK_MS) {
-                        desktop_icons_process_click(hit);
-
-                        desktop_icons_deselect_all();
-                        selection_changed = true;
-
-                        desktop_invalidate_full(); // app açıldı vs -> full
-                        g_last_click_hit = -1;
-                        g_last_click_ms  = 0;
-                        g_lmb_down       = 0;
-                        g_dragging       = 0;
-                        g_down_hit       = -1;
-
-                        // ✅ redraw
-                        desktop_request_redraw();
-                        need_full_present = true;
-
-                        g_last_btn = btn;
-                        continue;
-                    } else {
-                        g_last_click_hit = hit;
-                        g_last_click_ms  = now;
-                    }
-
-                    is_selecting = false;
-
-                } else {
-                    // Boş alana tık
-                    if (!ctrl) {
-                        desktop_icons_deselect_all();
-                        selection_changed = true;
-                    }
-
-                    is_selecting = true;
-                    sel_start_x  = mouse_x;
-                    sel_start_y  = mouse_y;
-
-                    g_last_click_hit = -1;
-                    g_last_click_ms  = 0;
-                }
-
-                if (selection_changed) {
-                    desktop_request_redraw();
-                    need_full_present = true; // şimdilik garanti; sonra istersen dirty rect'e düşürürüz
-                } else {
-                    // selection değişmediyse ama selection rect başlıyorsa yine redraw gerekli
-                    if (is_selecting) {
-                        desktop_request_redraw();
-                        need_full_present = true;
-                    }
-                }
-}
-
-            // Sol tık basılı: drag threshold
-            if (btn & 1) {
-                if (g_lmb_down && g_down_hit != -1 && !g_dragging) {
-                    int ddx = mouse_x - g_down_x;
-                    int ddy = mouse_y - g_down_y;
-                    if ((ddx * ddx + ddy * ddy) >= (DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX)) {
-                        need_full_present = true;
-                        g_dragging = 1;
-                        desktop_icons_set_dragging(g_down_hit, true, mouse_x, mouse_y);
-                        is_selecting = false;
-                    }
-                }
-                if (g_dragging) {
-                    need_full_present = true;
-                    desktop_icons_move_dragging(mouse_x, mouse_y);
-                }
-            }
-
-            // Sol tık release
-            if (released & 1) {
-
-                bool selection_was_active = is_selecting;
-
-                g_lmb_down = 0;
-
-                if (g_dragging) {
-                    g_dragging = 0;
-                    g_down_hit = -1;
-                    desktop_icons_stop_dragging_all();
-                    desktop_icons_snap_all();
-
-                    // Drag bitti -> redraw şart
-                    desktop_request_redraw();
-
-                    g_last_btn = btn;
-                    continue;
-                }
-
-                if (is_selecting) {
-                    desktop_icons_select_in_rect(
-                        sel_start_x, sel_start_y,
-                        mouse_x, mouse_y
-                    );
-                }
-
-                is_selecting = false;
-
-                desktop_icons_stop_dragging_all();
-                desktop_icons_snap_all();
-                g_down_hit = -1;
-
-                // ✅ Eğer selection vardıysa kaldırmak için redraw zorla
-                if (selection_was_active) {
-                    desktop_request_redraw();
-                    // full present şart değil
-                    // çünkü sahne yeniden çizilecek
-                }
             }
         }
 
+        // Tıklama olayları redraw tetikler
+        if (pressed & 1 || pressed & 2 || released & 1) g_need_redraw = true;
+
+        if (pressed & 1) {
+            int hit = desktop_icons_get_hit(mouse_x, mouse_y);
+            g_lmb_down = 1; g_down_x = mouse_x; g_down_y = mouse_y; g_down_hit = hit;
+            if (hit != -1) {
+                if (!desktop_icons_is_selected(hit)) {
+                    if (!kbd_is_ctrl_pressed()) desktop_icons_deselect_all();
+                    desktop_icons_select(hit);
+                }
+                is_selecting = false; 
+            } else {
+                if (!kbd_is_ctrl_pressed()) desktop_icons_deselect_all();
+                is_selecting = true;
+                sel_start_x = mouse_x; sel_start_y = mouse_y;
+            }
+        }
+
+        if (released & 1) {
+            if (g_dragging) {
+                g_dragging = false;
+                desktop_icons_snap_all();
+                need_full_present = true;
+            }
+            is_selecting = false;
+            g_lmb_down = 0; g_down_hit = -1;
+        }
+
+        if (pressed & 2) { // Sağ Tık
+            int hit = desktop_icons_get_hit(mouse_x, mouse_y);
+            if (hit != -1 && !desktop_icons_is_selected(hit)) {
+                desktop_icons_deselect_all();
+                desktop_icons_select(hit);
+            }
+            context_menu_reset();
+            if (hit != -1) {
+                g_ctx_icon_index = hit;
+                context_menu_add_item("Ac", ctx_open_default);
+                context_menu_add_item("Ozellikler", NULL);
+            } else {
+                context_menu_add_item("Yeni Metin Belgesi", desktop_handle_create_file);
+                context_menu_add_item("Masaustunu Yenile", desktop_invalidate_full);
+            }
+            context_menu_show(mouse_x, mouse_y);
+        }
+
+        wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
         g_last_btn = btn;
+        last_mouse_x = mouse_x; last_mouse_y = mouse_y;
     }
 
-    static int  prev_hover_hit = -2;
-    static int  hover_old = -1;
-    static int  hover_new = -1;
-    static bool hover_dirty = false;
-
-    int now_hover = -1;
-    int over_win = wm_find_window_at(mouse_x, mouse_y);
-    if (over_win == -1 && !context_menu_is_visible()) {
-        now_hover = desktop_icons_get_hit(mouse_x, mouse_y);
-    }
-
-    if (now_hover != prev_hover_hit) {
-        hover_old = prev_hover_hit;
-        hover_new = now_hover;
-        hover_dirty = true;
-
-        prev_hover_hit = now_hover;
-        desktop_request_redraw();
-    }
-
-    // ---------- Render flags ----------
-    if (g_force_full_present) need_full_present = true;
-    if (g_dbg_overlay)        need_full_present = true;
-    if (memmon_is_visible())  need_full_present = true;
-    if (wm_is_dragging_window()) need_full_present = true;
-    if (appmgr_any_continuous_redraw()) need_full_present = true;
-
-    // ---------- Decide redraw vs cursor-only ----------
-    bool continuous = false;
-    if (wm_is_dragging_window())       continuous = true;
-    if (appmgr_any_continuous_redraw()) continuous = true;
-    if (g_dbg_overlay)                continuous = true;
-    if (memmon_is_visible())          continuous = true;
-
-    if (g_force_full_present) g_need_redraw = true;
-
-    // Sadece mouse hareketi geldiyse, sahneyi çizme: cursor overlay ile güncelle
-    if (!g_need_redraw && !continuous) {
+    // --- RENDER VE SUNUM KARARI ---
+    if (topbar_is_dirty || g_force_full_present) g_need_redraw = true; 
+    
+    if (!g_need_redraw && !appmgr_any_continuous_redraw() && !g_dbg_overlay) {
         if (had_mouse_event) cursor_overlay_step(mouse_x, mouse_y, false);
         return;
     }
 
-    if (!(g_need_redraw || continuous)) {
-        // güvenli: sahne çizilmiyor, cursor da güncellenmiyor
-        return;
-    }
-
-    // bu frame sahne çizilecek
     g_need_redraw = false;
+    bool force_full = g_force_full_present; g_force_full_present = false;
 
-    // g_force_full_present bir kere kullanılıp sıfırlanmalı (yoksa hep full gider)
-    bool force_full = g_force_full_present;
-    g_force_full_present = false;
-
-    // ---------- Render scene ----------
+    // --- ÇİZİM ---
     fb_clear(ui_get_desktop_bg());
     desktop_icons_draw_all();
-    topbar_draw();
-
+    
     if (is_selecting) {
-        int rx = min(sel_start_x, mouse_x);
-        int ry = min(sel_start_y, mouse_y);
-        int rw = abs(mouse_x - sel_start_x) + 1;
-        int rh = abs(mouse_y - sel_start_y) + 1;
-
-        gfx_draw_alpha_rect(
-            rw, rh,
-            0, 85, 170, 150,
-            rx, ry
-        );
+        int rx = min(sel_start_x, mouse_x); int ry = min(sel_start_y, mouse_y);
+        int rw = abs(mouse_x - sel_start_x) + 1; int rh = abs(mouse_y - sel_start_y) + 1;
+        gfx_draw_alpha_rect(rw, rh, 0, 85, 170, 150, rx, ry);
+        gfx_draw_rect(rx, ry, rw, rh, 0x00AAFF);
     }
-
+    
+    topbar_draw();
     wm_draw();
-    save_dialog_draw();
-    open_dialog_draw();
+    save_dialog_draw(); open_dialog_draw(); 
     context_menu_draw();
-    messagebox_draw();
-    notification_draw();
-    memmon_draw((int)fb_get_width(), (int)fb_get_height());
-    dbg_draw_panel();
-
-    // sahne çizildi -> cursor'u backbuffer'a bas (under-save ile)
+    messagebox_draw(); notification_draw(); dbg_draw_panel();
+    
     cursor_overlay_step(mouse_x, mouse_y, true);
 
-    // ---------- Present ----------
-    if (force_full) need_full_present = true;
-
-    if (need_full_present) {
-        if (g_dbg_visualize_dirty) {
-            gfx_draw_rect(0, 0, fb_get_width(), fb_get_height(), 0x00FF0000);
-        }
-        fb_present();
+    // ✅ AKILLI PRESENT (DARBOĞAZI ÖNLER)
+    if (force_full || need_full_present || context_menu_is_visible() || is_selecting || g_dragging) {
+        fb_present(); // Bu durumlarda full screen redraw kaçınılmaz
     } else {
-        // 0) WM damage rect (close/minimize/move/resize/maximize)
-        // Scene bu frame yeniden çizildi -> sadece bozulmuş alanı ekrana bas.
-        int dx0=0, dy0=0, dw0=0, dh0=0;
+        // Sadece hasar gören ikonlar ve seçim alanı
+        int dx0, dy0, dw0, dh0;
         if (desktop_consume_damage_rect(&dx0, &dy0, &dw0, &dh0)) {
-            const int PAD = 8; // border/shadow için biraz pay
-            present_rect_safe(dx0 - PAD, dy0 - PAD, dw0 + PAD*2, dh0 + PAD*2);
+            present_rect_safe(dx0, dy0, dw0, dh0);
         }
-
-        // 2) Selection dirty rect (eski + yeni)
-        if (prev_selecting || is_selecting) {
-            int ax0 = prev_sel_start_x, ay0 = prev_sel_start_y;
-            int ax1 = prev_sel_end_x,   ay1 = prev_sel_end_y;
-
-            int bx0 = sel_start_x,      by0 = sel_start_y;
-            int bx1 = mouse_x,          by1 = mouse_y;
-
-            int a_x = (ax0 < ax1) ? ax0 : ax1;
-            int a_y = (ay0 < ay1) ? ay0 : ay1;
-            int a_w = (ax0 < ax1) ? (ax1 - ax0) : (ax0 - ax1);
-            int a_h = (ay0 < ay1) ? (ay1 - ay0) : (ay0 - ay1);
-
-            int b_x = (bx0 < bx1) ? bx0 : bx1;
-            int b_y = (by0 < by1) ? by0 : by1;
-            int b_w = (bx0 < bx1) ? (bx1 - bx0) : (bx0 - bx1);
-            int b_h = (by0 < by1) ? (by1 - by0) : (by0 - by1);
-
-            // ✅ son pikseli de kapsa
-            a_w += 1; a_h += 1;
-            b_w += 1; b_h += 1;
-
-            const int SEL_PAD = 10;
-            if (g_dbg_visualize_dirty) {
-                gfx_draw_rect(a_x - SEL_PAD, a_y - SEL_PAD, a_w + SEL_PAD * 2, a_h + SEL_PAD * 2, 0x000000FF); // Mavi
-                gfx_draw_rect(b_x - SEL_PAD, b_y - SEL_PAD, b_w + SEL_PAD * 2, b_h + SEL_PAD * 2, 0x000000FF);
-            }
-            present_rect_safe(a_x - SEL_PAD, a_y - SEL_PAD, a_w + SEL_PAD * 2, a_h + SEL_PAD * 2);
-            present_rect_safe(b_x - SEL_PAD, b_y - SEL_PAD, b_w + SEL_PAD * 2, b_h + SEL_PAD * 2);
-        }
-
-        // 3) Hover dirty rect (selection olsa da olmasa da çalışmalı!)
+        
+        // Hover geçişlerini anında bas
         if (hover_dirty) {
             int x, y, w, h;
-            const int HOV_PAD = 4;
-            if (desktop_icons_get_rect(hover_old, &x, &y, &w, &h)) {
-                if (g_dbg_visualize_dirty) gfx_draw_rect(x-HOV_PAD, y-HOV_PAD, w+HOV_PAD*2, h+HOV_PAD*2, 0x00FFFF00); // Sarı (Eski)
-                present_rect_safe(x - HOV_PAD, y - HOV_PAD, w + HOV_PAD * 2, h + HOV_PAD * 2);
-            }
-            if (desktop_icons_get_rect(hover_new, &x, &y, &w, &h)) {
-                if (g_dbg_visualize_dirty) gfx_draw_rect(x-HOV_PAD, y-HOV_PAD, w+HOV_PAD*2, h+HOV_PAD*2, 0x0000FF00); // Yeşil (Yeni)
-                present_rect_safe(x - HOV_PAD, y - HOV_PAD, w + HOV_PAD * 2, h + HOV_PAD * 2);
-            }
+            if (desktop_icons_get_rect(hover_old, &x, &y, &w, &h)) present_rect_safe(x-5, y-5, w+10, h+10);
+            if (desktop_icons_get_rect(hover_new, &x, &y, &w, &h)) present_rect_safe(x-5, y-5, w+10, h+10);
             hover_dirty = false;
         }
-
-        if (topbar_consume_dirty()) {
-            if (g_dbg_visualize_dirty) gfx_draw_rect(0, 0, (int)fb_get_width(), 28, 0x00FF00FF); // Magenta
+        
+        // Saat güncellemesi için sadece topbar'ı bas
+        if (topbar_is_dirty) {
             present_rect_safe(0, 0, (int)fb_get_width(), 28);
         }
     }
-
-    // Save prev selection state
-    prev_selecting   = is_selecting;
-    prev_sel_start_x = sel_start_x;
-    prev_sel_start_y = sel_start_y;
-    prev_sel_end_x   = mouse_x;
-    prev_sel_end_y   = mouse_y;
 }
 
 // ============================================================

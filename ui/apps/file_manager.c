@@ -66,10 +66,11 @@ typedef struct {
 } sidebar_link_t;
 
 static const sidebar_link_t g_sidebar[] = {
-    { "Masaüstü",   USER_DESKTOP_PATH },
-    { "Ana Dizin",  USER_HOME_PATH },
-    { "Sistem",     "/" },
-    { "Çöp Kutusu", USER_TRASH_PATH },
+    { "Masaüstü",      USER_DESKTOP_PATH },
+    { "İndirilenler",  USER_DOWNLOAD_PATH },
+    { "Ana Dizin",     USER_HOME_PATH },
+    { "Sistem",        "/" },
+    { "Çöp Kutusu",    USER_TRASH_PATH },
     { "Çıkartılabilir Disk", "/removable" },
 };
 
@@ -201,6 +202,7 @@ static void fm_refresh(app_t* app) {
     vfs_mkdir("/home");
     vfs_mkdir(USER_HOME_PATH);
     vfs_mkdir(USER_DESKTOP_PATH);
+    vfs_mkdir(USER_DOWNLOAD_PATH);
     vfs_mkdir(USER_TRASH_PATH);
 
     vfs_list(st->cwd, fm_list_cb, st);

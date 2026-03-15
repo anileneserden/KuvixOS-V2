@@ -16,14 +16,13 @@ typedef struct {
     char edit_buffer[32];
 } desktop_icon_t;
 
-
 // Temel Yönetim
 void desktop_icons_init(void);
 void desktop_icons_draw_all(void);
 int  desktop_icons_get_hit(int mx, int my);
 void desktop_icons_process_click(int index);
 void desktop_icons_snap_all(void);
-int desktop_icons_get_count(void);
+int  desktop_icons_get_count(void);
 const char* desktop_icons_get_name(int index);
 
 // Sürükleme
@@ -44,5 +43,9 @@ void desktop_icons_handle_key(uint16_t scancode, char ascii);
 
 const char* desktop_icons_get_path(int index);
 bool desktop_icons_get_rect(int index, int* x, int* y, int* w, int* h);
+
+void desktop_icons_set_pos(int index, int x, int y);
+// ✅ Toplu sürükleme fonksiyonu
+void desktop_icons_move_selected(int dx, int dy);
 
 #endif

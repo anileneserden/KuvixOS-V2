@@ -47,6 +47,9 @@ SRC_C = \
     kernel/drivers/input/keymaps/trq.c \
     kernel/drivers/input/keyboard.c \
     kernel/drivers/input/mouse_ps2.c \
+    kernel/drivers/net/e1000.c \
+    kernel/drivers/net/net.c \
+    kernel/drivers/net/pci.c \
     kernel/drivers/rtc/rtc.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
@@ -64,13 +67,13 @@ SRC_C = \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
+    kernel/system/seed_files.c \
     ui/apps/calculator.c \
     ui/apps/controls_test.c \
     ui/apps/demo.c \
     ui/apps/designer.c \
     ui/apps/demo_font.c \
     ui/apps/file_manager.c \
-    ui/apps/fileman_v2.c \
     ui/apps/grid_demo.c \
     ui/apps/kbi_viewer.c \
     ui/apps/kuvix_browser.c \
@@ -114,6 +117,7 @@ SRC_C = \
     ui/icons/ui_icons.c \
     ui/inputtest.c \
     ui/mouse.c \
+    ui/net_status.c \
     ui/notification.c \
     ui/power_screen.c \
     ui/select.c \
@@ -193,6 +197,7 @@ run: iso
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=disk.img,format=raw,index=0,media=disk \
 		-drive file=disk2.img,format=raw,index=1,media=disk \
+        -device e1000,netdev=n0 -netdev user,id=n0 \
 		-m 256M -serial stdio
 
 clean:

@@ -509,3 +509,42 @@ bool desktop_icons_get_rect(int index, int* x, int* y, int* w, int* h) {
     *h = 72;
     return true;
 }
+
+void desktop_icons_set_pos(int index, int x, int y) {
+    if (index < 0 || index >= icon_count) return;
+    
+    const int W = 72;
+    const int H = 72;
+    
+    // Eski konumu damage işaretle
+    desktop_damage_rect(icons[index].x - 5, icons[index].y - 5, W + 10, H + 10);
+    
+    icons[index].x = x;
+    icons[index].y = y;
+    
+    // Yeni konumu damage işaretle
+    desktop_damage_rect(icons[index].x - 5, icons[index].y - 5, W + 10, H + 10);
+}
+
+void desktop_icons_move_selected(int dx, int dy) {
+    const int W = 72;
+    const int H = 72;
+    const int PAD = 6;
+
+    for (int i = 0; i < icon_count; i++) {
+        // Struct içindeki isim is_selected olduğu için doğrusu budur
+        if (icons[i].is_selected) {
+            // 1. Eski konumu temizle
+            desktop_damage_rect(icons[i].x - PAD, icons[i].y - PAD, W + PAD*2, H + PAD*2);
+            
+            // Koordinatları delta kadar kaydır
+            icons[i].x += dx;
+            icons[i].y += dy;
+            
+            // 2. Yeni konumu çizim listesine ekle
+            desktop_damage_rect(icons[i].x - PAD, icons[i].y - PAD, W + PAD*2, H + PAD*2);
+        }
+    }
+    // Ekranın tazelenmesi gerektiğini bildir
+    desktop_request_redraw();
+}
