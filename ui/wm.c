@@ -20,6 +20,7 @@
 #include <ui/topbar.h>
 
 #define WM_MAX_WINDOWS 20
+#define WM_SHADOW_PADDING 20
 
 typedef struct {
     ui_window_t win;
@@ -264,7 +265,13 @@ void wm_close_window(int win_id) {
     }
 
     ui_window_t* w = &g_wins[win_id].win;
-    desktop_damage_rect(w->x, w->y, w->w, w->h);
+
+    // ✅ GÖLGE PAYI DAHİL TEMİZLİK
+    desktop_damage_rect(w->x - WM_SHADOW_PADDING, 
+                        w->y - WM_SHADOW_PADDING, 
+                        w->w + (WM_SHADOW_PADDING * 2), 
+                        w->h + (WM_SHADOW_PADDING * 2));
+
     appmgr_on_window_closed(win_id);
 
     g_wins[win_id].owner = 0;
@@ -283,8 +290,11 @@ void wm_minimize(int win_id) {
 
     ui_window_t* w = &g_wins[win_id].win;
 
-    // ✅ minimizelenen pencerenin alanı temizlenecek
-    desktop_damage_rect(w->x, w->y, w->w, w->h);
+    // ✅ GÖLGE PAYI DAHİL TEMİZLİK
+    desktop_damage_rect(w->x - WM_SHADOW_PADDING, 
+                        w->y - WM_SHADOW_PADDING, 
+                        w->w + (WM_SHADOW_PADDING * 2), 
+                        w->h + (WM_SHADOW_PADDING * 2));
 
     if (w->state == WIN_MINIMIZED) return;
 
@@ -515,38 +525,53 @@ void wm_handle_mouse(int mx, int my, uint8_t pressed, uint8_t released, uint8_t 
 }
 
 void wm_handle_mouse_move(int mx, int my) {
+    // Ne kadar hareket ettiğimizi hesapla
     int dx = mx - g_mouse_x;
     int dy = my - g_mouse_y;
 
+    // Güncel mouse koordinatlarını kaydet
     g_mouse_x = mx;
     g_mouse_y = my;
 
-    // Dragging window (titlebar drag)
+    // Pencere sürükleme işlemi (titlebar drag)
     if (g_mouse_down && g_drag_idx != -1 && is_alive_id(g_drag_idx)) {
+        // ✅ Performans: Mouse hareket etmediyse boşuna damage rect hesaplama
+        if (dx == 0 && dy == 0) return;
+
         ui_window_t* w = &g_wins[g_drag_idx].win;
 
         if (w->state != WIN_MAXIMIZED) {
+            // ✅ Gölge Payı (Padding): Gölgenin dışarı taşan kısımlarını temizlemek için
+            // Eğer gölgen daha büyükse bu değeri artırabilirsin.
+            int p = 20; 
+
+            // 1. ADIM: Eski alanı (gölge payıyla birlikte) kirli işaretle
+            // Böylece pencerenin eski yerindeki pikseller ve gölgesi temizlenir.
+            desktop_damage_rect(w->x - p, w->y - p, w->w + (p * 2), w->h + (p * 2));
+
+            // 2. ADIM: Koordinatları güncelle
             w->x += dx;
             w->y += dy;
             g_dragging = 1;
+
+            // 3. ADIM: Yeni alanı (gölge payıyla birlikte) kirli işaretle
+            // Pencere ve gölgesi yeni yerinde çizilir.
+            desktop_damage_rect(w->x - p, w->y - p, w->w + (p * 2), w->h + (p * 2));
         }
         return;
     }
 
-    // ✅ Drag yok + mouse basılı değil -> app'e move yollama (hover spam kesilir)
-    if (!g_mouse_down) {
-        return;
-    }
-
-    // Mouse basılıysa (app içi drag/select gibi) app'e move gönder
-    int top = pick_top(mx, my);
-    if (top != -1) {
-        app_t* app = g_wins[top].owner;
-        if (app && app->v && app->v->on_mouse) {
-            ui_rect_t cr = wm_get_client_rect(top);
-            int cx = mx - cr.x;
-            int cy = my - cr.y;
-            app->v->on_mouse(app, cx, cy, 0, 0, g_buttons_state);
+    // Eğer sürükleme yoksa ama mouse basılıysa (app içi işlemler: buton basma, sürükleme vs.)
+    if (g_mouse_down) {
+        int top = pick_top(mx, my);
+        if (top != -1) {
+            app_t* app = g_wins[top].owner;
+            if (app && app->v && app->v->on_mouse) {
+                ui_rect_t cr = wm_get_client_rect(top);
+                int cx = mx - cr.x;
+                int cy = my - cr.y;
+                app->v->on_mouse(app, cx, cy, 0, 0, g_buttons_state);
+            }
         }
     }
 }
@@ -684,4 +709,22 @@ int wm_is_dragging_window(void) {
 
 uint32_t wm_get_ticks(void) {
     return g_ticks_ms;
+}
+
+// Aktif pencereyi kapatmak için yardımcı fonksiyon
+void wm_close_active_window(void) {
+    if (g_active != -1) {
+        wm_request_close(g_active);
+    }
+}
+
+// Koordinatların titlebar'da olup olmadığını kontrol eder
+bool wm_is_titlebar_hit(int win_id, int x, int y) {
+    if (!is_alive_id(win_id)) return false;
+    
+    ui_window_t* w = &g_wins[win_id].win;
+    // Senin wm_get_client_rect fonksiyonunda y offset 24 olarak görünüyor.
+    // Bu yüzden titlebar yüksekliğini 24 kabul ediyoruz.
+    return (x >= w->x && x < (w->x + w->w) &&
+            y >= w->y && y < (w->y + 24));
 }

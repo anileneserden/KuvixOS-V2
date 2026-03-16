@@ -18,6 +18,8 @@
 #include <ui/apps/notepad.h>
 #include <ui/apps/kuvix_browser.h>
 
+#include <ui/window/window.h>
+
 #include <kernel/drivers/ata_pio.h>
 #include <kernel/block/block.h>
 #include <kernel/printk.h>
@@ -124,6 +126,9 @@ static int g_dbg_redraw_reason = 0;
 
 static bool g_dbg_visualize_dirty = false;
 
+static uint32_t last_click_time = 0;
+static int last_hit_index = -1;
+
 void desktop_request_redraw(void) {
     g_need_redraw = true;
 }
@@ -160,7 +165,13 @@ static inline void dmg_union_inplace(int x, int y, int w, int h) {
 }
 
 void desktop_damage_rect(int x, int y, int w, int h) {
+    // 1. Önce alanı hesapla
     dmg_union_inplace(x, y, w, h);
+    
+    // 2. Sisteme "Artık geçerli bir hasarlı alan var, çizim yap" de
+    g_dmg_valid = 1; 
+    
+    // 3. Redraw isteğini tetikle
     desktop_request_redraw();
 }
 
@@ -901,8 +912,18 @@ void ui_desktop_handle_scancode(uint16_t sc)
     // ------------------------------------------------------------
     if (kbd_is_super_pressed() && sc8 == 0x13) {
         app_t* a = appmgr_start_app(7);
-        if (a) wm_set_active_id(a->win_id); // sende bu var
-        desktop_invalidate_full();
+        if (a) {
+            wm_set_active_id(a->win_id);
+            
+            // ✅ Hata buradaydı: window_t yerine ui_window_t kullanmalısın
+            // ✅ wm_get_window_by_id yerine wm_get_window_ptr (veya senin sistemindeki karşılığı) kullanmalısın
+            ui_window_t* win = (ui_window_t*)wm_get_window_ptr(a->win_id);
+            
+            if (win) {
+                desktop_damage_rect(win->x - 10, win->y - 10, win->w + 20, win->h + 20);
+                g_need_redraw = true;
+            }
+        }
         return;
     }
 
@@ -1021,9 +1042,14 @@ void ui_desktop_tick(void) {
         mouse_x += dx; mouse_y += dy;
         
         // Ekran sınırları
-        if (mouse_x < 0) mouse_x = 0; if (mouse_y < 0) mouse_y = 0;
+        if (mouse_x < 0) mouse_x = 0; 
+        if (mouse_y < 0) mouse_y = 0;
         if (mouse_x > (int)fb_get_width()-1) mouse_x = (int)fb_get_width()-1;
         if (mouse_y > (int)fb_get_height()-1) mouse_y = (int)fb_get_height()-1;
+
+        // 1. ADIM: Mouse koordinatlarında bir pencere var mı?
+        int win_id = wm_find_window_at(mouse_x, mouse_y);
+        bool is_over_window = (win_id != -1);
 
         if (wheel != 0) {
             int step = (wheel > 0) ? -1 : 1;
@@ -1032,10 +1058,9 @@ void ui_desktop_tick(void) {
         }
         
         if (dx != 0 || dy != 0) {
-            // ✅ OPTİMİZASYON: Hover kontrolünü burada yapalım ki 
-            // sadece değişim varsa redraw isteyelim.
+            // Hover kontrolü: Sadece pencere üstünde değilsek ikonlara bak
             int current_hover = -1;
-            if (wm_find_window_at(mouse_x, mouse_y) == -1 && !context_menu_is_visible()) {
+            if (!is_over_window && !context_menu_is_visible()) {
                 current_hover = desktop_icons_get_hit(mouse_x, mouse_y);
             }
 
@@ -1044,9 +1069,8 @@ void ui_desktop_tick(void) {
                 hover_new = current_hover; 
                 hover_dirty = true;
                 prev_hover_hit = current_hover; 
-                g_need_redraw = true; // Sadece hover değişince çizim iste
+                g_need_redraw = true;
                 
-                // İkonların olduğu bölgeleri hasarlı işaretle
                 int x, y, w, h;
                 if (desktop_icons_get_rect(hover_old, &x, &y, &w, &h)) desktop_damage_rect(x, y, w, h);
                 if (desktop_icons_get_rect(hover_new, &x, &y, &w, &h)) desktop_damage_rect(x, y, w, h);
@@ -1058,7 +1082,8 @@ void ui_desktop_tick(void) {
 
             wm_handle_mouse_move(mouse_x, mouse_y);
             
-            if (g_lmb_down) {
+            // Sürükleme mantığı (Sadece masaüstü ikonları içinse)
+            if (g_lmb_down && !is_over_window) {
                 if (g_down_hit != -1) {
                     if (!g_dragging && (abs(mouse_x - g_down_x) > 4 || abs(mouse_y - g_down_y) > 4)) {
                         g_dragging = true;
@@ -1083,33 +1108,63 @@ void ui_desktop_tick(void) {
         uint8_t pressed = btn & ~g_last_btn;
         uint8_t released = g_last_btn & ~btn;
 
-        // Context Menu Click
+        // Context Menu Click (En yüksek öncelik)
         if (context_menu_is_visible()) {
             if (pressed & 1 || pressed & 2) {
                 context_menu_handle_mouse(mouse_x, mouse_y, true);
                 if (!context_menu_is_visible()) need_full_present = true;
-                g_last_btn = btn;
-                last_mouse_x = mouse_x; last_mouse_y = mouse_y;
-                continue;
+                goto end_loop; // Olay tüketildi
             }
         }
 
-        // Tıklama olayları redraw tetikler
-        if (pressed & 1 || pressed & 2 || released & 1) g_need_redraw = true;
+        // 2. ADIM: PENCERE ETKİLEŞİMİ (Input Routing)
+        if (is_over_window) {
+            // Eğer bir pencereye tıklandıysa, masaüstü seçimlerini temizle (isteğe bağlı)
+            // desktop_icons_deselect_all(); 
 
+            if (pressed & 2) { // Sağ Tık
+                if (wm_is_titlebar_hit(win_id, mouse_x, mouse_y)) {
+                    context_menu_reset();
+                    // Doğrudan wm_close_active_window kullanabilirsin 
+                    // çünkü win_id zaten az önce bring_to_front ile aktif yapılmış olmalı
+                    context_menu_add_item("Kapat", wm_close_active_window);
+                    context_menu_add_item("Kucult", NULL); // wm_minimize_active_window da ekleyebilirsin
+                    context_menu_show(mouse_x, mouse_y);
+                } else {
+                    // Pencere içine sağ tık -> Pencereye ilet
+                    wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
+                }
+            } else {
+                // Sol tık veya diğerleri -> WM'ye gönder
+                wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
+            }
+            goto end_loop; // Olay pencere tarafından yutuldu, masaüstüne geçme
+        }
+
+        // 3. ADIM: MASAÜSTÜ ETKİLEŞİMİ (Buraya gelindiyse pencereye tıklanmamıştır)
         if (pressed & 1) {
             int hit = desktop_icons_get_hit(mouse_x, mouse_y);
-            g_lmb_down = 1; g_down_x = mouse_x; g_down_y = mouse_y; g_down_hit = hit;
-            if (hit != -1) {
-                if (!desktop_icons_is_selected(hit)) {
-                    if (!kbd_is_ctrl_pressed()) desktop_icons_deselect_all();
-                    desktop_icons_select(hit);
-                }
-                is_selecting = false; 
+            uint32_t current_time = g_ticks_ms;
+
+            if (hit != -1 && hit == last_hit_index && (current_time - last_click_time) < DBLCLICK_MS) {
+                desktop_icons_process_click(hit);
+                g_lmb_down = 0; g_down_hit = -1;
+                last_click_time = 0; last_hit_index = -1;
             } else {
-                if (!kbd_is_ctrl_pressed()) desktop_icons_deselect_all();
-                is_selecting = true;
-                sel_start_x = mouse_x; sel_start_y = mouse_y;
+                g_lmb_down = 1; g_down_x = mouse_x; g_down_y = mouse_y; g_down_hit = hit;
+                last_click_time = current_time; last_hit_index = hit;
+
+                if (hit != -1) {
+                    if (!desktop_icons_is_selected(hit)) {
+                        if (!kbd_is_ctrl_pressed()) desktop_icons_deselect_all();
+                        desktop_icons_select(hit);
+                    }
+                    is_selecting = false; 
+                } else {
+                    if (!kbd_is_ctrl_pressed()) desktop_icons_deselect_all();
+                    is_selecting = true;
+                    sel_start_x = mouse_x; sel_start_y = mouse_y;
+                }
             }
         }
 
@@ -1123,13 +1178,9 @@ void ui_desktop_tick(void) {
             g_lmb_down = 0; g_down_hit = -1;
         }
 
-        if (pressed & 2) { // Sağ Tık
-            int hit = desktop_icons_get_hit(mouse_x, mouse_y);
-            if (hit != -1 && !desktop_icons_is_selected(hit)) {
-                desktop_icons_deselect_all();
-                desktop_icons_select(hit);
-            }
+        if (pressed & 2) { // Masaüstü Sağ Tık
             context_menu_reset();
+            int hit = desktop_icons_get_hit(mouse_x, mouse_y);
             if (hit != -1) {
                 g_ctx_icon_index = hit;
                 context_menu_add_item("Ac", ctx_open_default);
@@ -1141,9 +1192,10 @@ void ui_desktop_tick(void) {
             context_menu_show(mouse_x, mouse_y);
         }
 
-        wm_handle_mouse(mouse_x, mouse_y, pressed, released, btn);
+    end_loop:
         g_last_btn = btn;
         last_mouse_x = mouse_x; last_mouse_y = mouse_y;
+        if (pressed & 1 || pressed & 2 || released & 1) g_need_redraw = true;
     }
 
     // --- RENDER VE SUNUM KARARI ---
@@ -1170,6 +1222,7 @@ void ui_desktop_tick(void) {
     
     topbar_draw();
     wm_draw();
+    if (memmon_is_visible()) memmon_draw(fb_get_width(), fb_get_height());
     save_dialog_draw(); open_dialog_draw(); 
     context_menu_draw();
     messagebox_draw(); notification_draw(); dbg_draw_panel();

@@ -5,7 +5,6 @@
 #include <ui/desktop_icons/text_file.h>
 #include <ui/desktop_icons/generic_file.h>
 #include <ui/desktop_icons/folder_icon.h>
-#include <ui/desktop.h>
 
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
@@ -347,13 +346,50 @@ int desktop_icons_get_hit(int mx, int my) {
 }
 
 void desktop_icons_process_click(int index) {
-    if (index < 0 || index >= icon_count) return;
-    desktop_icon_t* icon = &icons[index];
+    printk("desktop_icons_process_click methodu çağrıldı");
+    
+    // ✅ 1. ADIM: İkon tıklandığı an (veya uygulama açılmadan hemen önce) seçimi sıfırla
+    // Eğer değişken adın farklıysa ona göre güncelle (örn: g_selected_index = -1;)
+    desktop_icons_select(-1);
 
-    printk("[Desktop] open: label=%s path=%s\n", icon->label, icon->vfs_name);
+    const char* path = desktop_icons_get_path(index);
+    if (!path || path[0] == '\0') return;
 
-    // açma mantığı AppManager'da
-    appmgr_open_path(icon->vfs_name);
+    printk("[Kuvix] Tiklanan yol: %s\n", path);
+
+    // .ksf (Kısayol) Dosyası mı?
+    if (ends_with(path, ".ksf")) {
+        uint8_t* buf = NULL;
+        uint32_t sz = 0;
+        
+        if (vfs_read_all_alloc(path, &buf, &sz)) {
+            if (buf) {
+                char* line = strstr((char*)buf, "app_id=");
+                if (line) {
+                    int id = 0;
+                    char* p = line + 7;
+                    while (*p >= '0' && *p <= '9') {
+                        id = id * 10 + (*p - '0');
+                        p++;
+                    }
+                    
+                    printk("[Kuvix] KSF ID belirlendi: %d\n", id);
+                    appmgr_start_app(id);
+                }
+                vfs_free_alloc(buf);
+            }
+        }
+    } 
+    else {
+        if (strcmp(path, "/apps/fileman") == 0) {
+            appmgr_start_app(2);
+        } else {
+            appmgr_open_path(path);
+        }
+    }
+    
+    // ✅ 2. ADIM: Masaüstüne tüm ekranın (veya ikonun olduğu yerin) tazelenmesi gerektiğini söyle
+    desktop_invalidate_full(); // Veya desktop_request_redraw();
 }
 
 void desktop_icons_deselect_all(void) {

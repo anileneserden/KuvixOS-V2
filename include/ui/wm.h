@@ -69,4 +69,7 @@ void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons);
 
 uint32_t wm_get_ticks(void);
 
+void wm_close_active_window(void);
+bool wm_is_titlebar_hit(int win_id, int x, int y);
+
 #endif
