@@ -38,6 +38,25 @@ char* strncpy(char* dest, const char* src, size_t n) {
     return dest;
 }
 
+char* strcat(char* dest, const char* src) {
+    char* ptr = dest;
+
+    // 1. Hedef string'in sonuna (null karakterine) kadar ilerle
+    while (*ptr != '\0') {
+        ptr++;
+    }
+
+    // 2. Kaynak string'i hedefin sonuna kopyala
+    while (*src != '\0') {
+        *ptr++ = *src++;
+    }
+
+    // 3. Yeni string'in sonuna null karakterini koy
+    *ptr = '\0';
+
+    return dest;
+}
+
 void* memset(void* s, int c, size_t n) {
     unsigned char* p = (unsigned char*)s;
     while (n--) *p++ = (unsigned char)c;

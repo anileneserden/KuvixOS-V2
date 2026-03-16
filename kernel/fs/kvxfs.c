@@ -111,10 +111,34 @@ int kvxfs_init(void) {
     return 1;
 }
 
-// KVXFS'i dışarıdan zorla formatlamak için kullanılır
+// KVXFS'i diske fiziksel olarak yazar ve sıfırlar
 int kvxfs_force_format(void) {
-    g_inited = 0; // Dosya içindeki static değişkene buradan erişebiliriz
-    return kvxfs_init();
+    if (!ata_pio_is_ready()) return 0;
+
+    printk("KVXFS: Disk yapilandiriliyor (LBA: %d)...\n", KVX_META_LBA);
+
+    // 1. Bellekteki meta yapısını tamamen sıfırla
+    mem_zero(&g_meta, sizeof(g_meta));
+
+    // 2. Gerekli başlangıç değerlerini ata
+    strncpy(g_meta.magic, KVX_MAGIC, 6);
+    g_meta.file_count = 0;
+    g_meta.next_free_lba = KVX_DATA_LBA;
+
+    // 3. Tablodaki tüm kayıtları temizle
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        g_meta.ent[i].used = 0;
+    }
+
+    // 4. Hazırlanan boş tabloyu diske fiziksel olarak yaz
+    if (!meta_write()) {
+        printk("KVXFS: Format sirasinda diske yazma hatasi!\n");
+        return 0;
+    }
+
+    g_inited = 1;
+    printk("KVXFS: Format tamamlandi.\n");
+    return 1;
 }
 
 int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {

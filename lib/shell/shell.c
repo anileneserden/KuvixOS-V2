@@ -37,17 +37,35 @@ void shell_set_cwd(const char* p) {
     g_cwd[sizeof(g_cwd) - 1] = 0;
 }
 
+const char* shell_get_cwd(void) {
+    return g_cwd;
+}
+
 static void shell_print_prompt(void) {
-    // user: yeşil
-    fb_console_set_color(0x0000FF00, 0x00000000);
-    printk("%s", g_username);
-    printk("@%s", g_hostname);
-    printk(":%s", g_cwd);
+    // 1. Kullanıcı ve Host Kısmı (Yeşil)
+    fb_console_set_color(0x0000FF00, 0x00000000); // Yeşil
+    printk("%s@%s", g_username, g_hostname);
 
-    // $: beyaz
-    fb_console_set_color(0x00FFFFFF, 0x00000000);
+    // 2. Ayraç ve Yol Kontrolü
+    // İki noktayı (:) beyaz yapmak için burada renk değiştiriyoruz
+    fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz
+    printk(":"); 
+
+    // Yolu tekrar yeşil yapmak istersen burada tekrar yeşile dönebilirsin
+    // Ama Fedora stilinde yol da genelde renklidir. 
+    // Eğer yolun da yeşil kalmasını istiyorsan:
+    fb_console_set_color(0x0000FF00, 0x00000000); // Tekrar Yeşil
+
+    if (strcmp(g_cwd, "/home/root") == 0) {
+        printk("~");
+    } else {
+        printk("%s", g_cwd);
+    }
+
+    // 3. Prompt İşareti (Beyaz)
+    fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz
     printk("$ ");
-
+    
     fb_console_flush();
 }
 

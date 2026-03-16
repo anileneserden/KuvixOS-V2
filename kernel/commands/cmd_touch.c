@@ -2,29 +2,36 @@
 #include <kernel/printk.h>
 #include <lib/commands.h>
 #include <lib/string.h>
+#include <lib/shell.h>
 
 void cmd_touch(int argc, char** argv) {
     if (argc < 2) {
-        printk("Kullanım: touch /persist/dosya_adı\n");
+        printk("Kullanim: touch <dosya_adi>\n");
         return;
     }
 
-    const char* path = argv[1];
+    char full_path[128];
+    const char* target = argv[1];
+    const char* cwd = shell_get_cwd();
 
-    // Sadece /persist/ dizinine izin veriyoruz
-    if (strncmp(path, "/persist/", 9) != 0) {
-        printk("Hata: Sadece /persist/ altında dosya oluşturulabilir.\n");
-        return;
-    }
-
-    // Boş bir içerik oluşturuyoruz (0 byte)
-    uint8_t empty_data = 0;
-    
-    // kvxfs_write_all kullanarak diske yazıyoruz
-    if (kvxfs_write_all(path, &empty_data, 0)) {
-        printk("Dosya oluşturuldu: %s\n", path);
+    // Yol birleştirme
+    if (target[0] == '/') {
+        strncpy(full_path, target, sizeof(full_path) - 1);
     } else {
-        printk("Hata: Dosya oluşturulamadı!\n");
+        strcpy(full_path, cwd);
+        if (full_path[strlen(full_path)-1] != '/') strcat(full_path, "/");
+        strcat(full_path, target);
+    }
+
+    // DISK KONTROLÜ (Hatanın kaynağını burada yakalayabiliriz)
+    // kvxfs_is_mounted() gibi bir fonksiyonun varsa burada kontrol et
+    
+    uint8_t dummy = 0;
+    if (kvxfs_write_all(full_path, &dummy, 0)) {
+        printk("Dosya olusturuldu: %s\n", full_path);
+    } else {
+        // Hata zaten KVXFS içindeki printk ile basılıyor
+        printk("Hata: %s olusturulamadi!\n", full_path);
     }
 }
 

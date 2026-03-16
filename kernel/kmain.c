@@ -13,11 +13,14 @@
 
 #include <kernel/drivers/input/keyboard.h>
 
+// Senin dizin yapına göre doğru include yolu
+#include <kernel/fs/fs_init.h> 
+
 #ifdef KUVIX_KBD_DEBUG
 #include <kernel/debug/debug_kbd.h>
 #endif
 
-#include <lib/shell.h>   // shell_init()
+#include <lib/shell.h>
 
 extern void gdt_init(void);
 extern void idt_init(void);
@@ -33,28 +36,36 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
 }
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
+    // 1. Temel CPU ve Donanım İlklendirme
     serial_init();
     gdt_init();
-    idt_init();
+    idt_init(); 
 
+    // 2. Grafik ve Konsol Hazırlığı
     init_framebuffer(magic, mbi);
     gfx_init();
-
     fb_console_init(0x00FFFFFF, 0x00000000);
 
-    // Klavye init (shell_init zaten çağırıyor ama burada da kalabilir)
+    // 3. Dosya Sistemi ve Disk Katmanını Başlat (Kritik)
+    // Bu aşamada g_root dolar ve KVXFS diske bağlanır
+    fb_console_write("Initializing File System & Disk Services...\n");
+    fb_console_flush();
+    
+    fs_init_once(); 
+
+    // 4. Giriş Cihazları
     kbd_init();
 
 #ifdef KUVIX_KBD_DEBUG
-    debug_kbd_run(); // burada takılır
+    debug_kbd_run();
 #else
+    // 5. Shell'i Başlat
     fb_console_write("KuvixOS shell starting...\n");
     fb_console_flush();
 
-    // Shell kendi içinde kbd_poll() yapıyor ve sonsuz döngüde çalışıyor
     shell_init();
 #endif
 
-    // Shell/init dönmezse fallback
+    // Fallback
     while (1) { asm volatile("hlt"); }
 }
