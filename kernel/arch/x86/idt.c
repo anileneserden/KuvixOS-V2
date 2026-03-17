@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <arch/x86/io.h>
 #include <kernel/serial.h>
+#include <ui/notification.h> // notification_show için şart
 
 struct idt_entry {
     uint16_t base_lo;
@@ -20,9 +21,25 @@ static struct idt_ptr idtp;
 
 // Assembly'den gelen köprüler
 extern void timer_handler_asm(void);
-extern void mouse_handler_asm(void); // Bunu dışarıda bildirdik
+extern void mouse_handler_asm(void);
 extern void keyboard_handler_asm(void);
 extern void dummy_handler_asm(void);
+extern void syscall_handler_asm(void); // Assembly'deki yeni fonksiyon
+
+// C Tarafındaki Syscall İşleyicisi
+void handle_syscall(uint32_t eax, uint32_t ebx, uint32_t ecx) {
+    switch(eax) {
+        case 100: // KEF-v3 Notification ID
+            // ebx: Mesajın adresi, ecx: Gösterim süresi
+            notification_show((const char*)ebx, ecx);
+            break;
+            
+        default:
+            // Bilinmeyen syscall durumunda debug mesajı basabilirsin
+            serial_write("[Syscall] Bilinmeyen cagri!\n");
+            break;
+    }
+}
 
 void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
     idt[num].base_lo = base & 0xFFFF;
@@ -50,25 +67,20 @@ void idt_init() {
         idt_set_gate(i, (uint32_t)dummy_handler_asm, 0x08, 0x8E);
     }
 
-    // 4. Donanım Kesmelerini Bağla
-    idt_set_gate(32, (uint32_t)timer_handler_asm, 0x08, 0x8E);    // IRQ0: Timer
-    
-    // BURAYI EKLE: Eğer keyboard_handler_asm tanımlıysa kullan, 
-    // değilse dummy kalsın ama maske ile kapatacağız.
-    idt_set_gate(33, (uint32_t)keyboard_handler_asm, 0x08, 0x8E); // IRQ1: Klavye
-    
-    idt_set_gate(44, (uint32_t)mouse_handler_asm, 0x08, 0x8E);    // IRQ12: Mouse
+    // 4. Donanım Kesmelerini Bağla (IRQ)
+    idt_set_gate(32, (uint32_t)timer_handler_asm, 0x08, 0x8E);    
+    idt_set_gate(33, (uint32_t)keyboard_handler_asm, 0x08, 0x8E); 
+    idt_set_gate(44, (uint32_t)mouse_handler_asm, 0x08, 0x8E);    
 
-    // 5. Kesme Maskelerini Ayarla (En Önemli Kısım!)
-    // 0x00 her şeyi açar. Biz sadece ihtiyacımız olanları açalım:
-    // Master PIC: Bit 0 (Timer), Bit 1 (Klavye), Bit 2 (Slave PIC Cascade - ŞART!)
-    // 11111000 binary = 0xF8 -> Sadece IRQ 0, 1 ve 2 açık
-    outb(0x21, 0xF8); 
+    // 5. Yazılım Kesmesi (Syscall - int 0x80)
+    // 0xEE: Mevcut (1), Ring 3 (11), 32-bit Interrupt Gate (01110)
+    // Bu sayede kullanıcı uygulamaları bu kesmeyi tetikleyebilir.
+    idt_set_gate(0x80, (uint32_t)syscall_handler_asm, 0x08, 0xEE);
 
-    // Slave PIC: Bit 4 (Mouse IRQ12) açık olmalı.
-    // IRQ 12, Slave PIC'in 4. bitidir (12-8=4).
-    // 11101111 binary = 0xEF -> Sadece IRQ 12 açık
-    outb(0xA1, 0xEF); 
+    // 6. Kesme Maskelerini Ayarla
+    outb(0x21, 0xF8); // IRQ 0, 1, 2 açık
+    outb(0xA1, 0xEF); // IRQ 12 açık
 
     asm volatile("lidt %0" : : "m"(idtp));
+    serial_write("[IDT] Kurulum tamamlandi, Syscall aktif.\n");
 }

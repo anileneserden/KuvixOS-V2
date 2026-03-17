@@ -32,21 +32,28 @@ int fs_init_once(void) {
 
     // 2. ATA/IDE Sürücüsünü Başlat
     if (ata_pio_init()) {
-        // 3. Sürücü hazırsa, cihaz nesnesini al ve sisteme "Kök Cihaz" yap
         blockdev_t* dev = ata_pio_get_dev();
         if (dev) {
             block_set_root(dev);
+
+            // ✅ ToyFS'i ISO sürücüsü üzerinden mount et
+            // ATA sürücüsü ISO imajını (CD-ROM) bir block cihazı olarak görür.
+            if (toyfs_mount(dev)) {
+                printk("[ToyFS] ISO imaji basariyla baglandi.\n");
+            } else {
+                printk("[ToyFS] Hata: ISO imaji bulunamadi veya TOYFS1 imzasi gecersiz.\n");
+            }
         }
     }
 
-    // 4. KVXFS'i Başlat
+    // 3. KVXFS'i Başlat (Kalıcı disk için)
     if (kvxfs_init()) {
         printk("KVXFS: Disk sistemi basariyla baglandi.\n");
     } else {
         printk("KVXFS: Kalici disk bulunamadi veya formatli degil.\n");
     }
 
-    // ✅ 5. Kullanıcı dizinlerini hazırla (desktop değil kernel yapacak)
+    // Kullanıcı dizinlerini hazırla
     fs_prepare_user_layout();
 
     return 1;

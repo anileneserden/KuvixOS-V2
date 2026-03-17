@@ -63,6 +63,7 @@ SRC_C = \
     kernel/fs/toyfs.c \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
+    kernel/system/kef_loader.c \
     kernel/system/removable.c \
     ui/apps/calculator.c \
     ui/apps/controls_test.c \
@@ -167,10 +168,28 @@ $(KERNEL): $(OBJS)
 	@mkdir -p $(BUILD)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
+# --- KEF Uygulama Kuralları ---
+
+# 'app' kuralı artık dosyayı direkt ISO klasörüne paketleyecek
+app:
+	@mkdir -p $(BUILD)/user
+	@mkdir -p $(ISO)/boot
+	# 1. Uygulamayı derle (Position Independent Code olmasa da Ttext 0 ile binary alıyoruz)
+	$(CC) $(CFLAGS) -c user/test_app.c -o $(BUILD)/user/test_app.o
+	$(LD) $(LDFLAGS) -Ttext 0x0 $(BUILD)/user/test_app.o -o $(BUILD)/user/test_app.elf
+	objcopy -O binary $(BUILD)/user/test_app.elf $(BUILD)/user/test_app.bin
+	# 2. Python ile KEF formatına paketle ve direkt ISO klasörüne at
+	python3 kef_pack.py $(BUILD)/user/test_app.bin $(ISO)/boot/test_app.kef
+	@echo "[KEF] Uygulama hazır: $(ISO)/boot/test_app.kef"
+
+# --- ISO Kuralı (Güncellenmiş) ---
+
 iso: $(KERNEL)
 	rm -rf $(ISO)
 	mkdir -p $(ISO)/boot/grub
 	cp $(KERNEL) $(ISO)/boot/kernel.elf
+	# ÖNEMLİ: ISO klasörü temizlendikten sonra app kuralını çağırıyoruz
+	$(MAKE) app 
 	@echo 'set timeout=2' >  $(ISO)/boot/grub/grub.cfg
 	@echo 'set default=0' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'insmod vbe' >> $(ISO)/boot/grub/grub.cfg
@@ -197,3 +216,13 @@ run: iso
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)
+
+app:
+	@mkdir -p $(BUILD)/user
+	# 1. Uygulamayı binary olarak derle
+	$(CC) $(CFLAGS) -c user/test_app.c -o $(BUILD)/user/test_app.o
+	$(LD) $(LDFLAGS) -Ttext 0x0 $(BUILD)/user/test_app.o -o $(BUILD)/user/test_app.elf
+	objcopy -O binary $(BUILD)/user/test_app.elf $(BUILD)/user/test_app.bin
+	# 2. Python ile KEF formatına paketle
+	python3 kef_pack.py $(BUILD)/user/test_app.bin $(ISO)/boot/test_app.kef
+	@echo "Uygulama ISO dizinine kopyalandı."
