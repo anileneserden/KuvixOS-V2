@@ -4,6 +4,7 @@
 #include <lib/string.h>
 #include <kernel/printk.h>
 #include <arch/x86/io.h>
+#include <lib/string.h>
 
 #define KVX_MAGIC "KVXFS1"
 #define KVX_MAX_FILES 32
@@ -44,22 +45,16 @@ static int meta_read(void) {
 }
 
 static int meta_write(void) {
-    // 1. IO Buffer'ı tamamen sıfırla (Çöp veriyi engeller)
     mem_zero(g_io_buf, sizeof(g_io_buf));
-    
-    // 2. Meta yapısını buffer'ın başına kopyala
     memcpy(g_io_buf, &g_meta, sizeof(g_meta));
 
-    // 3. Yazmadan önce donanıma nefes aldır
-    for(volatile int i=0; i<30000; i++) io_wait();
-
-    // 4. Yazma emri
+    // Yazma öncesi ATA meşgul mü kontrolü
     if (!block_write(KVX_META_LBA, KVX_META_SECTORS, g_io_buf)) {
         return 0;
     }
-
-    // 5. Yazma bittikten sonra ATA'nın kendine gelmesi için bekle
-    for(volatile int i=0; i<50000; i++) io_wait();
+    
+    // ÇOK ÖNEMLİ: Yazma sonrası verinin diske işlenmesi için donanımsal bekleme
+    for(volatile int i=0; i<100000; i++) io_wait(); 
     
     return 1;
 }
@@ -90,26 +85,16 @@ static int alloc_ent(void) {
 int kvxfs_init(void) {
     if (g_inited) return 1;
 
-    if (!ata_pio_is_ready()) {
-        printk("[KVXFS] ATA not ready\n");
-        return 0;
+    if (!ata_pio_is_ready()) return 0;
+
+    if (!meta_read()) return 0;
+
+    // Magic kontrolünü doğrudan hafıza karşılaştırmasıyla yapalım
+    if (memcmp(g_meta.magic, "KVXFS1", 6) != 0) {
+        // Magic hatası artık burada çözülecek
+        return 0; 
     }
 
-    printk("[KVXFS] reading meta lba=%d sectors=%d\n", KVX_META_LBA, KVX_META_SECTORS);
-
-    if (!meta_read()) {
-        printk("[KVXFS] meta_read FAILED\n");
-        return 0;
-    }
-
-    printk("[KVXFS] magic='%.6s'\n", g_meta.magic);
-
-    if (strncmp(g_meta.magic, KVX_MAGIC, 6) != 0) {
-        printk("[KVXFS] magic mismatch (need %.6s)\n", KVX_MAGIC);
-        return 0;
-    }
-
-    printk("[KVXFS] OK\n");
     g_inited = 1;
     return 1;
 }

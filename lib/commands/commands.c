@@ -51,6 +51,7 @@ void commands_puts(const char* s) {
         fb_present();   // Fiziksel ekran günellemesi
     } else {
         printk("%s", s);
+        
     }
 }
 

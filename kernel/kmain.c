@@ -24,6 +24,8 @@
 #include <ui/session.h>
 
 #include <kernel/fs/fs_init.h>
+#include <kernel/fs/ramfs.h>
+#include <kernel/fs/kvxfs.h> // KVXFS fonksiyonları için eklendi
 
 #include <kernel/system/seed_files.h>
 
@@ -43,19 +45,17 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
     uint32_t addr  = 0;
     uint32_t w     = 0;
     uint32_t h     = 0;
-    uint32_t pitch = 0;   // bytes
-    uint32_t bpp   = 32;
+    uint32_t pitch = 0;   
+    uint32_t bpp __attribute__((unused)) = 32;
 
-    // Multiboot1 magic: 0x2BADB002
     if (magic == 0x2BADB002 && mbi && (mbi->flags & (1 << 12))) {
         addr  = (uint32_t)mbi->framebuffer_addr;
         w     = (uint32_t)mbi->framebuffer_width;
         h     = (uint32_t)mbi->framebuffer_height;
-        pitch = (uint32_t)mbi->framebuffer_pitch; // bytes per line
+        pitch = (uint32_t)mbi->framebuffer_pitch; 
         bpp   = (uint32_t)mbi->framebuffer_bpp;
     }
 
-    // Fallback (QEMU/Bochs gibi)
     if (!addr || !w || !h) {
         addr  = 0xFD000000;
         w     = 1024;
@@ -67,7 +67,6 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
     if (pitch == 0) pitch = w * 4;
 
     printk("MBI flags=0x%x\n", mbi ? mbi->flags : 0);
-
     fb_init(addr, w, h, pitch);
 }
 
@@ -75,16 +74,16 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
 // Kernel entry
 // ------------------------------------------------------------
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
-    printk("MB magic=%x\n", magic);
+    // 1. Temel donanım ve seri port (Logları görmek için en başta olmalı)
     serial_init();
+    printk("MB magic=%x\n", magic);
 
     gdt_init();
     idt_init();
 
+    // 2. Bellek yönetimi (KMALLOC)
     uintptr_t heap_base = align_up((uintptr_t)&_end, 0x1000);
-
-    uint32_t heap_size = 32u * 1024u * 1024u;
-
+    uint32_t heap_size = 32u * 1024u * 1024u; 
     kmalloc_init((void*)heap_base, heap_size);
 
     printk("[KMALLOC] _end=%x heap_base=%x heap_size=%x KB\n",
@@ -92,37 +91,55 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
        (uint32_t)heap_base,
        (uint32_t)(heap_size / 1024));
 
-    // =========================================================
-
+    // 3. Görüntü sürücüleri
     init_framebuffer(magic, mbi);
-
     gfx_init();
     fb_console_init(0x00FFFFFF, 0x00000000);
 
+    // 4. Giriş aygıtları
     kbd_init();
     ps2_mouse_init();
 
+    // 5. Ağ ve Zamanlayıcı
     net_init();
-
     timer_init(1000);
 
-    asm volatile("sti");
+    // 6. Dosya Sistemleri (Kritik Bölüm)
+    ramfs_init();      
+    printk("[FS] RamFS initialized.\n");
     
-    fs_init_once();
-    seed_files_run();
+    fs_init_once();    
 
-    // UI
+    // --- KVXFS AKILLI BAŞLATMA ---
+    // Önce diski okumayı dener, imza yoksa formatlar
+    if (!kvxfs_init()) {
+        printk("[KVXFS] Gecerli imzali disk bulunamadi. Formatlaniyor...\n");
+        if (kvxfs_format()) {
+            printk("[KVXFS] Disk basariyla formatlandi ve kullanima hazir.\n");
+        } else {
+            printk("[KVXFS] HATA: Disk donanimi (ATA) yanit vermiyor!\n");
+        }
+    } else {
+        printk("[KVXFS] Kalici disk basariyla algilandi.\n");
+    }
+
+    seed_files_run();  
+
+    // Interruptları aç
+    asm volatile("sti");
+
+    // 7. Kullanıcı Arayüzü (UI)
     ui_session_init();
-    ui_session_switch(UI_SESSION_DESKTOP);
+    ui_session_switch(UI_SESSION_TTY1);
 
     while (1) {
-        // klavye event dispatch
+        // Klavye olaylarını işle
         uint16_t sc;
         while ((sc = kbd_pop_event()) != 0) {
             ui_session_handle_scancode(sc);
         }
 
-        // frame tick
+        // UI döngüsü
         ui_session_tick();
 
         asm volatile("hlt");
