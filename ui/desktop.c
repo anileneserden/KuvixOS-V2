@@ -49,6 +49,7 @@ extern char kbd_scancode_to_ascii(uint8_t scancode);
 extern void desktop_icons_handle_key(uint16_t scancode, char ascii);
 extern void desktop_icons_begin_edit(int index);
 extern bool desktop_icons_is_any_editing(void);
+extern void appmgr_launch_external_kef(const char* path);
 
 // ticks (double click için)
 extern uint32_t g_ticks_ms;
@@ -796,6 +797,9 @@ void ui_desktop_init(void) {
     // ✅ ilk frame kesin ekrana basılsın
     g_force_full_present = true;
     g_need_redraw = true;
+
+    // Sistemin boot etmesi bittiğinde test amaçlı hello.kef'i başlat:
+    appmgr_launch_external_kef("/home/anil/apps/hello.kef");
 
     // (opsiyonel) diskten kurtarma - burada 1 kere çalışsın
     char disk_buffer[512];

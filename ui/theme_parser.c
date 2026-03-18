@@ -2,11 +2,13 @@
 #include <ui/theme.h>
 #include <stdint.h>
 #include <kernel/drivers/video/fb.h>
+#include <lib/string.h>
 
 typedef enum {
     SEC_NONE,
     SEC_DESKTOP,
     SEC_WINDOW,
+    SEC_WINDOW_BUTTONS,
     SEC_CURSOR,   // ileride istersen kullanırsın
     SEC_TEXTBOX,
     SEC_BUTTON,
@@ -26,36 +28,30 @@ static int hex_val(char c) {
     return -1;
 }
 
-// "#RRGGBB" -> fb_color_t (0xFFRRGGBB)
+// "#RRGGBB" veya "0xRRGGBB" veya "RRGGBB" -> 0x00RRGGBB (sende alpha yok)
 static fb_color_t parse_color(const char* s, const char* end)
 {
-    // Baştaki boşlukları atla
     while (s < end && is_space(*s)) s++;
 
-    if (s < end && *s == '#') s++;
-
-    // En az 6 hex bekliyoruz
-    if (end - s < 6) {
-        // Hata durumunda default beyaz dönebiliriz
-        return fb_rgb(255, 255, 255);
+    // optional prefixes
+    if (s < end && *s == '#') {
+        s++;
+    } else if ((end - s) >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        s += 2;
     }
 
-    int r_hi = hex_val(s[0]);
-    int r_lo = hex_val(s[1]);
-    int g_hi = hex_val(s[2]);
-    int g_lo = hex_val(s[3]);
-    int b_hi = hex_val(s[4]);
-    int b_lo = hex_val(s[5]);
+    if (end - s < 6) return fb_rgb(255,255,255);
 
-    if (r_hi < 0 || r_lo < 0 || g_hi < 0 || g_lo < 0 || b_hi < 0 || b_lo < 0) {
-        return fb_rgb(255, 255, 255);
-    }
+    int r_hi = hex_val(s[0]), r_lo = hex_val(s[1]);
+    int g_hi = hex_val(s[2]), g_lo = hex_val(s[3]);
+    int b_hi = hex_val(s[4]), b_lo = hex_val(s[5]);
+    if (r_hi < 0 || r_lo < 0 || g_hi < 0 || g_lo < 0 || b_hi < 0 || b_lo < 0)
+        return fb_rgb(255,255,255);
 
     uint8_t r = (uint8_t)((r_hi << 4) | r_lo);
     uint8_t g = (uint8_t)((g_hi << 4) | g_lo);
     uint8_t b = (uint8_t)((b_hi << 4) | b_lo);
-
-    return fb_rgb(r, g, b);
+    return fb_rgb(r,g,b);
 }
 
 // Basit integer parse (pozitif, decimal)
@@ -214,6 +210,12 @@ void ui_theme_load_from_kth(const char* text, ui_theme_t* out)
             else if ((nl - line) >= 6 && line[1]=='d' && line[2]=='o' && line[3]=='c' && line[4]=='k' && line[5]==']') {
                 sec = SEC_DOCK;
             }
+            else if ((nl - line) >= 16 && line[1]=='w' && line[2]=='i' && line[3]=='n' &&
+                    line[4]=='d' && line[5]=='o' && line[6]=='w' && line[7]=='_' &&
+                    line[8]=='b' && line[9]=='u' && line[10]=='t' && line[11]=='t' &&
+                    line[12]=='o' && line[13]=='n' && line[14]=='s' && line[15]==']') {
+                sec = SEC_WINDOW_BUTTONS;
+            }
         }
         else {
             // key = value satırı
@@ -241,20 +243,98 @@ void ui_theme_load_from_kth(const char* text, ui_theme_t* out)
                     }
                 }
                 else if (sec == SEC_WINDOW) {
-                    if (line_starts_with(key_start, key_end, "bg", 2)) {
+
+                    // renkler (hem bg hem window_bg kabul)
+                    if (line_starts_with(key_start, key_end, "bg", 2) ||
+                        line_starts_with(key_start, key_end, "window_bg", 9)) {
                         out->window_bg = parse_color(val_start, val_end);
                     }
-                    else if (line_starts_with(key_start, key_end, "border", 6)) {
+                    else if (line_starts_with(key_start, key_end, "border", 6) ||
+                            line_starts_with(key_start, key_end, "window_border", 12)) {
                         out->window_border = parse_color(val_start, val_end);
                     }
-                    else if (line_starts_with(key_start, key_end, "title_bg", 8)) {
+                    else if (line_starts_with(key_start, key_end, "title_bg", 8) ||
+                            line_starts_with(key_start, key_end, "window_title_bg", 15)) {
                         out->window_title_bg = parse_color(val_start, val_end);
                     }
-                    else if (line_starts_with(key_start, key_end, "title_text", 10)) {
+                    else if (line_starts_with(key_start, key_end, "title_text", 10) ||
+                            line_starts_with(key_start, key_end, "window_title_text", 17)) {
                         out->window_title_text = parse_color(val_start, val_end);
                     }
-                    else if (line_starts_with(key_start, key_end, "corner_radius", 13)) {
+                    else if (line_starts_with(key_start, key_end, "window_border_px", 16) ||
+                            line_starts_with(key_start, key_end, "border_px", 9)) {
+                        out->window_border_px = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "window_title_h", 14) ||
+                            line_starts_with(key_start, key_end, "title_h", 7)) {
+                        out->window_title_h = parse_int(val_start, val_end);
+                    }
+                    // int alanlar (hem title_h hem window_title_h kabul)
+                    else if (line_starts_with(key_start, key_end, "border_px", 9) ||
+                            line_starts_with(key_start, key_end, "window_border_px", 16)) {
+                        out->window_border_px = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "title_h", 7) ||
+                            line_starts_with(key_start, key_end, "window_title_h", 14)) {
+                        out->window_title_h = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "title_pad_l", 11) ||
+                            line_starts_with(key_start, key_end, "window_title_pad_l", 18)) {
+                        out->window_title_pad_l = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "title_pad_r", 11) ||
+                            line_starts_with(key_start, key_end, "window_title_pad_r", 18)) {
+                        out->window_title_pad_r = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "corner_radius", 13) ||
+                            line_starts_with(key_start, key_end, "window_corner_radius", 20)) {
                         out->window_corner_radius = parse_int(val_start, val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "title_align", 11) ||
+                            line_starts_with(key_start, key_end, "window_title_align", 18)) {
+                        if (streq_lit(val_start, val_end, "left")) out->window_title_align = UI_ALIGN_LEFT;
+                        else if (streq_lit(val_start, val_end, "center")) out->window_title_align = UI_ALIGN_CENTER;
+                        else if (streq_lit(val_start, val_end, "right")) out->window_title_align = UI_ALIGN_RIGHT;
+                    }
+                }
+                else if (sec == SEC_WINDOW_BUTTONS) {
+                    if (line_starts_with(key_start, key_end, "layout", 6)) {
+                        if (streq_lit(val_start,val_end,"left")) out->window_btn_layout = UI_BTN_LAYOUT_LEFT;
+                        else if (streq_lit(val_start,val_end,"right")) out->window_btn_layout = UI_BTN_LAYOUT_RIGHT;
+                    }
+                    else if (line_starts_with(key_start, key_end, "style", 5)) {
+                        if (streq_lit(val_start,val_end,"classic")) out->window_btn_style = UI_BTN_STYLE_CLASSIC;
+                        else if (streq_lit(val_start,val_end,"traffic")) out->window_btn_style = UI_BTN_STYLE_TRAFFIC;
+                    }
+                    else if (line_starts_with(key_start, key_end, "size", 4)) {
+                        out->window_btn_size = parse_int(val_start,val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "gap", 3)) {
+                        out->window_btn_gap = parse_int(val_start,val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "margin", 6)) {
+                        out->window_btn_margin = parse_int(val_start,val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "pad_left", 8)) {
+                        out->window_btn_pad_left = parse_int(val_start,val_end);
+                    }
+                    else if (line_starts_with(key_start, key_end, "pad_right", 9)) {
+                        out->window_btn_pad_right = parse_int(val_start,val_end);
+                    }
+                    // order=close,max,min
+                    else if (line_starts_with(key_start, key_end, "order", 5)) {
+                        // basit parse: close/max/min sıralamasını 0/1/2 yap
+                        // (istersen daha robust yaparız)
+                        // default:
+                        out->window_btn_order[0] = 0;
+                        out->window_btn_order[1] = 1;
+                        out->window_btn_order[2] = 2;
+
+                        // çok basit: string içinde "min" nerede vs
+                        // burada sen istersen sonra iyileştirirsin
+                        if (strstr(val_start, "min") && strstr(val_start, "max") && strstr(val_start, "close")) {
+                            // TODO: gerçek sıralama parse (şimdilik default kalsın)
+                        }
                     }
                 }
                 else if (sec == SEC_TEXTBOX) {

@@ -20,7 +20,7 @@
 #include <ui/apps/kuvix_browser.h>
 #include <ui/apps/kbi_viewer.h>
 #include <ui/apps/controls_test.h>
-#include <ui/apps/fileman_v2.h>
+#include <ui/apps/kef_host.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -37,9 +37,7 @@ extern const app_vtbl_t scroll_demo_vtbl;
 extern const app_vtbl_t kuvix_store_vtbl;
 extern const app_vtbl_t settings_vtbl;
 extern const app_vtbl_t designer_vtbl;
-extern const app_vtbl_t kuvix_browser_vtbl;
-extern const app_vtbl_t kbi_viewer_vtbl;
-extern const app_vtbl_t controls_test_vtbl;
+extern const app_vtbl_t kef_host_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -68,10 +66,6 @@ static app_definition_t app_registry[] = {
     { 12, "KuvixStore",    &kuvix_store_vtbl,    160, 120, 720, 420, sizeof(kuvix_store_t)    },
     { 13, "Settings",      &settings_vtbl,       170, 120, 640, 420, sizeof(settings_t)       },
     { 14, "Designer",      &designer_vtbl,       170, 120, 640, 420, sizeof(designer_t)       },
-    { 15, "Kuvix Browser", &kuvix_browser_vtbl,  160, 120, 820, 520, sizeof(kuvix_browser_t)  },
-    { 16, "KBI Viewer",    &kbi_viewer_vtbl,     160, 120, 820, 520, sizeof(kbi_viewer_t)     },
-    { 17, "Controls test", &controls_test_vtbl,  160, 120, 820, 520, sizeof(controls_test_t)  },
-    { 18, "Fileman V2",    &fileman_v2_vtbl,     160, 120, 820, 520, sizeof(fileman_v2_t)  },
     { 0,  NULL,                        NULL,       0,   0,   0,   0,                       0  }
 };
 
@@ -287,6 +281,7 @@ app_t* appmgr_open_path(const char* path) {
         }
     }
 
+    /*
     // ✅ HTML -> Browser
     if (ends_with(path, ".html") || ends_with(path, ".htm")) {
         char url[VFS_PATH_MAX + 8];
@@ -304,7 +299,7 @@ app_t* appmgr_open_path(const char* path) {
 
         printk("[AppMgr] Browser start failed\n");
         return NULL;              // ✅ fail
-    }
+    }*/
 
     printk("AppManager: bilinmeyen path: %s\n", path);
     return NULL;
@@ -320,4 +315,45 @@ bool appmgr_any_continuous_redraw(void) {
         if (a->wants_continuous_redraw) return true;
     }
     return false;
+}
+
+void appmgr_launch_external_kef(const char* path) {
+    if (!path) return;
+    
+    int slot = appmgr_find_free_slot();
+    if (slot < 0) {
+        printk("[AppMgr] KEF baslatilamadi, slot dolu!\n");
+        return;
+    }
+
+    // KEF Uygulaması için app_t oluştur
+    app_t* a = (app_t*)kmalloc(sizeof(app_t));
+    if (!a) return;
+    memset(a, 0, sizeof(app_t));
+
+    a->id = 99; // KEF uygulamaları için özel ID
+    a->v = &kef_host_vtbl;
+    a->visible = 1;
+
+    // kef_host_t yapısını oluştur ve dosya yolunu (path) kaydet
+    kef_host_t* host = (kef_host_t*)kmalloc(sizeof(kef_host_t));
+    memset(host, 0, sizeof(kef_host_t));
+    strncpy(host->path, path, sizeof(host->path) - 1);
+    a->user = host;
+
+    // Yeni nesil Window Manager'dan pencere talep et
+    // (Pencere boyutu KEF'in on_create fonksiyonunda güncellenebilir)
+    int win_id = wm_add_window(150, 100, 400, 250, "KEF Uygulamasi", a);
+    a->win_id = win_id;
+
+    // on_create çağrıldığında KEF dosyası okunacak ve butonları otomatik çizecek!
+    if (a->v && a->v->on_create) {
+        a->v->on_create(a);
+    }
+
+    g_apps[slot] = a;
+    wm_set_active(win_id);
+    desktop_invalidate_full();
+
+    printk("[AppMgr] KEF calistirildi: %s (WinID: %d)\n", path, win_id);
 }
