@@ -431,43 +431,38 @@ int vfs_list(const char* dir_prefix,
              int (*cb)(const char* path, uint32_t size, void* u),
              void* u)
 {
-    char resolved[VFS_PATH_MAX];
+    char resolved[128];
 
-    // boş veya NULL → cwd
     if (!dir_prefix || !dir_prefix[0]) {
         strcpy(resolved, vfs_get_cwd());
     } else {
         vfs_resolve_path(dir_prefix, resolved, sizeof(resolved));
     }
 
-    // /removable view
+    // --- KVXFS (/persist) ÖZEL DURUMU ---
+    // "/persist" veya "/persist/" ile başlıyorsa direkt diske sor
+    if (strncmp(resolved, "/persist", 8) == 0) {
+        if (!cb) return 1;
+        return kvxfs_vfs_list(resolved, cb, u);
+    }
+
+    // --- DİĞERLERİ (RAMFS / TOYFS) ---
     if (is_removable_path(resolved)) {
-        char real[VFS_PATH_MAX];
+        char real[128];
         removable_to_toy(resolved, real, sizeof(real));
-
-        // sadece kontrol (var mı)
-        if (!cb) {
-            if (toyfs_iter(real, 0, 0)) return 1;
-            return 0;
-        }
-
+        if (!cb) return toyfs_iter(real, 0, 0);
         rem_wrap_t rw = { cb, u };
         toyfs_iter(real, rem_cb_prefix, &rw);
         return 1;
     }
 
-    // sadece kontrol (cd için)
     if (!cb) {
-        if (ramfs_is_dir(resolved))
-            return 1;
-        if (toyfs_iter(resolved, 0, 0))
-            return 1;
+        if (ramfs_is_dir(resolved) || toyfs_iter(resolved, 0, 0)) return 1;
         return 0;
     }
 
     ramfs_list(resolved, cb, u);
-
-    vfs_list_wrap_t w = { dir_prefix, cb, u };
+    vfs_list_wrap_t w = { resolved, cb, u };
     toyfs_iter(resolved, vfs_toyfs_iter_cb, &w);
 
     return 1;
@@ -523,11 +518,16 @@ int vfs_remove(const char* path) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
+    // Eğer yol /persist ile başlıyorsa KVXFS'i çağır
+    if (strncmp(resolved, "/persist", 8) == 0) {
+        return kvxfs_remove(resolved);
+    }
+
+    // Değilse RamFS kontrolü yap (mevcut kodun)
     if (ramfs_exists(resolved) || ramfs_is_dir(resolved)) {
         return ramfs_remove(resolved);
     }
 
-    // ToyFS read-only
     return 0;
 }
 

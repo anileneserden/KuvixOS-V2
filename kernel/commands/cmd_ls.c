@@ -1,18 +1,39 @@
-#include <kernel/fs/vfs.h>
-#include <kernel/fs/kvxfs.h>
 #include <kernel/printk.h>
+#include <kernel/fs/vfs.h>
 #include <lib/commands.h>
 #include <lib/string.h>
 
-void cmd_ls(int argc, char** argv) {
-    const char* path = (argc > 1) ? argv[1] : "/";
-
-    if (strncmp(path, "/persist", 8) == 0) {
-        kvxfs_list_all(path);
+static int ls_callback(const char* path, uint32_t size, void* u) {
+    (void)u;
+    if (size == 0xFFFFFFFF) {
+        printk("[DIR]  %s\n", path);
     } else {
-        // Standart VFS listeleme (Ramfs için)
-        vfs_list(path, (void*)0, (void*)0);
+        // En basit formatı kullanalım
+        printk("[FILE] %s  (%d byte)\n", path, (int)size);
     }
+    return 1;
 }
 
-REGISTER_COMMAND(ls, cmd_ls, "Dizin içeriğini listeler");
+static void cmd_ls(int argc, char** argv) {
+    char path[128];
+    
+    if (argc > 1) {
+        strcpy(path, argv[1]);
+    } else {
+        // Eğer yol verilmediyse mevcut dizini (CWD) al
+        strcpy(path, vfs_get_cwd());
+    }
+
+    printk("Dizin listeleniyor: %s\n", path);
+    printk("------------------------------------\n");
+
+    // vfs_list_dir yerine vfs_list kullanıyoruz ve callback veriyoruz
+    if (!vfs_list(path, ls_callback, 0)) {
+        printk("Hata: Dizin listelenemedi!\n");
+    }
+    
+    printk("------------------------------------\n");
+}
+
+REGISTER_COMMAND(ls, cmd_ls, "Dizin icerigini listeler.");
+REGISTER_COMMAND(dir, cmd_ls, "Dizin icerigini listeler.");

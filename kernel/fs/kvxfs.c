@@ -160,6 +160,30 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     return meta_write();
 }
 
+int kvxfs_remove(const char* path) {
+    if (!path) return 0;
+    kvxfs_init();
+
+    int idx = find_ent(path);
+    if (idx < 0) {
+        printk("KVXFS: Dosya bulunamadi: %s\n", path);
+        return 0;
+    }
+
+    // Dosyayı sil: used bayrağını kapat ve ismi temizle
+    g_meta.ent[idx].used = 0;
+    mem_zero(g_meta.ent[idx].path, 64);
+    
+    if (g_meta.file_count > 0) g_meta.file_count--;
+
+    // DEĞİŞİKLİĞİ DİSKE YAZ (En kritik kısım)
+    if (meta_write()) {
+        printk("KVXFS: %s diskten silindi.\n", path);
+        return 1;
+    }
+    return 0;
+}
+
 int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size) {
     if (!path || !out || !is_persist_path(path)) return 0;
     kvxfs_init();
@@ -233,4 +257,28 @@ void kvxfs_list_all(const char* filter_path) {
         }
     }
     if (found == 0) printk("(Dizin bos veya dosya bulunamadi)\n");
+}
+
+int kvxfs_vfs_list(const char* filter_path, int (*cb)(const char* name, uint32_t size, void* u), void* u) {
+    if (!cb) return 1;
+    
+    kvxfs_init(); // Meta verinin yüklendiğinden emin ol
+    
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        // Sadece kullanılan slotları tara
+        if (g_meta.ent[i].used) {
+            
+            // Filtreleme: Eğer yol "/persist" içeriyorsa (zaten öyle olmalı)
+            if (strstr(g_meta.ent[i].path, "/persist") != NULL) {
+                
+                // Kendi dizin adını listeleme
+                if (strcmp(g_meta.ent[i].path, filter_path) == 0) continue;
+
+                // Kritik: Callback'e ismi gönderiyoruz
+                // Eğer burada da boş çıkarsa sorun diske yazma aşamasındadır
+                cb(g_meta.ent[i].path, g_meta.ent[i].size, u);
+            }
+        }
+    }
+    return 1;
 }

@@ -90,6 +90,8 @@ int ata_pio_write_disk(ata_disk_t* disk, uint32_t lba, const void* in) {
     uint16_t base = disk->base;
     if (!ata_wait_not_busy(base)) return 0;
 
+    // Drive seçimi ve LBA bitleri (28-bit PIO)
+    // 0xE0 Master, 0xF0 Slave maskesi + LBA'nın en üst 4 biti
     outb(base + ATA_REG_HDDEVSEL,
          (disk->drive == 0xA0 ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F));
 
@@ -99,18 +101,34 @@ int ata_pio_write_disk(ata_disk_t* disk, uint32_t lba, const void* in) {
     outb(base + ATA_REG_LBA2, (uint8_t)(lba >> 16));
     outb(base + ATA_REG_COMMAND, ATA_CMD_WRITE_SECTORS);
 
-    if (!ata_wait_drq(base)) return 0;
+    // Donanımın veri almaya hazır olmasını (DRQ) bekle
+    if (!ata_wait_drq(base)) {
+        printk("[ATA] Yazma hatasi: DRQ beklenirken hata olustu.\n");
+        return 0;
+    }
 
+    // 256 adet 16-bit word (toplam 512 byte) gönderiyoruz
     const uint16_t* src = (const uint16_t*)in;
-    for (int i = 0; i < 256; i++) outw(base + ATA_REG_DATA, src[i]);
+    for (int i = 0; i < 256; i++) {
+        outw(base + ATA_REG_DATA, src[i]);
+        // Donanıma nefes aldırmak için çok kısa mola
+        for(volatile int j=0; j<10; j++) io_wait();
+    }
 
-    // VirtualBox/QEMU için flush
-    outb(base + ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
-
-    // 400ns kuralı: 4 kez status oku
+    // --- ÖNEMLİ DEĞİŞİKLİK ---
+    // CACHE_FLUSH komutunu sildik çünkü veri transferi bitmeden gönderilmemeli.
+    // Bunun yerine diskin "Meşgul" (Busy) bayrağının inmesini bekliyoruz.
+    
+    // 400ns kuralı: Durum portunu 4 kez okuyarak donanımın kendine gelmesini bekle
     for (int i = 0; i < 4; i++) inb(base + ATA_REG_STATUS);
 
-    return ata_wait_not_busy(base);
+    // Yazma işleminin fiziksel olarak bitmesini bekle
+    if (!ata_wait_not_busy(base)) {
+        printk("[ATA] Yazma zaman asimi: Disk meşgul kaldı!\n");
+        return 0;
+    }
+
+    return 1;
 }
 
 /* --- Block Katmanı Arayüzü --- */

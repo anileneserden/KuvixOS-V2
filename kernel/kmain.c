@@ -110,19 +110,15 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     
     fs_init_once();    
 
-    // --- KVXFS AKILLI BAŞLATMA ---
-    // Önce diski okumayı dener, imza yoksa formatlar
-    if (!kvxfs_init()) {
-        printk("[KVXFS] Gecerli imzali disk bulunamadi. Formatlaniyor...\n");
-        if (kvxfs_format()) {
-            printk("[KVXFS] Disk basariyla formatlandi ve kullanima hazir.\n");
-        } else {
-            printk("[KVXFS] HATA: Disk donanimi (ATA) yanit vermiyor!\n");
-        }
-    } else {
+    // ARTIK BURADA MANUEL FORMAT ATMA! 
+    // Sadece durum kontrolü yap:
+    if (kvxfs_init()) {
         printk("[KVXFS] Kalici disk basariyla algilandi.\n");
+    } else {
+        // Burası formatlamak yerine sadece uyarı versin.
+        // Format atmak istersen shell üzerinden bir komutla yaparsın.
+        printk("[KVXFS] UYARI: Kalici disk baglanamadi (Formatli olmayabilir).\n");
     }
-
     seed_files_run();  
 
     // Interruptları aç
