@@ -7,53 +7,148 @@
 #include <ui/wm.h>
 #include <ui/color.h>
 
-static kef_minimal_state_t g_kef;
+kef_widget_t* kef_get_widget_ptr(kef_minimal_state_t* st, const char* id) {
+    if (!st || !id) return 0;
+
+    for (int i = 0; i < st->widget_count; i++) {
+        if (strcmp(st->widgets[i].id, id) == 0) {
+            return &st->widgets[i];
+        }
+    }
+
+    return 0;
+}
+
+void kef_set_text(kef_minimal_state_t* st, const char* id, const char* text) {
+    if (!st || !id || !text) return;
+
+    kef_widget_t* w = kef_get_widget_ptr(st, id);
+    if (!w) return;
+
+    strncpy(w->text, text, sizeof(w->text) - 1);
+    w->text[sizeof(w->text) - 1] = 0;
+
+    wm_invalidate_window(st->window_id);
+}
+
+static int point_in_widget(kef_widget_t* w, int mx, int my) {
+    if (!w) return 0;
+
+    return (mx >= w->x && my >= w->y &&
+            mx < (w->x + w->w) &&
+            my < (w->y + w->h));
+}
+
+static void on_ok_click(kef_widget_t* self) {
+    if (!self || !self->owner) return;
+
+    kef_minimal_state_t* st = self->owner;
+    kef_set_text(st, "titleLabel", "Butona basildi");
+}
+
+static void kef_bind_events(kef_minimal_state_t* st) {
+    if (!st) return;
+
+    kef_widget_t* btn = kef_get_widget_ptr(st, "okButton");
+    if (btn) {
+        btn->on_click = on_ok_click;
+    }
+}
 
 static void kef_minimal_on_create(app_t* self) {
-    memset(&g_kef, 0, sizeof(g_kef));
-    g_kef.window_id = self->win_id;
+    kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
+    if (!st) return;
 
-    if (kef_json_load_file("/apps/hello.json", &g_kef)) {
-        g_kef.loaded = 1;
-        wm_set_title(self->win_id, g_kef.title);
-        printk("[KEFJSON] app loaded ok\n");
+    memset(st, 0, sizeof(*st));
+    st->window_id = self->win_id;
+
+    if (kef_json_load_file("/apps/hello.json", st)) {
+        st->loaded = 1;
+        wm_set_title(self->win_id, st->title);
+        kef_bind_events(st);
+        printk("[KEFJSON] app loaded ok (win=%d)\n", self->win_id);
     } else {
-        g_kef.loaded = 0;
-        strcpy(g_kef.title, "KEF JSON");
-        g_kef.width = 420;
-        g_kef.height = 240;
-        wm_set_title(self->win_id, g_kef.title);
-        printk("[KEFJSON] app load failed\n");
+        st->loaded = 0;
+        strcpy(st->title, "KEF JSON");
+        st->width = 420;
+        st->height = 240;
+        wm_set_title(self->win_id, st->title);
+        printk("[KEFJSON] app load failed (win=%d)\n", self->win_id);
     }
 
     wm_invalidate_window(self->win_id);
 }
 
 static void kef_minimal_on_draw(app_t* self) {
-    (void)self;
+    kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
+    if (!st) return;
 
-    ui_rect_t c = wm_get_client_rect(g_kef.window_id);
+    ui_rect_t c = wm_get_client_rect(st->window_id);
+    gfx_fill_rect(0, 0, c.w, c.h, st->bg_color);
 
-    gfx_fill_rect(0, 0, c.w, c.h, COLOR_WHITE);
-
-    if (!g_kef.loaded) {
+    if (!st->loaded) {
         gfx_draw_text_utf8(12, 12, COLOR_BLACK, "hello.json yuklenemedi");
         return;
     }
 
-    for (int i = 0; i < g_kef.widget_count; i++) {
-        kef_widget_t* w = &g_kef.widgets[i];
+    for (int i = 0; i < st->widget_count; i++) {
+        kef_widget_t* w = &st->widgets[i];
 
-        if (strcmp(w->type, "label") == 0) {
-            gfx_draw_text_utf8(w->x, w->y, COLOR_BLACK, w->text);
+        if (w->type == KEF_WIDGET_LABEL) {
+            gfx_draw_text_utf8(w->x, w->y, w->text_color, w->text);
+        } else if (w->type == KEF_WIDGET_BUTTON) {
+            uint32_t bg = w->pressed ? 0xB0B0B0 : 0xD8D8D8;
+
+            gfx_fill_rect(w->x, w->y, w->w, w->h, bg);
+            gfx_draw_rect(w->x, w->y, w->w, w->h, COLOR_BLACK);
+            gfx_draw_text_utf8(w->x + 8, w->y + 8, w->text_color, w->text);
         }
     }
 }
 
+static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_t rel, uint8_t btn) {
+    (void)btn;
+
+    kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
+    if (!st || !st->loaded) return;
+
+    for (int i = 0; i < st->widget_count; i++) {
+        kef_widget_t* w = &st->widgets[i];
+
+        if (w->type != KEF_WIDGET_BUTTON) continue;
+
+        if (pr & 0x01) {
+            if (point_in_widget(w, mx, my)) {
+                w->pressed = 1;
+                wm_invalidate_window(st->window_id);
+            }
+        }
+
+        if (rel & 0x01) {
+            int was_pressed = w->pressed;
+            w->pressed = 0;
+            wm_invalidate_window(st->window_id);
+
+            if (was_pressed && point_in_widget(w, mx, my)) {
+                if (w->on_click) {
+                    w->on_click(w);
+                }
+            }
+        }
+    }
+}
+
+static void kef_minimal_on_destroy(app_t* self) {
+    kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
+    if (!st) return;
+
+    printk("[KEFJSON] destroy win=%d\n", st->window_id);
+}
+
 const app_vtbl_t g_kef_minimal_vtbl = {
     .on_create = kef_minimal_on_create,
-    .on_destroy = 0,
-    .on_mouse = 0,
+    .on_destroy = kef_minimal_on_destroy,
+    .on_mouse = kef_minimal_on_mouse,
     .on_key = 0,
     .on_update = 0,
     .on_draw = kef_minimal_on_draw,
