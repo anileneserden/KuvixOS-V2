@@ -1,5 +1,6 @@
 #include <ui/apps/kef_minimal_app.h>
 
+#include <kernel/drivers/input/keyboard.h>
 #include <kernel/exec/kef_json.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/printk.h>
@@ -55,6 +56,29 @@ static void kef_bind_events(kef_minimal_state_t* st) {
     }
 }
 
+/*
+ * keyev masaüstünden ham scancode olarak geliyor.
+ * Karakter üretmek için mevcut keyboard layout helper'ını kullanıyoruz.
+ */
+static int keyev_to_char(uint16_t keyev) {
+    uint8_t sc8 = (uint8_t)(keyev & 0xFF);
+
+    /* break code ise karakter üretme */
+    if (sc8 & 0x80) return 0;
+
+    char c = kbd_scancode_to_ascii(sc8);
+    if (!c) return 0;
+
+    return (int)(unsigned char)c;
+}
+
+static int keyev_is_backspace(uint16_t keyev) {
+    uint8_t sc8 = (uint8_t)(keyev & 0xFF);
+
+    /* Set1 backspace make code */
+    return sc8 == 0x0E;
+}
+
 static void kef_minimal_on_create(app_t* self) {
     kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
     if (!st) return;
@@ -96,12 +120,25 @@ static void kef_minimal_on_draw(app_t* self) {
 
         if (w->type == KEF_WIDGET_LABEL) {
             gfx_draw_text_utf8(w->x, w->y, w->text_color, w->text);
-        } else if (w->type == KEF_WIDGET_BUTTON) {
+        }
+        else if (w->type == KEF_WIDGET_BUTTON) {
             uint32_t bg = w->pressed ? 0xB0B0B0 : 0xD8D8D8;
 
             gfx_fill_rect(w->x, w->y, w->w, w->h, bg);
             gfx_draw_rect(w->x, w->y, w->w, w->h, COLOR_BLACK);
             gfx_draw_text_utf8(w->x + 8, w->y + 8, w->text_color, w->text);
+        }
+        else if (w->type == KEF_WIDGET_INPUT) {
+            gfx_fill_rect(w->x, w->y, w->w, w->h, 0xFFFFFF);
+            gfx_draw_rect(w->x, w->y, w->w, w->h, w->focused ? 0x00A2FF : COLOR_BLACK);
+
+            if (w->value[0]) {
+                /* input buffer tek-byte KVX charset */
+                gfx_draw_text(w->x + 4, w->y + 6, w->text_color, w->value);
+            } else {
+                /* placeholder JSON'dan geliyor, UTF-8 */
+                gfx_draw_text_utf8(w->x + 4, w->y + 6, 0x888888, w->placeholder);
+            }
         }
     }
 }
@@ -111,6 +148,26 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
 
     kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
     if (!st || !st->loaded) return;
+
+    if (pr & 0x01) {
+        /* önce tüm input focuslarını kapat */
+        for (int i = 0; i < st->widget_count; i++) {
+            kef_widget_t* w = &st->widgets[i];
+            if (w->type == KEF_WIDGET_INPUT) {
+                w->focused = 0;
+            }
+        }
+
+        /* tıklanan input varsa focus ver */
+        for (int i = 0; i < st->widget_count; i++) {
+            kef_widget_t* w = &st->widgets[i];
+
+            if (w->type == KEF_WIDGET_INPUT && point_in_widget(w, mx, my)) {
+                w->focused = 1;
+                wm_invalidate_window(st->window_id);
+            }
+        }
+    }
 
     for (int i = 0; i < st->widget_count; i++) {
         kef_widget_t* w = &st->widgets[i];
@@ -138,6 +195,39 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
     }
 }
 
+static void kef_minimal_on_key(app_t* self, uint16_t keyev) {
+    kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
+    if (!st || !st->loaded) return;
+
+    for (int i = 0; i < st->widget_count; i++) {
+        kef_widget_t* w = &st->widgets[i];
+        if (w->type != KEF_WIDGET_INPUT) continue;
+        if (!w->focused) continue;
+
+        if (keyev_is_backspace(keyev)) {
+            int len = (int)strlen(w->value);
+            if (len > 0) {
+                w->value[len - 1] = 0;
+                w->cursor_pos = len - 1;
+                wm_invalidate_window(st->window_id);
+            }
+            return;
+        }
+
+        int ch = keyev_to_char(keyev);
+        if (ch) {
+            int len = (int)strlen(w->value);
+            if (len < (int)sizeof(w->value) - 1) {
+                w->value[len] = (char)ch;
+                w->value[len + 1] = 0;
+                w->cursor_pos = len + 1;
+                wm_invalidate_window(st->window_id);
+            }
+            return;
+        }
+    }
+}
+
 static void kef_minimal_on_destroy(app_t* self) {
     kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
     if (!st) return;
@@ -149,7 +239,7 @@ const app_vtbl_t g_kef_minimal_vtbl = {
     .on_create = kef_minimal_on_create,
     .on_destroy = kef_minimal_on_destroy,
     .on_mouse = kef_minimal_on_mouse,
-    .on_key = 0,
+    .on_key = kef_minimal_on_key,
     .on_update = 0,
     .on_draw = kef_minimal_on_draw,
     .on_close_request = 0,

@@ -7,6 +7,7 @@
 
 #define KEF_WIDGET_LABEL  1
 #define KEF_WIDGET_BUTTON 2
+#define KEF_WIDGET_INPUT  3
 
 typedef struct kef_minimal_state kef_minimal_state_t;
 typedef struct kef_widget kef_widget_t;
@@ -21,10 +22,15 @@ struct kef_widget {
     int h;
 
     char text[128];
+    char value[128];
+    char placeholder[128];
+
     uint32_t text_color;
 
     int pressed;
     int hovered;
+    int focused;
+    int cursor_pos;
 
     kef_minimal_state_t* owner;
 
