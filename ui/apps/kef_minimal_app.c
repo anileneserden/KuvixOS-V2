@@ -1,16 +1,11 @@
-#include <app/app.h>
-#include <kernel/exec/kef_minimal.h>
+#include <ui/apps/kef_minimal_app.h>
+
+#include <kernel/exec/kef_json.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/printk.h>
 #include <lib/string.h>
 #include <ui/wm.h>
 #include <ui/color.h>
-
-typedef struct {
-    int window_id;
-    int loaded;
-    kef_minimal_app_t app;
-} kef_minimal_state_t;
 
 static kef_minimal_state_t g_kef;
 
@@ -18,31 +13,40 @@ static void kef_minimal_on_create(app_t* self) {
     memset(&g_kef, 0, sizeof(g_kef));
     g_kef.window_id = self->win_id;
 
-    if (kef_minimal_load_file("/apps/hello.kef", &g_kef.app)) {
+    if (kef_json_load_file("/apps/hello.json", &g_kef)) {
         g_kef.loaded = 1;
-        printk("[KEF] loaded title='%s' text='%s'\n", g_kef.app.title, g_kef.app.text);
-        wm_set_title(self->win_id, g_kef.app.title);
+        wm_set_title(self->win_id, g_kef.title);
+        printk("[KEFJSON] app loaded ok\n");
     } else {
         g_kef.loaded = 0;
-        strcpy(g_kef.app.title, "KEF Minimal");
-        strcpy(g_kef.app.text, "hello.kef load failed");
-        wm_set_title(self->win_id, g_kef.app.title);
-        printk("[KEF] load failed\n");
+        strcpy(g_kef.title, "KEF JSON");
+        g_kef.width = 420;
+        g_kef.height = 240;
+        wm_set_title(self->win_id, g_kef.title);
+        printk("[KEFJSON] app load failed\n");
     }
 
     wm_invalidate_window(self->win_id);
 }
 
 static void kef_minimal_on_draw(app_t* self) {
-    ui_rect_t c = wm_get_client_rect(self->win_id);
+    (void)self;
 
-    // WM zaten origin'i client area'ya kuruyor
+    ui_rect_t c = wm_get_client_rect(g_kef.window_id);
+
     gfx_fill_rect(0, 0, c.w, c.h, COLOR_WHITE);
 
-    if (g_kef.loaded) {
-        gfx_draw_text_utf8(12, 12, COLOR_BLACK, g_kef.app.text);
-    } else {
-        gfx_draw_text_utf8(12, 12, COLOR_BLACK, "KEF dosyasi yuklenemedi");
+    if (!g_kef.loaded) {
+        gfx_draw_text_utf8(12, 12, COLOR_BLACK, "hello.json yuklenemedi");
+        return;
+    }
+
+    for (int i = 0; i < g_kef.widget_count; i++) {
+        kef_widget_t* w = &g_kef.widgets[i];
+
+        if (strcmp(w->type, "label") == 0) {
+            gfx_draw_text_utf8(w->x, w->y, COLOR_BLACK, w->text);
+        }
     }
 }
 

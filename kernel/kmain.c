@@ -33,6 +33,8 @@
 #include <kernel/exec/kef_minimal_blob.h>
 #include <app/app_manager.h>
 
+#include <kernel/system/seed_files.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -140,7 +142,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     fs_init_once();
 
-    seed_kef_file();
+    seed_files_run();
 
     ui_theme_bootstrap_default();
 
