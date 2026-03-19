@@ -685,3 +685,15 @@ int wm_is_dragging_window(void) {
 uint32_t wm_get_ticks(void) {
     return g_ticks_ms;
 }
+
+void wm_set_title(int win_id, const char* title) {
+    if (!is_alive_id(win_id)) return;
+    g_wins[win_id].win.title = title ? title : "Window";
+}
+
+void wm_invalidate_window(int win_id) {
+    if (!is_alive_id(win_id)) return;
+
+    ui_window_t* w = &g_wins[win_id].win;
+    desktop_damage_rect(w->x, w->y, w->w, w->h);
+}

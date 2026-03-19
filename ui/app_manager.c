@@ -21,6 +21,7 @@
 #include <ui/apps/kbi_viewer.h>
 #include <ui/apps/controls_test.h>
 #include <ui/apps/fileman_v2.h>
+#include <ui/apps/kef_minimal_app.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -40,6 +41,7 @@ extern const app_vtbl_t designer_vtbl;
 extern const app_vtbl_t kuvix_browser_vtbl;
 extern const app_vtbl_t kbi_viewer_vtbl;
 extern const app_vtbl_t controls_test_vtbl;
+extern const app_vtbl_t g_kef_minimal_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -72,6 +74,7 @@ static app_definition_t app_registry[] = {
     { 16, "KBI Viewer",    &kbi_viewer_vtbl,     160, 120, 820, 520, sizeof(kbi_viewer_t)     },
     { 17, "Controls test", &controls_test_vtbl,  160, 120, 820, 520, sizeof(controls_test_t)  },
     { 18, "Fileman V2",    &fileman_v2_vtbl,     160, 120, 820, 520, sizeof(fileman_v2_t)  },
+    { 19, "KEF Minimal", &g_kef_minimal_vtbl, 180, 120, 420, 240, sizeof(kef_minimal_state_t) },
     { 0,  NULL,                        NULL,       0,   0,   0,   0,                       0  }
 };
 

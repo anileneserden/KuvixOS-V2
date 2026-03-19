@@ -29,6 +29,10 @@
 
 #include <ui/theme.h>
 
+#include <kernel/fs/vfs.h>
+#include <kernel/exec/kef_minimal_blob.h>
+#include <app/app_manager.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -37,6 +41,18 @@ extern uint8_t _end;
 
 static inline uintptr_t align_up(uintptr_t x, uintptr_t a) {
     return (x + (a - 1)) & ~(a - 1);
+}
+
+static void seed_kef_file(void) {
+    if (!vfs_mkdir("/apps")) {
+        printk("[KEF] /apps mkdir skipped or failed\n");
+    }
+
+    if (vfs_write_all("/apps/hello.kef", g_kef_hello_data, g_kef_hello_size)) {
+        printk("[KEF] seeded /apps/hello.kef (%u bytes)\n", g_kef_hello_size);
+    } else {
+        printk("[KEF] failed to seed /apps/hello.kef\n");
+    }
 }
 
 // ------------------------------------------------------------
@@ -124,11 +140,16 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     fs_init_once();
 
+    seed_kef_file();
+
     ui_theme_bootstrap_default();
 
     // UI
     ui_session_init();
     ui_session_switch(UI_SESSION_DESKTOP);
+
+    // gecici test
+    appmgr_start_app(19);
 
     while (1) {
         // klavye event dispatch

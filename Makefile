@@ -56,6 +56,7 @@ SRC_C = \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
+    kernel/exec/kef_minimal.c \
     kernel/fs/fs_init.c \
     kernel/fs/kvxfs.c \
     kernel/fs/ramfs.c \
@@ -73,6 +74,7 @@ SRC_C = \
     ui/apps/fileman_v2.c \
     ui/apps/grid_demo.c \
     ui/apps/kbi_viewer.c \
+    ui/apps/kef_minimal_app.c \
     ui/apps/kuvix_browser.c \
     ui/apps/kuvix_store.c \
     ui/apps/memmon.c \
