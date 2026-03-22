@@ -20,10 +20,21 @@
 #include <ui/topbar.h>
 
 #define WM_MAX_WINDOWS 20
+#define WM_SNAP_NONE   0
+#define WM_SNAP_LEFT   1
+#define WM_SNAP_RIGHT  2
+#define WM_SNAP_TOP    3
 
 typedef struct {
     ui_window_t win;
     app_t* owner;
+
+    int snap_mode;
+
+    int restore_x;
+    int restore_y;
+    int restore_w;
+    int restore_h;
 } wm_entry_t;
 
 static wm_entry_t g_wins[WM_MAX_WINDOWS];
@@ -201,6 +212,12 @@ void wm_init(void) {
         g_used[i] = 0;
         g_wins[i].owner = 0;
 
+        g_wins[i].snap_mode = WM_SNAP_NONE;
+        g_wins[i].restore_x = 0;
+        g_wins[i].restore_y = 0;
+        g_wins[i].restore_w = 0;
+        g_wins[i].restore_h = 0;
+
         g_wins[i].win.is_closed = 1;
         g_wins[i].win.state = WIN_NORMAL;
         g_wins[i].win.x = g_wins[i].win.y = 0;
@@ -227,6 +244,12 @@ int wm_add_window(int x, int y, int w, int h, const char* title, app_t* owner) {
     win->prev_y = y;
     win->prev_w = w;
     win->prev_h = h;
+
+    g_wins[id].restore_x = x;
+    g_wins[id].restore_y = y;
+    g_wins[id].restore_w = w;
+    g_wins[id].restore_h = h;
+    g_wins[id].snap_mode = WM_SNAP_NONE;
 
     win->title = title ? title : "Window";
     win->state = WIN_NORMAL;
@@ -329,6 +352,29 @@ void wm_restore(int win_id) {
     desktop_damage_rect(w->x, w->y, w->w, w->h);
 }
 
+void wm_move_resize_window(int win_id, int x, int y, int w, int h) {
+    if (!is_alive_id(win_id)) return;
+
+    if (w < 120) w = 120;
+    if (h < 80)  h = 80;
+
+    ui_window_t* win = &g_wins[win_id].win;
+
+    int old_x = win->x;
+    int old_y = win->y;
+    int old_w = win->w;
+    int old_h = win->h;
+
+    win->x = x;
+    win->y = y;
+    win->w = w;
+    win->h = h;
+
+    /* eski ve yeni alanı invalidate et */
+    desktop_damage_rect(old_x, old_y, old_w, old_h);
+    desktop_damage_rect(win->x, win->y, win->w, win->h);
+}
+
 void wm_toggle_minimize(int win_id) {
     if (!is_alive_id(win_id)) return;
 
@@ -364,6 +410,80 @@ void wm_toggle_maximize(int win_id) {
 
         bring_to_front(win_id);
     }
+}
+
+void wm_invalidate_window(int win_id) {
+    if (!is_alive_id(win_id)) return;
+
+    ui_window_t* w = &g_wins[win_id].win;
+    desktop_damage_rect(w->x, w->y, w->w, w->h);
+}
+
+int wm_is_snapped_left(int win_id) {
+    if (!is_alive_id(win_id)) return 0;
+    return g_wins[win_id].snap_mode == WM_SNAP_LEFT;
+}
+
+int wm_is_snapped_right(int win_id) {
+    if (!is_alive_id(win_id)) return 0;
+    return g_wins[win_id].snap_mode == WM_SNAP_RIGHT;
+}
+
+void wm_restore_snapped_window(int win_id) {
+    if (!is_alive_id(win_id)) return;
+    if (g_wins[win_id].snap_mode == WM_SNAP_NONE) return;
+
+    wm_entry_t* e = &g_wins[win_id];
+
+    wm_move_resize_window(
+        win_id,
+        e->restore_x,
+        e->restore_y,
+        e->restore_w,
+        e->restore_h
+    );
+
+    e->snap_mode = WM_SNAP_NONE;
+}
+
+void wm_snap_left(int win_id, int topbar_h) {
+    if (!is_alive_id(win_id)) return;
+
+    wm_entry_t* e = &g_wins[win_id];
+    ui_window_t* w = &e->win;
+
+    if (e->snap_mode != WM_SNAP_LEFT) {
+        e->restore_x = w->x;
+        e->restore_y = w->y;
+        e->restore_w = w->w;
+        e->restore_h = w->h;
+    }
+
+    int sw = (int)fb_get_width();
+    int sh = (int)fb_get_height();
+
+    wm_move_resize_window(win_id, 0, topbar_h, sw / 2, sh - topbar_h);
+    e->snap_mode = WM_SNAP_LEFT;
+}
+
+void wm_snap_right(int win_id, int topbar_h) {
+    if (!is_alive_id(win_id)) return;
+
+    wm_entry_t* e = &g_wins[win_id];
+    ui_window_t* w = &e->win;
+
+    if (e->snap_mode != WM_SNAP_RIGHT) {
+        e->restore_x = w->x;
+        e->restore_y = w->y;
+        e->restore_w = w->w;
+        e->restore_h = w->h;
+    }
+
+    int sw = (int)fb_get_width();
+    int sh = (int)fb_get_height();
+
+    wm_move_resize_window(win_id, sw / 2, topbar_h, sw / 2, sh - topbar_h);
+    e->snap_mode = WM_SNAP_RIGHT;
 }
 
 // ------------------------------------------------------------

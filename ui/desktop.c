@@ -901,7 +901,67 @@ void ui_desktop_handle_scancode(uint16_t sc)
     }
     */
 
-    // printk("[DESKTOP] sc=0x%02x\n", sc8);
+        int win_id = wm_get_active_id();
+    int sw = (int)fb_get_width();
+    int sh = (int)fb_get_height();
+    int topbar_h = 24;
+
+    // Super + Left
+    if (kbd_is_super_pressed() && sc8 == 75) {
+        if (win_id >= 0) {
+            if (wm_is_snapped_left(win_id)) {
+                wm_restore_snapped_window(win_id);
+            } else {
+                wm_snap_left(win_id, topbar_h);
+            }
+            desktop_invalidate_full();
+        }
+        return;
+    }
+
+    // Super + Right
+    if (kbd_is_super_pressed() && sc8 == 77) {
+        if (win_id >= 0) {
+            if (wm_is_snapped_right(win_id)) {
+                wm_restore_snapped_window(win_id);
+            } else {
+                wm_snap_right(win_id, topbar_h);
+            }
+            desktop_invalidate_full();
+        }
+        return;
+    }
+
+    // Super + Up
+    if (kbd_is_super_pressed() && sc8 == 72) {
+        if (win_id >= 0) {
+            wm_move_resize_window(
+                win_id,
+                0,
+                topbar_h,
+                sw,
+                sh - topbar_h
+            );
+            desktop_invalidate_full();
+        }
+        return;
+    }
+
+    // Super + Down
+    if (kbd_is_super_pressed() && sc8 == 80) {
+        if (win_id >= 0) {
+            int w = 420;
+            int h = 240;
+            int x = (sw - w) / 2;
+            int y = topbar_h + ((sh - topbar_h - h) / 2);
+
+            wm_move_resize_window(win_id, x, y, w, h);
+            desktop_invalidate_full();
+        }
+        return;
+    }
+
+    printk("[DESKTOP] sc=%d\n", (int)sc8);
 
     // Modal'lar önce yesin
     if (save_dialog_is_active()) { save_dialog_handle_key(sc, c); desktop_invalidate_full(); return; }

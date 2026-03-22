@@ -69,4 +69,13 @@ void wm_handle_mouse_wheel(int mx, int my, int wheel, uint8_t buttons);
 
 uint32_t wm_get_ticks(void);
 
+void wm_move_resize_window(int win_id, int x, int y, int w, int h);
+
+int  wm_is_snapped_left(int win_id);
+int  wm_is_snapped_right(int win_id);
+
+void wm_snap_left(int win_id, int topbar_h);
+void wm_snap_right(int win_id, int topbar_h);
+void wm_restore_snapped_window(int win_id);
+
 #endif
