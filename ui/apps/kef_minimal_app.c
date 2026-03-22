@@ -90,15 +90,16 @@ static void kef_minimal_on_create(app_t* self) {
         st->loaded = 1;
         wm_set_title(self->win_id, st->title);
         wm_set_window_size(self->win_id, st->width, st->height);
+
         printk("[KEFJSON] app loaded ok (win=%d size=%dx%d)\n",
-            self->win_id, st->width, st->height);
+               self->win_id, st->width, st->height);
     } else {
         st->loaded = 0;
         strcpy(st->title, "KEF JSON");
         st->width = 420;
         st->height = 240;
+        st->bg_color = 0xE6E6E6;
         wm_set_title(self->win_id, st->title);
-        printk("[KEFJSON] app load failed (win=%d)\n", self->win_id);
     }
 
     wm_invalidate_window(self->win_id);

@@ -75,14 +75,6 @@ static int json_parse_int_value(char* from, int* outv) {
     return 1;
 }
 
-static int widget_type_from_string(const char* s) {
-    if (!s) return 0;
-    if (strcmp(s, "label") == 0) return KEF_WIDGET_LABEL;
-    if (strcmp(s, "button") == 0) return KEF_WIDGET_BUTTON;
-    if (strcmp(s, "input") == 0) return KEF_WIDGET_INPUT;
-    return 0;
-}
-
 int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
     if (!path || !out) return 0;
 
@@ -104,9 +96,7 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
     char* json = (char*)buf;
 
     /*
-     * ------------------------------------------------------------
      * WINDOW
-     * ------------------------------------------------------------
      */
     char* window_obj = strstr(json, "\"window\"");
     char* search_base = window_obj ? window_obj : json;
@@ -128,7 +118,6 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
         json_parse_int_value(p, &out->height);
     }
 
-    /* Yeni format: backgroundColor */
     p = strstr(search_base, "\"backgroundColor\"");
     if (p) {
         char color_buf[16];
@@ -138,7 +127,6 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
             out->bg_color = parse_color_hex(color_buf);
         }
     } else {
-        /* Geriye dönük uyumluluk: background-color */
         p = strstr(search_base, "\"background-color\"");
         if (p) {
             char color_buf[16];
@@ -151,9 +139,7 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
     }
 
     /*
-     * ------------------------------------------------------------
-     * WIDGETS
-     * ------------------------------------------------------------
+     * WIDGETS (minimal: only label)
      */
     char* widgets = strstr(json, "\"widgets\"");
     if (widgets) {
@@ -166,10 +152,6 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
             char* type_key = strstr(obj, "\"type\"");
             if (!type_key) break;
 
-            kef_widget_t* w = &out->widgets[out->widget_count];
-            memset(w, 0, sizeof(*w));
-            w->text_color = 0x000000;
-
             char type_buf[32];
             memset(type_buf, 0, sizeof(type_buf));
 
@@ -177,28 +159,29 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
                 break;
             }
 
-            w->type = widget_type_from_string(type_buf);
-            if (!w->type) {
+            /* şimdilik sadece label */
+            if (strcmp(type_buf, "label") != 0) {
                 cur = type_key + 1;
                 continue;
             }
 
-            char* id_key          = strstr(obj, "\"id\"");
-            char* text_key        = strstr(obj, "\"text\"");
-            char* x_key           = strstr(obj, "\"x\"");
-            char* y_key           = strstr(obj, "\"y\"");
-            char* w_key           = strstr(obj, "\"w\"");
-            char* h_key           = strstr(obj, "\"h\"");
-            char* color_key       = strstr(obj, "\"color\"");
-            char* placeholder_key = strstr(obj, "\"placeholder\"");
+            kef_widget_t* w = &out->widgets[out->widget_count];
+            memset(w, 0, sizeof(*w));
 
-            if (id_key)          json_copy_string_value(id_key, w->id, sizeof(w->id));
-            if (text_key)        json_copy_string_value(text_key, w->text, sizeof(w->text));
-            if (x_key)           json_parse_int_value(x_key, &w->x);
-            if (y_key)           json_parse_int_value(y_key, &w->y);
-            if (w_key)           json_parse_int_value(w_key, &w->w);
-            if (h_key)           json_parse_int_value(h_key, &w->h);
-            if (placeholder_key) json_copy_string_value(placeholder_key, w->placeholder, sizeof(w->placeholder));
+            w->type = KEF_WIDGET_LABEL;
+            w->text_color = 0xFFFFFF;
+            w->owner = out;
+
+            char* id_key    = strstr(obj, "\"id\"");
+            char* text_key  = strstr(obj, "\"text\"");
+            char* x_key     = strstr(obj, "\"x\"");
+            char* y_key     = strstr(obj, "\"y\"");
+            char* color_key = strstr(obj, "\"color\"");
+
+            if (id_key)   json_copy_string_value(id_key, w->id, sizeof(w->id));
+            if (text_key) json_copy_string_value(text_key, w->text, sizeof(w->text));
+            if (x_key)    json_parse_int_value(x_key, &w->x);
+            if (y_key)    json_parse_int_value(y_key, &w->y);
 
             if (color_key) {
                 char color_buf[16];
@@ -208,21 +191,6 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
                     w->text_color = parse_color_hex(color_buf);
                 }
             }
-
-            if (w->type == KEF_WIDGET_BUTTON) {
-                if (w->w <= 0) w->w = 90;
-                if (w->h <= 0) w->h = 28;
-            }
-
-            if (w->type == KEF_WIDGET_INPUT) {
-                if (w->w <= 0) w->w = 160;
-                if (w->h <= 0) w->h = 24;
-                w->focused = 0;
-                w->cursor_pos = 0;
-                w->value[0] = 0;
-            }
-
-            w->owner = out;
 
             out->widget_count++;
             cur = obj + 1;

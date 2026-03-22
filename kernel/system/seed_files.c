@@ -47,7 +47,17 @@ static const seed_text_t k_seed_texts[] = {
         "    \"width\": 300,\n"
         "    \"height\": 300,\n"
         "    \"backgroundColor\": \"#121212\"\n"
-        "  }\n"
+        "  },\n"
+        "  \"widgets\": [\n"
+        "    {\n"
+        "      \"id\": \"titleLabel\",\n"
+        "      \"type\": \"label\",\n"
+        "      \"text\": \"Merhaba KuvixOS\",\n"
+        "      \"x\": 12,\n"
+        "      \"y\": 12,\n"
+        "      \"color\": \"#ffffff\"\n"
+        "    }\n"
+        "  ]\n"
         "}\n"
     },
 
