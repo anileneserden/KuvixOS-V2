@@ -691,6 +691,19 @@ void wm_set_title(int win_id, const char* title) {
     g_wins[win_id].win.title = title ? title : "Window";
 }
 
+void wm_set_window_size(int win_id, int w, int h) {
+    if (!is_alive_id(win_id)) return;
+
+    /* minimum güvenli boyut */
+    if (w < 120) w = 120;
+    if (h < 80)  h = 80;
+
+    g_wins[win_id].win.w = w;
+    g_wins[win_id].win.h = h;
+
+    wm_invalidate_window(win_id);
+}
+
 void wm_invalidate_window(int win_id) {
     if (!is_alive_id(win_id)) return;
 

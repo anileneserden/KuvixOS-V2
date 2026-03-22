@@ -151,7 +151,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     ui_session_switch(UI_SESSION_DESKTOP);
 
     // gecici test
-    appmgr_start_app(19);
+    // appmgr_start_app(19);
 
     while (1) {
         // klavye event dispatch

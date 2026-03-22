@@ -22,6 +22,7 @@ void wm_request_close(int win_id);
 
 int  wm_get_window(int win_id, ui_window_t* out);
 void wm_set_title(int win_id, const char* title);
+void wm_set_window_size(int win_id, int w, int h);
 
 void wm_set_owner(int win_id, void* owner_app);
 

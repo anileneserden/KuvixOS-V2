@@ -92,7 +92,7 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
     out->height = 240;
     out->bg_color = 0xFFFFFF;
 
-    uint8_t buf[1024];
+    uint8_t buf[2048];
     uint32_t sz = 0;
 
     if (!vfs_read_all(path, buf, sizeof(buf) - 1, &sz)) {
@@ -102,18 +102,34 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
 
     buf[sz] = 0;
     char* json = (char*)buf;
+
+    /*
+     * ------------------------------------------------------------
+     * WINDOW
+     * ------------------------------------------------------------
+     */
+    char* window_obj = strstr(json, "\"window\"");
+    char* search_base = window_obj ? window_obj : json;
+
     char* p = 0;
 
-    p = strstr(json, "\"title\"");
-    if (p) json_copy_string_value(p, out->title, sizeof(out->title));
+    p = strstr(search_base, "\"title\"");
+    if (p) {
+        json_copy_string_value(p, out->title, sizeof(out->title));
+    }
 
-    p = strstr(json, "\"width\"");
-    if (p) json_parse_int_value(p, &out->width);
+    p = strstr(search_base, "\"width\"");
+    if (p) {
+        json_parse_int_value(p, &out->width);
+    }
 
-    p = strstr(json, "\"height\"");
-    if (p) json_parse_int_value(p, &out->height);
+    p = strstr(search_base, "\"height\"");
+    if (p) {
+        json_parse_int_value(p, &out->height);
+    }
 
-    p = strstr(json, "\"background-color\"");
+    /* Yeni format: backgroundColor */
+    p = strstr(search_base, "\"backgroundColor\"");
     if (p) {
         char color_buf[16];
         memset(color_buf, 0, sizeof(color_buf));
@@ -121,8 +137,24 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
         if (json_copy_string_value(p, color_buf, sizeof(color_buf))) {
             out->bg_color = parse_color_hex(color_buf);
         }
+    } else {
+        /* Geriye dönük uyumluluk: background-color */
+        p = strstr(search_base, "\"background-color\"");
+        if (p) {
+            char color_buf[16];
+            memset(color_buf, 0, sizeof(color_buf));
+
+            if (json_copy_string_value(p, color_buf, sizeof(color_buf))) {
+                out->bg_color = parse_color_hex(color_buf);
+            }
+        }
     }
 
+    /*
+     * ------------------------------------------------------------
+     * WIDGETS
+     * ------------------------------------------------------------
+     */
     char* widgets = strstr(json, "\"widgets\"");
     if (widgets) {
         char* cur = widgets;
@@ -197,8 +229,12 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
         }
     }
 
-    printk("[KEFJSON] loaded title='%s' w=%d h=%d widgets=%d\n",
-           out->title, out->width, out->height, out->widget_count);
+    printk("[KEFJSON] loaded title='%s' w=%d h=%d bg=0x%06X widgets=%d\n",
+           out->title,
+           out->width,
+           out->height,
+           (unsigned)out->bg_color,
+           out->widget_count);
 
     return 1;
 }
