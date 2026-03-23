@@ -2,11 +2,8 @@
 
 #include "UIElement.hpp"
 
-extern "C" {
-#include <ui/controls/button2.h>
-}
-
 class Button : public UIElement {
 public:
-    explicit Button(ui_control_t* c = nullptr) : UIElement(c) {}
+    Button(kef_minimal_state_t* st = nullptr, kef_widget_t* w = nullptr)
+        : UIElement(st, w) {}
 };

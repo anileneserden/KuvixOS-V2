@@ -2,23 +2,18 @@
 
 #include "UIElement.hpp"
 
-extern "C" {
-#include <ui/controls/label2.h>
-}
-
 class Label : public UIElement {
 public:
-    explicit Label(ui_control_t* c = nullptr) : UIElement(c) {}
+    Label(kef_minimal_state_t* st = nullptr, kef_widget_t* w = nullptr)
+        : UIElement(st, w) {}
 
     void setText(const char* text) {
-        if (!ctrl) return;
-        ui_label2_t* lbl = (ui_label2_t*)ctrl;
-        ui_label2_set_text(lbl, text);
+        if (!isValid()) return;
+        kef_set_text(state, widget->id, text);
     }
 
     const char* getText() const {
-        if (!ctrl) return "";
-        ui_label2_t* lbl = (ui_label2_t*)ctrl;
-        return lbl->text ? lbl->text : "";
+        if (!isValid()) return "";
+        return widget->text;
     }
 };

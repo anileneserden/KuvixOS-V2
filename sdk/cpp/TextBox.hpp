@@ -2,21 +2,30 @@
 
 #include "UIElement.hpp"
 
-extern "C" {
-#include <ui/controls/textbox2.h>
-}
-
 class TextBox : public UIElement {
 public:
-    explicit TextBox(ui_control_t* c = nullptr) : UIElement(c) {}
+    TextBox(kef_minimal_state_t* st = nullptr, kef_widget_t* w = nullptr)
+        : UIElement(st, w) {}
 
     const char* getText() const {
-        if (!ctrl) return "";
-        return textbox2_get_text((textbox2_t*)ctrl);
+        if (!isValid()) return "";
+        return widget->value;
     }
 
     void setText(const char* text) {
-        if (!ctrl) return;
-        textbox2_set_text((textbox2_t*)ctrl, text);
+        if (!isValid()) return;
+
+        if (!text) {
+            widget->value[0] = 0;
+            widget->value_len = 0;
+            return;
+        }
+
+        int i = 0;
+        for (; text[i] && i < (int)sizeof(widget->value) - 1; ++i) {
+            widget->value[i] = text[i];
+        }
+        widget->value[i] = 0;
+        widget->value_len = i;
     }
 };

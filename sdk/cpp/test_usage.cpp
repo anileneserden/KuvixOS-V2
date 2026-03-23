@@ -1,10 +1,14 @@
-#include <ui/controls/control.h>
-#include "App.hpp"
+#include <App.hpp>
 
-extern "C" void kef_cpp_smoke_test(ui_control_t* root) {
-    App app(root);
-    auto lbl = app.getElementById<Label>("statusLabel");
-    if (lbl.isValid()) {
-        lbl.setText("CPP OK");
+extern "C" void kef_cpp_smoke_test(kef_minimal_state_t* st) {
+    App app(st);
+
+    auto cppLabel = app.getElementById<Label>("cppLabel");
+
+    if (!cppLabel.isValid()) {
+        kef_set_text(st, "statusLabel", "CPP LABEL YOK");
+        return;
     }
+
+    kef_set_text(st, "cppLabel", "CPP LABEL OK");
 }

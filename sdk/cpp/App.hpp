@@ -4,28 +4,28 @@
 #include "Label.hpp"
 #include "TextBox.hpp"
 
-extern "C" {
-#include <ui/controls/control.h>
-}
-
 class App {
 private:
-    ui_control_t* root;
+    kef_minimal_state_t* state;
 
 public:
-    explicit App(ui_control_t* rootControl = nullptr) : root(rootControl) {}
+    explicit App(kef_minimal_state_t* st = nullptr) : state(st) {}
 
-    void setRoot(ui_control_t* rootControl) {
-        root = rootControl;
+    void setState(kef_minimal_state_t* st) {
+        state = st;
     }
 
-    ui_control_t* getRoot() const {
-        return root;
+    kef_minimal_state_t* getState() const {
+        return state;
     }
 
     template<typename T>
     T getElementById(const char* id) {
-        ui_control_t* found = ui_find_control_by_name(root, id);
-        return T(found);
+        if (!state || !id) {
+            return T(nullptr, nullptr);
+        }
+
+        kef_widget_t* w = kef_get_widget_ptr(state, id);
+        return T(state, w);
     }
 };

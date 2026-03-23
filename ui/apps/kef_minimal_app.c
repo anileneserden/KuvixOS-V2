@@ -8,6 +8,8 @@
 #include <ui/wm.h>
 #include <ui/color.h>
 
+extern void kef_cpp_smoke_test(kef_minimal_state_t* st);
+
 kef_widget_t* kef_get_widget_ptr(kef_minimal_state_t* st, const char* id) {
     if (!st || !id) return 0;
 
@@ -97,9 +99,9 @@ static void kef_minimal_on_create(app_t* self) {
         wm_set_title(self->win_id, st->title);
         wm_set_window_size(self->win_id, st->width, st->height);
         kef_bind_events(st);
-
-        printk("[KEFJSON] app loaded ok (win=%d size=%dx%d)\n",
-            self->win_id, st->width, st->height);
+        printk("before cpp smoke\n");
+        kef_cpp_smoke_test(st);
+        printk("after cpp smoke\n");
     } else {
         st->loaded = 0;
         strcpy(st->title, "KEF JSON");

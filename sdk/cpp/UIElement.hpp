@@ -1,25 +1,27 @@
 #pragma once
 
 extern "C" {
-#include <ui/controls/control.h>
+#include <kernel/exec/kef_minimal_runtime.h>
 }
 
 class UIElement {
 protected:
-    ui_control_t* ctrl;
+    kef_minimal_state_t* state;
+    kef_widget_t* widget;
 
 public:
-    explicit UIElement(ui_control_t* c = nullptr) : ctrl(c) {}
+    UIElement(kef_minimal_state_t* st = nullptr, kef_widget_t* w = nullptr)
+        : state(st), widget(w) {}
 
     bool isValid() const {
-        return ctrl != nullptr;
+        return state != nullptr && widget != nullptr;
     }
 
-    const char* getName() const {
-        return ctrl ? ctrl->name : "";
+    const char* getId() const {
+        return widget ? widget->id : "";
     }
 
-    ui_control_t* raw() const {
-        return ctrl;
+    kef_widget_t* raw() const {
+        return widget;
     }
 };
