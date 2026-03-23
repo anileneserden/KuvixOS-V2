@@ -44,7 +44,13 @@ static void on_ok_click(kef_widget_t* self) {
     if (!self || !self->owner) return;
 
     kef_minimal_state_t* st = self->owner;
-    kef_set_text(st, "titleLabel", "Butona basildi");
+    kef_widget_t* input = kef_get_widget_ptr(st, "nameInput");
+
+    if (input && input->value[0]) {
+        kef_set_text(st, "statusLabel", input->value);
+    } else {
+        kef_set_text(st, "statusLabel", "Durum: Bos");
+    }
 }
 
 static void kef_bind_events(kef_minimal_state_t* st) {
@@ -90,9 +96,10 @@ static void kef_minimal_on_create(app_t* self) {
         st->loaded = 1;
         wm_set_title(self->win_id, st->title);
         wm_set_window_size(self->win_id, st->width, st->height);
+        kef_bind_events(st);
 
         printk("[KEFJSON] app loaded ok (win=%d size=%dx%d)\n",
-               self->win_id, st->width, st->height);
+            self->win_id, st->width, st->height);
     } else {
         st->loaded = 0;
         strcpy(st->title, "KEF JSON");

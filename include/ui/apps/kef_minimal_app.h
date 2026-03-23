@@ -8,6 +8,7 @@
 #define KEF_WIDGET_LABEL  1
 #define KEF_WIDGET_BUTTON 2
 #define KEF_WIDGET_INPUT  3
+#define KEF_WIDGET_INPUT  3
 
 typedef struct kef_minimal_state kef_minimal_state_t;
 typedef struct kef_widget kef_widget_t;

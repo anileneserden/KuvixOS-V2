@@ -32,6 +32,7 @@ typedef struct {
 
 struct ui_control {
     int id;
+    char name[64];
 
     ui_point_t location;
     ui_size_t  size;
@@ -56,3 +57,6 @@ void ui_control_init(ui_control_t* c, int id, ui_point_t loc, ui_size_t size, co
 bool ui_control_contains(const ui_control_t* c, int px, int py);
 
 void ui_control_add_child(ui_control_t* parent, ui_control_t* child);
+
+void ui_control_set_name(ui_control_t* c, const char* name);
+ui_control_t* ui_find_control_by_name(ui_control_t* root, const char* name);
