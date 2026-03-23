@@ -9,6 +9,7 @@
 #include <ui/color.h>
 
 extern void kef_cpp_smoke_test(kef_minimal_state_t* st);
+extern void kef_cpp_on_click(kef_minimal_state_t* st, const char* id);
 
 kef_widget_t* kef_get_widget_ptr(kef_minimal_state_t* st, const char* id) {
     if (!st || !id) return 0;
@@ -42,26 +43,8 @@ static int point_in_widget(kef_widget_t* w, int mx, int my) {
             my < (w->y + w->h));
 }
 
-static void on_ok_click(kef_widget_t* self) {
-    if (!self || !self->owner) return;
-
-    kef_minimal_state_t* st = self->owner;
-    kef_widget_t* input = kef_get_widget_ptr(st, "nameInput");
-
-    if (input && input->value[0]) {
-        kef_set_text(st, "statusLabel", input->value);
-    } else {
-        kef_set_text(st, "statusLabel", "Durum: Bos");
-    }
-}
-
 static void kef_bind_events(kef_minimal_state_t* st) {
-    if (!st) return;
-
-    kef_widget_t* btn = kef_get_widget_ptr(st, "okButton");
-    if (btn) {
-        btn->on_click = on_ok_click;
-    }
+    (void)st;
 }
 
 /*
@@ -99,9 +82,8 @@ static void kef_minimal_on_create(app_t* self) {
         wm_set_title(self->win_id, st->title);
         wm_set_window_size(self->win_id, st->width, st->height);
         kef_bind_events(st);
-        printk("before cpp smoke\n");
         kef_cpp_smoke_test(st);
-        printk("after cpp smoke\n");
+        wm_invalidate_window(st->window_id);
     } else {
         st->loaded = 0;
         strcpy(st->title, "KEF JSON");
@@ -196,11 +178,10 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
             int was_pressed = w->pressed;
             w->pressed = 0;
             wm_invalidate_window(st->window_id);
-
+            
             if (was_pressed && point_in_widget(w, mx, my)) {
-                if (w->on_click) {
-                    w->on_click(w);
-                }
+                kef_cpp_on_click(st, w->id);
+                wm_invalidate_window(st->window_id);
             }
         }
     }
