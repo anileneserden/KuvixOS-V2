@@ -2,9 +2,10 @@
 #  KuvixOS-V2 Makefile
 # ==========================
 
-CC = gcc
-LD = gcc
-AS = nasm
+CC  = gcc
+CXX = g++
+LD  = g++
+AS  = nasm
 # 64-bit matematik işlemleri için gerekli yardımcı kütüphane
 LIBGCC := $(shell $(CC) $(CFLAGS) -m32 -print-libgcc-file-name)
 
@@ -18,6 +19,13 @@ CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -nostdlib -nostartfiles \
           -Iinclude -DTIMEZONE_OFFSET=3
 #          -DKBD_SERIAL_DEBUG
+
+CXXFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra \
+           -fno-pie -fno-stack-protector \
+           -fno-exceptions -fno-rtti \
+           -nostdlib -nostartfiles \
+           -Iinclude -Isdk/cpp -DTIMEZONE_OFFSET=3 \
+           -std=c++17
 
 ASFLAGS = -m32
 NASMFLAGS = -f elf32
@@ -144,12 +152,16 @@ SRC_C = \
     lib/shell/shell.c \
     lib/string/string.c \
 
+SRC_CPP = \
+    sdk/cpp/test_usage.cpp
+
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 
 OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
        $(SRC_ASM:%.asm=$(BUILD)/%.o) \
-       $(SRC_C:%.c=$(BUILD)/%.o)
+       $(SRC_C:%.c=$(BUILD)/%.o) \
+       $(SRC_CPP:%.cpp=$(BUILD)/%.o)
 
 # --- Kurallar ---
 
@@ -158,6 +170,10 @@ all: $(KERNEL)
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)

@@ -1,6 +1,10 @@
 #pragma once
 #include <ui/controls/control.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef void (*ui_click2_fn)(void* user);
 
 typedef struct {
@@ -13,3 +17,7 @@ typedef struct {
 
 void ui_button2_init(ui_button2_t* b, int id, ui_point_t loc, ui_size_t size, const char* label);
 void ui_button2_onclick(ui_button2_t* b, ui_click2_fn fn, void* user);
+
+#ifdef __cplusplus
+}
+#endif

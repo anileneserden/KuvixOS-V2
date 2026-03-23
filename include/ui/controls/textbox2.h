@@ -3,6 +3,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef TEXTBOX2_MAX
 #define TEXTBOX2_MAX 256
 #endif
@@ -32,3 +36,7 @@ void textbox2_init(
 
 const char* textbox2_get_text(textbox2_t* tb);
 void textbox2_set_text(textbox2_t* tb, const char* s);
+
+#ifdef __cplusplus
+}
+#endif

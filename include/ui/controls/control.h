@@ -2,6 +2,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct { int x, y; } ui_point_t;
 typedef struct { int w, h; } ui_size_t;
 
@@ -60,3 +64,7 @@ void ui_control_add_child(ui_control_t* parent, ui_control_t* child);
 
 void ui_control_set_name(ui_control_t* c, const char* name);
 ui_control_t* ui_find_control_by_name(ui_control_t* root, const char* name);
+
+#ifdef __cplusplus
+}
+#endif
