@@ -1,3 +1,4 @@
+// ui/apps/kef_minimal_app.c
 #include <ui/apps/kef_minimal_app.h>
 
 #include <kernel/drivers/input/keyboard.h>
@@ -132,6 +133,35 @@ static void kef_minimal_on_draw(app_t* self) {
                 /* placeholder JSON'dan geliyor, UTF-8 */
                 gfx_draw_text_utf8(w->x + 4, w->y + 6, 0x888888, w->placeholder);
             }
+        } else if (w->type == KEF_WIDGET_COMBOBOX) {
+            int item_h = 22;
+
+            /* main box */
+            gfx_fill_rect(w->x, w->y, w->w, w->h, 0xFFFFFFFF);
+            gfx_draw_rect(w->x, w->y, w->w, w->h, 0xFF808080);
+
+            const char* txt = "";
+            if (w->combo_selected >= 0 && w->combo_selected < w->combo_item_count) {
+                txt = w->combo_items[w->combo_selected];
+            }
+
+            gfx_draw_text_utf8(w->x + 6, w->y + 6, 0xFF111111, txt);
+            gfx_draw_text_utf8(w->x + w->w - 12, w->y + 6, 0xFF111111, "v");
+
+            /* dropdown */
+            if (w->combo_open) {
+                for (int j = 0; j < w->combo_item_count; j++) {
+                    int iy = w->y + w->h + j * item_h;
+                    int selected = (j == w->combo_selected);
+
+                    uint32_t bg = selected ? 0xFF0055AA : 0xFFFFFFFF;
+                    uint32_t fg = selected ? 0xFFFFFFFF : 0xFF111111;
+
+                    gfx_fill_rect(w->x, iy, w->w, item_h, bg);
+                    gfx_draw_rect(w->x, iy, w->w, item_h, 0xFF808080);
+                    gfx_draw_text_utf8(w->x + 6, iy + 5, fg, w->combo_items[j]);
+                }
+            }
         }
     }
 }
@@ -142,8 +172,10 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
     kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
     if (!st || !st->loaded) return;
 
+    printk("[MOUSE] mx=%d my=%d pr=%d rel=%d\n", mx, my, pr, rel);
+
     if (pr & 0x01) {
-        /* önce tüm input focuslarını kapat */
+        /* önce input focuslarını kapat */
         for (int i = 0; i < st->widget_count; i++) {
             kef_widget_t* w = &st->widgets[i];
             if (w->type == KEF_WIDGET_INPUT) {
@@ -151,20 +183,60 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
             }
         }
 
-        /* tıklanan input varsa focus ver */
+        /* input focus ver */
         for (int i = 0; i < st->widget_count; i++) {
             kef_widget_t* w = &st->widgets[i];
-
             if (w->type == KEF_WIDGET_INPUT && point_in_widget(w, mx, my)) {
                 w->focused = 1;
                 wm_invalidate_window(st->window_id);
             }
         }
+
+        /* combobox handling */
+        for (int i = 0; i < st->widget_count; i++) {
+            kef_widget_t* w = &st->widgets[i];
+            if (w->type != KEF_WIDGET_COMBOBOX) continue;
+
+            int item_h = 22;
+
+            /* 1) ana kutuya tıklanırsa aç/kapat */
+            if (point_in_widget(w, mx, my)) {
+                printk("combobox'a tıklandı!");
+                w->combo_open = !w->combo_open;
+                wm_invalidate_window(st->window_id);
+                return;
+            }
+
+            /* 2) dropdown açıksa item seçimi */
+            if (w->combo_open) {
+                int list_x = w->x;
+                int list_y = w->y + w->h;
+                int list_w = w->w;
+                int list_h = w->combo_item_count * item_h;
+
+                if (mx >= list_x && mx < list_x + list_w &&
+                    my >= list_y && my < list_y + list_h) {
+                    int idx = (my - list_y) / item_h;
+
+                    if (idx >= 0 && idx < w->combo_item_count) {
+                        w->combo_selected = idx;
+                    }
+
+                    w->combo_open = 0;
+                    wm_invalidate_window(st->window_id);
+                    return;
+                }
+
+                /* 3) açıkken dışarı tıklanırsa kapat */
+                w->combo_open = 0;
+                wm_invalidate_window(st->window_id);
+            }
+        }
     }
 
+    /* button handling */
     for (int i = 0; i < st->widget_count; i++) {
         kef_widget_t* w = &st->widgets[i];
-
         if (w->type != KEF_WIDGET_BUTTON) continue;
 
         if (pr & 0x01) {
@@ -178,7 +250,7 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
             int was_pressed = w->pressed;
             w->pressed = 0;
             wm_invalidate_window(st->window_id);
-            
+
             if (was_pressed && point_in_widget(w, mx, my)) {
                 kef_cpp_on_click(st, w->id);
                 wm_invalidate_window(st->window_id);

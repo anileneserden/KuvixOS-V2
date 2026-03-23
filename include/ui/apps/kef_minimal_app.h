@@ -4,11 +4,13 @@
 #include <stdint.h>
 
 #define KEF_MAX_WIDGETS 16
+#define KEF_MAX_COMBO_ITEMS 16
+#define KEF_MAX_COMBO_TEXT  64
 
-#define KEF_WIDGET_LABEL  1
-#define KEF_WIDGET_BUTTON 2
-#define KEF_WIDGET_INPUT  3
-#define KEF_WIDGET_INPUT  3
+#define KEF_WIDGET_LABEL     1
+#define KEF_WIDGET_BUTTON    2
+#define KEF_WIDGET_INPUT     3
+#define KEF_WIDGET_COMBOBOX  4
 
 typedef struct kef_minimal_state kef_minimal_state_t;
 typedef struct kef_widget kef_widget_t;
@@ -32,6 +34,13 @@ struct kef_widget {
     int hovered;
     int focused;
     int cursor_pos;
+
+
+    /* combobox */
+    char combo_items[KEF_MAX_COMBO_ITEMS][KEF_MAX_COMBO_TEXT];
+    int combo_item_count;
+    int combo_selected;
+    int combo_open;
 
     kef_minimal_state_t* owner;
 

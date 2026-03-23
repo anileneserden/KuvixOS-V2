@@ -168,6 +168,8 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
                 widget_type = KEF_WIDGET_BUTTON;
             } else if (strcmp(type_buf, "textbox") == 0) {
                 widget_type = KEF_WIDGET_INPUT;
+            } else if (strcmp(type_buf, "combobox") == 0) {
+                widget_type = KEF_WIDGET_COMBOBOX;  
             } else {
                 cur = type_key + 1;
                 continue;
@@ -190,6 +192,11 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
                 w->text_color = 0xFFFFFF;
                 w->w = 160;
                 w->h = 26;
+            } else if (w->type == KEF_WIDGET_COMBOBOX) {
+                w->text_color = 0xFFFFFF;
+                w->w = 160;
+                w->h = 26;
+                w->combo_selected = 0;
             }
 
             char* id_key    = strstr(obj, "\"id\"");
@@ -197,6 +204,8 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
             char* x_key     = strstr(obj, "\"x\"");
             char* y_key     = strstr(obj, "\"y\"");
             char* color_key = strstr(obj, "\"color\"");
+            char* sel_key   = strstr(obj, "\"selectedIndex\"");
+            char* items_key = strstr(obj, "\"items\"");
             char* w_key     = strstr(obj, "\"w\"");
             char* h_key     = strstr(obj, "\"h\"");
 
@@ -204,6 +213,7 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
             if (text_key) json_copy_string_value(text_key, w->text, sizeof(w->text));
             if (x_key)    json_parse_int_value(x_key, &w->x);
             if (y_key)    json_parse_int_value(y_key, &w->y);
+            if (sel_key)  json_parse_int_value(sel_key, &w->combo_selected);
             if (w_key)    json_parse_int_value(w_key, &w->w);
             if (h_key)    json_parse_int_value(h_key, &w->h);
 
@@ -213,6 +223,36 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
 
                 if (json_copy_string_value(color_key, color_buf, sizeof(color_buf))) {
                     w->text_color = parse_color_hex(color_buf);
+                }
+            }
+
+            if (items_key && w->type == KEF_WIDGET_COMBOBOX) {
+                char* p = strchr(items_key, '[');
+                if (p) {
+                    p++;
+
+                    int idx = 0;
+                    while (*p && *p != ']' && idx < KEF_MAX_COMBO_ITEMS) {
+                        while (*p && *p != '"') p++;
+                        if (*p != '"') break;
+
+                        p++; // skip "
+
+                        char* start = p;
+                        while (*p && *p != '"') p++;
+
+                        int len = p - start;
+                        if (len > 0 && len < KEF_MAX_COMBO_TEXT) {
+                            memcpy(w->combo_items[idx], start, len);
+                            w->combo_items[idx][len] = 0;
+                            idx++;
+                        }
+
+                        while (*p && *p != ',' && *p != ']') p++;
+                        if (*p == ',') p++;
+                    }
+
+                    w->combo_item_count = idx;
                 }
             }
 
@@ -232,8 +272,6 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
 
     printk("[KEFJSON] loaded title='%s' w=%d h=%d bg=0x%x widgets=%d\n",
         out->title, out->width, out->height, out->bg_color, out->widget_count);
-
-    printk("real widget_count=%d\n", out->widget_count);
 
     return 1;
 }

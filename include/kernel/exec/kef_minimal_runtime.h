@@ -9,8 +9,12 @@ extern "C" {
 typedef enum {
     KEF_WIDGET_LABEL = 1,
     KEF_WIDGET_BUTTON = 2,
-    KEF_WIDGET_INPUT = 3
+    KEF_WIDGET_INPUT = 3,
+    KEF_WIDGET_COMBOBOX = 4
 } kef_widget_type_t;
+
+#define KEF_MAX_COMBO_ITEMS 16
+#define KEF_MAX_COMBO_TEXT  64
 
 typedef struct kef_widget {
     int type;
@@ -28,6 +32,12 @@ typedef struct kef_widget {
     char value[256];
     int value_len;
     int focused;
+
+    /* combobox */
+    char combo_items[KEF_MAX_COMBO_ITEMS][KEF_MAX_COMBO_TEXT];
+    int combo_item_count;
+    int combo_selected;
+    int combo_open;
 
     void* owner;
     void (*on_click)(struct kef_widget* self);
