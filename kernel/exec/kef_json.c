@@ -230,12 +230,10 @@ int kef_json_load_file(const char* path, kef_minimal_state_t* out) {
         }
     }
 
-    printk("[KEFJSON] loaded title='%s' w=%d h=%d bg=0x%06X widgets=%d\n",
-           out->title,
-           out->width,
-           out->height,
-           (unsigned)out->bg_color,
-           out->widget_count);
+    printk("[KEFJSON] loaded title='%s' w=%d h=%d bg=0x%x widgets=%d\n",
+        out->title, out->width, out->height, out->bg_color, out->widget_count);
+
+    printk("real widget_count=%d\n", out->widget_count);
 
     return 1;
 }
