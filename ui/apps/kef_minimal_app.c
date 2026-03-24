@@ -76,23 +76,15 @@ static void kef_minimal_on_create(app_t* self) {
 
     memset(st, 0, sizeof(*st));
     st->window_id = self->win_id;
+    st->loaded = 0;
 
-    if (kef_json_load_file("/apps/hello.kef", st)) {
-        st->loaded = 1;
-        wm_set_title(self->win_id, st->title);
-        wm_set_window_size(self->win_id, st->width, st->height);
-        kef_bind_events(st);
-        kef_cpp_smoke_test(st);
-        wm_invalidate_window(st->window_id);
-    } else {
-        st->loaded = 0;
-        strcpy(st->title, "KEF JSON");
-        st->width = 420;
-        st->height = 240;
-        st->bg_color = 0xE6E6E6;
-        wm_set_title(self->win_id, st->title);
-    }
+    strcpy(st->title, "KEF Host");
+    st->width = 420;
+    st->height = 240;
+    st->bg_color = 0xE6E6E6;
 
+    wm_set_title(self->win_id, st->title);
+    wm_set_window_size(self->win_id, st->width, st->height);
     wm_invalidate_window(self->win_id);
 }
 
@@ -104,7 +96,7 @@ static void kef_minimal_on_draw(app_t* self) {
     gfx_fill_rect(0, 0, c.w, c.h, st->bg_color);
 
     if (!st->loaded) {
-        gfx_draw_text_utf8(12, 12, COLOR_BLACK, "hello.json yuklenemedi");
+        gfx_draw_text_utf8(12, 12, COLOR_BLACK, "KEF UI yuklenemedi");
         return;
     }
 

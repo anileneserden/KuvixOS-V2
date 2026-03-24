@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <ui/wm.h>
 #include <ui/desktop.h>
+#include <kernel/exec/kef_exec.h>
 
 #include <ui/apps/notepad.h>
 #include <ui/apps/pixel_draw_app.h>
@@ -307,6 +308,24 @@ app_t* appmgr_open_path(const char* path) {
 
         printk("[AppMgr] Browser start failed\n");
         return NULL;              // ✅ fail
+    }
+
+    if (ends_with(path, ".kef")) {
+        // KEF Minimal app başlat
+        app_t* a = appmgr_start_app(19);
+        if (!a || !a->user) {
+            printk("[AppMgr] failed to start KEF app\n");
+            return NULL;
+        }
+
+        kef_minimal_state_t* st = (kef_minimal_state_t*)a->user;
+
+        if (!kef_exec_file(path, st)) {
+            printk("[AppMgr] KEF exec failed\n");
+            return NULL;
+        }
+
+        return a;
     }
 
     printk("AppManager: bilinmeyen path: %s\n", path);

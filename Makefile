@@ -67,6 +67,7 @@ SRC_C = \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
+    kernel/exec/kef_exec.c \
     kernel/exec/kef_json.c \
     kernel/exec/kef_minimal.c \
     kernel/fs/fs_init.c \
