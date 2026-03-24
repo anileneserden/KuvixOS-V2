@@ -13,6 +13,9 @@ BUILD  = build
 ISO    = iso
 KERNEL = $(BUILD)/kernel.elf
 IMAGE  = KuvixOS.iso
+SDK_BUILD = $(HOME)/KuvixOS-SDK-V2/build
+SDK_KEF   = $(SDK_BUILD)/hello.kef
+SEED_OUT  = kernel/system/generated_kef.c
 
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
@@ -73,6 +76,7 @@ SRC_C = \
     kernel/fs/toyfs.c \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
+    kernel/system/generated_kef.c \
     kernel/system/removable.c \
     kernel/system/seed_files.c \
     ui/apps/calculator.c \
@@ -165,7 +169,7 @@ OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
 
 # --- Kurallar ---
 
-all: $(KERNEL)
+all: $(SEED_OUT) $(KERNEL)
 
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -186,6 +190,29 @@ $(BUILD)/%.o: %.asm
 $(KERNEL): $(OBJS)
 	@mkdir -p $(BUILD)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
+
+$(SEED_OUT): $(SDK_KEF)
+	@echo "[KEF] syncing from SDK..."
+	@mkdir -p kernel/system
+	@echo "/* auto-generated, do not edit */" > $(SEED_OUT)
+	@echo "#include <stdint.h>" >> $(SEED_OUT)
+	@xxd -i $(SDK_KEF) | \
+		sed 's/unsigned char .*/unsigned char build_hello_kef[] = {/' | \
+		sed 's/unsigned int .*_len/unsigned int build_hello_kef_len/' \
+		>> $(SEED_OUT)
+	@echo "[KEF] embedded into $(SEED_OUT)"
+
+kef-sync:
+	@echo "[KEF] syncing from SDK..."
+	@test -f $(SDK_KEF) || (echo "SDK kef not found! Run SDK make first"; exit 1)
+	@mkdir -p kernel/system
+	@echo "/* auto-generated, do not edit */" > $(SEED_OUT)
+	@echo "#include <stdint.h>" >> $(SEED_OUT)
+	@xxd -i $(SDK_KEF) | \
+		sed 's/unsigned char .*/unsigned char build_hello_kef[] = {/' | \
+		sed 's/unsigned int .*_len/unsigned int build_hello_kef_len/' \
+		>> $(SEED_OUT)
+	@echo "[KEF] embedded into $(SEED_OUT)"
 
 iso: $(KERNEL)
 	rm -rf $(ISO)

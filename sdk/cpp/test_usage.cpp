@@ -1,4 +1,4 @@
-#include <App.hpp>
+#include <kvx/App.hpp>
 #include <lib/string.h>
 
 extern "C" void kef_cpp_smoke_test(kef_minimal_state_t* st) {

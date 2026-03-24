@@ -1,11 +1,21 @@
 #pragma once
 
-#include "UIElement.hpp"
+extern "C" {
+#include <kernel/exec/kef_minimal_runtime.h>
+}
 
-class ComboBox : public UIElement {
+class ComboBox {
 public:
     ComboBox(kef_minimal_state_t* st = nullptr, kef_widget_t* w = nullptr)
-        : UIElement(st, w) {}
+        : state(st), widget(w) {}
+
+    bool isValid() const {
+        return state != nullptr && widget != nullptr;
+    }
+
+    const char* getId() const {
+        return widget ? widget->id : "";
+    }
 
     int getSelectedIndex() const {
         if (!isValid()) return -1;
@@ -35,4 +45,8 @@ public:
         if (index < 0 || index >= widget->combo_item_count) return "";
         return widget->combo_items[index];
     }
+
+private:
+    kef_minimal_state_t* state;
+    kef_widget_t* widget;
 };

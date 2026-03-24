@@ -1,10 +1,13 @@
-// sdk/cpp/App.hpp
 #pragma once
 
-#include "Button.hpp"
-#include "Label.hpp"
-#include "TextBox.hpp"
-#include "ComboBox.hpp"
+#include <kvx/Button.hpp>
+#include <kvx/Label.hpp>
+#include <kvx/TextBox.hpp>
+#include <kvx/ComboBox.hpp>
+
+extern "C" {
+#include <kernel/exec/kef_minimal_runtime.h>
+}
 
 class App {
 private:

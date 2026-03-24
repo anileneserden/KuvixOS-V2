@@ -6,6 +6,10 @@
 #include <lib/string.h>
 #include <stdint.h>
 
+/* xxd -i ile üretilen semboller */
+extern unsigned char build_hello_kef[];
+extern unsigned int build_hello_kef_len;
+
 /* --- helpers --- */
 
 static int file_exists(const char* path) {
@@ -30,7 +34,21 @@ static int write_if_missing(const char* path, const char* text) {
     return 1;
 }
 
-/* --- seeds --- */
+static int write_binary_if_missing(const char* path, const uint8_t* data, uint32_t len) {
+    if (!path || !data || !len) return 0;
+    if (file_exists(path)) return 1;
+
+    int ok = vfs_write_all(path, data, len);
+    if (!ok) {
+        printk("[seed] binary write failed: %s\n", path);
+        return 0;
+    }
+
+    printk("[seed] created binary: %s (%u bytes)\n", path, (unsigned)len);
+    return 1;
+}
+
+/* --- text seeds --- */
 
 typedef struct {
     const char* path;
@@ -38,86 +56,11 @@ typedef struct {
 } seed_text_t;
 
 static const seed_text_t k_seed_texts[] = {
-
-    /* ---------------- hello.json ---------------- */
-    {
-        "/apps/hello.json",
-        "{\n"
-        "    \"window\": {\n"
-        "        \"title\": \"Deneme\",\n"
-        "        \"width\": 320,\n"
-        "        \"height\": 260,\n"
-        "        \"backgroundColor\": \"#121212\"\n"
-        "    },\n"
-        "    \"widgets\": [\n"
-        "        {\n"
-        "           \"id\": \"titleLabel\",\n"
-        "           \"type\": \"label\",\n"
-        "           \"text\": \"Merhaba KuvixOS\",\n"
-        "           \"x\": 12,\n"
-        "           \"y\": 12,\n"
-        "           \"color\": \"#ffffff\"\n"
-        "        },\n"
-        "        {\n"
-        "           \"id\": \"nameInput\",\n"
-        "           \"type\": \"textbox\",\n"
-        "           \"x\": 12,\n"
-        "           \"y\": 40,\n"
-        "           \"w\": 160,\n"
-        "           \"h\": 26,\n"
-        "           \"text\": \"\"\n"
-        "        },\n"
-        "        {\n"
-        "           \"id\": \"okButton\",\n"
-        "           \"type\": \"button\",\n"
-        "           \"text\": \"Tikla\",\n"
-        "           \"x\": 180,\n"
-        "           \"y\": 40,\n"
-        "           \"w\": 96,\n"
-        "           \"h\": 26,\n"
-        "           \"color\": \"#000000\"\n"
-        "        },\n"
-        "        {\n"
-        "           \"id\": \"statusLabel\",\n"
-        "           \"type\": \"label\",\n"
-        "           \"text\": \"Durum: Hazir\",\n"
-        "           \"x\": 12,\n"
-        "           \"y\": 76,\n"
-        "           \"color\": \"#ffffff\"\n"
-        "        },\n"
-        "        {\n"
-        "           \"id\": \"cppLabel\",\n"
-        "           \"type\": \"label\",\n"
-        "           \"text\": \"C++ bekliyor\",\n"
-        "           \"x\": 12,\n"
-        "           \"y\": 100,\n"
-        "           \"color\": \"#00ff00\"\n"
-        "        },\n"
-        "        {\n"
-        "           \"id\": \"countryCombo\",\n"
-        "           \"type\": \"combobox\",\n"
-        "           \"x\": 12,\n"
-        "           \"y\": 90,\n"
-        "           \"w\": 160,\n"
-        "           \"h\": 26,\n"
-        "           \"selectedIndex\": 0,\n"
-        "           \"items\": [\n"
-        "               \"Turkiye\",\n"
-        "               \"Almanya\",\n"
-        "               \"Japonya\"\n"
-        "           ]\n"
-        "        }\n"
-        "    ]\n"
-        "}\n"
-    },
-
-    /* ---------------- default.theme.json ---------------- */
     {
         "/apps/default.theme.json",
         "{\n"
         "  \"name\": \"Kuvix Default App Theme\",\n"
         "  \"version\": \"1.0\",\n"
-        "\n"
         "  \"defaults\": {\n"
         "    \"label\": {\n"
         "      \"base\": {\n"
@@ -126,7 +69,6 @@ static const seed_text_t k_seed_texts[] = {
         "        \"padding\": 0\n"
         "      }\n"
         "    },\n"
-        "\n"
         "    \"button\": {\n"
         "      \"base\": {\n"
         "        \"textColor\": \"#ffffff\",\n"
@@ -143,7 +85,6 @@ static const seed_text_t k_seed_texts[] = {
         "        \"backgroundColor\": \"#1f1f1f\"\n"
         "      }\n"
         "    },\n"
-        "\n"
         "    \"input\": {\n"
         "      \"base\": {\n"
         "        \"textColor\": \"#ffffff\",\n"
@@ -156,31 +97,6 @@ static const seed_text_t k_seed_texts[] = {
         "      },\n"
         "      \"focused\": {\n"
         "        \"borderColor\": \"#ff8c2a\"\n"
-        "      }\n"
-        "    }\n"
-        "  },\n"
-        "\n"
-        "  \"classes\": {\n"
-        "    \"title\": {\n"
-        "      \"base\": {\n"
-        "        \"textColor\": \"#ffffff\",\n"
-        "        \"fontSize\": 18\n"
-        "      }\n"
-        "    },\n"
-        "\n"
-        "    \"primaryButton\": {\n"
-        "      \"base\": {\n"
-        "        \"textColor\": \"#ffffff\",\n"
-        "        \"backgroundColor\": \"#ff8c2a\",\n"
-        "        \"borderColor\": \"#ff8c2a\",\n"
-        "        \"borderRadius\": 8,\n"
-        "        \"padding\": 10\n"
-        "      },\n"
-        "      \"hover\": {\n"
-        "        \"backgroundColor\": \"#ff9d47\"\n"
-        "      },\n"
-        "      \"active\": {\n"
-        "        \"backgroundColor\": \"#e67612\"\n"
         "      }\n"
         "    }\n"
         "  }\n"
@@ -196,6 +112,13 @@ void seed_files_run(void) {
     for (uint32_t i = 0; i < (uint32_t)(sizeof(k_seed_texts) / sizeof(k_seed_texts[0])); i++) {
         write_if_missing(k_seed_texts[i].path, k_seed_texts[i].content);
     }
+
+    /* SDK-V2'den gelen .kef dosyası */
+    write_binary_if_missing(
+        "/apps/hello.kef",
+        (const uint8_t*)build_hello_kef,
+        (uint32_t)build_hello_kef_len
+    );
 
     printk("[seed] done\n");
 }

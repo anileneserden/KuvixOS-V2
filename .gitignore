@@ -24,3 +24,4 @@ qemu.log
 vs-test.txtdisk.img
 # local build/tools
 client/
+kernel/system/generated_kef.c

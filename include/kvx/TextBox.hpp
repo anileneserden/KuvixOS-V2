@@ -1,11 +1,21 @@
 #pragma once
 
-#include "UIElement.hpp"
+extern "C" {
+#include <kernel/exec/kef_minimal_runtime.h>
+}
 
-class TextBox : public UIElement {
+class TextBox {
 public:
     TextBox(kef_minimal_state_t* st = nullptr, kef_widget_t* w = nullptr)
-        : UIElement(st, w) {}
+        : state(st), widget(w) {}
+
+    bool isValid() const {
+        return state != nullptr && widget != nullptr;
+    }
+
+    const char* getId() const {
+        return widget ? widget->id : "";
+    }
 
     const char* getText() const {
         if (!isValid()) return "";
@@ -28,4 +38,8 @@ public:
         widget->value[i] = 0;
         widget->value_len = i;
     }
+
+private:
+    kef_minimal_state_t* state;
+    kef_widget_t* widget;
 };

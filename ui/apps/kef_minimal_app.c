@@ -9,6 +9,8 @@
 #include <ui/wm.h>
 #include <ui/color.h>
 
+extern uint32_t g_ticks_ms;
+
 extern void kef_cpp_smoke_test(kef_minimal_state_t* st);
 extern void kef_cpp_on_click(kef_minimal_state_t* st, const char* id);
 
@@ -55,7 +57,6 @@ static void kef_bind_events(kef_minimal_state_t* st) {
 static int keyev_to_char(uint16_t keyev) {
     uint8_t sc8 = (uint8_t)(keyev & 0xFF);
 
-    /* break code ise karakter üretme */
     if (sc8 & 0x80) return 0;
 
     char c = kbd_scancode_to_ascii(sc8);
@@ -66,8 +67,6 @@ static int keyev_to_char(uint16_t keyev) {
 
 static int keyev_is_backspace(uint16_t keyev) {
     uint8_t sc8 = (uint8_t)(keyev & 0xFF);
-
-    /* Set1 backspace make code */
     return sc8 == 0x0E;
 }
 
@@ -78,7 +77,7 @@ static void kef_minimal_on_create(app_t* self) {
     memset(st, 0, sizeof(*st));
     st->window_id = self->win_id;
 
-    if (kef_json_load_file("/apps/hello.json", st)) {
+    if (kef_json_load_file("/apps/hello.kef", st)) {
         st->loaded = 1;
         wm_set_title(self->win_id, st->title);
         wm_set_window_size(self->win_id, st->width, st->height);
@@ -127,16 +126,35 @@ static void kef_minimal_on_draw(app_t* self) {
             gfx_draw_rect(w->x, w->y, w->w, w->h, w->focused ? 0x00A2FF : COLOR_BLACK);
 
             if (w->value[0]) {
-                /* input buffer tek-byte KVX charset */
                 gfx_draw_text(w->x + 4, w->y + 6, w->text_color, w->value);
             } else {
-                /* placeholder JSON'dan geliyor, UTF-8 */
                 gfx_draw_text_utf8(w->x + 4, w->y + 6, 0x888888, w->placeholder);
             }
-        } else if (w->type == KEF_WIDGET_COMBOBOX) {
+
+            /* blinking caret */
+            if (w->focused) {
+                if ((g_ticks_ms - w->caret_last_toggle) >= 500) {
+                    w->caret_visible = !w->caret_visible;
+                    w->caret_last_toggle = g_ticks_ms;
+                }
+
+                if (w->caret_visible) {
+                    int text_len = (int)strlen(w->value);
+                    int caret_x = w->x + 4 + (text_len * 8);
+                    int caret_y = w->y + 4;
+                    int caret_h = w->h - 8;
+
+                    if (caret_h < 8) caret_h = 8;
+                    gfx_fill_rect(caret_x, caret_y, 1, caret_h, 0x000000);
+                }
+
+                /* caret blink için yeniden çizim iste */
+                wm_invalidate_window(st->window_id);
+            }
+        }
+        else if (w->type == KEF_WIDGET_COMBOBOX) {
             int item_h = 22;
 
-            /* main box */
             gfx_fill_rect(w->x, w->y, w->w, w->h, 0xFFFFFFFF);
             gfx_draw_rect(w->x, w->y, w->w, w->h, 0xFF808080);
 
@@ -148,7 +166,6 @@ static void kef_minimal_on_draw(app_t* self) {
             gfx_draw_text_utf8(w->x + 6, w->y + 6, 0xFF111111, txt);
             gfx_draw_text_utf8(w->x + w->w - 12, w->y + 6, 0xFF111111, "v");
 
-            /* dropdown */
             if (w->combo_open) {
                 for (int j = 0; j < w->combo_item_count; j++) {
                     int iy = w->y + w->h + j * item_h;
@@ -172,14 +189,13 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
     kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
     if (!st || !st->loaded) return;
 
-    printk("[MOUSE] mx=%d my=%d pr=%d rel=%d\n", mx, my, pr, rel);
-
     if (pr & 0x01) {
-        /* önce input focuslarını kapat */
+        /* önce tüm input focuslarını kapat */
         for (int i = 0; i < st->widget_count; i++) {
             kef_widget_t* w = &st->widgets[i];
             if (w->type == KEF_WIDGET_INPUT) {
                 w->focused = 0;
+                w->caret_visible = 0;
             }
         }
 
@@ -188,6 +204,8 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
             kef_widget_t* w = &st->widgets[i];
             if (w->type == KEF_WIDGET_INPUT && point_in_widget(w, mx, my)) {
                 w->focused = 1;
+                w->caret_visible = 1;
+                w->caret_last_toggle = g_ticks_ms;
                 wm_invalidate_window(st->window_id);
             }
         }
@@ -199,15 +217,14 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
 
             int item_h = 22;
 
-            /* 1) ana kutuya tıklanırsa aç/kapat */
+            /* ana kutuya tıklanırsa aç/kapat */
             if (point_in_widget(w, mx, my)) {
-                printk("combobox'a tıklandı!");
                 w->combo_open = !w->combo_open;
                 wm_invalidate_window(st->window_id);
                 return;
             }
 
-            /* 2) dropdown açıksa item seçimi */
+            /* dropdown açıksa item seçimi */
             if (w->combo_open) {
                 int list_x = w->x;
                 int list_y = w->y + w->h;
@@ -227,7 +244,7 @@ static void kef_minimal_on_mouse(app_t* self, int mx, int my, uint8_t pr, uint8_
                     return;
                 }
 
-                /* 3) açıkken dışarı tıklanırsa kapat */
+                /* açıkken dışarı tıklanırsa kapat */
                 w->combo_open = 0;
                 wm_invalidate_window(st->window_id);
             }
@@ -273,6 +290,8 @@ static void kef_minimal_on_key(app_t* self, uint16_t keyev) {
             if (len > 0) {
                 w->value[len - 1] = 0;
                 w->cursor_pos = len - 1;
+                w->caret_visible = 1;
+                w->caret_last_toggle = g_ticks_ms;
                 wm_invalidate_window(st->window_id);
             }
             return;
@@ -285,6 +304,8 @@ static void kef_minimal_on_key(app_t* self, uint16_t keyev) {
                 w->value[len] = (char)ch;
                 w->value[len + 1] = 0;
                 w->cursor_pos = len + 1;
+                w->caret_visible = 1;
+                w->caret_last_toggle = g_ticks_ms;
                 wm_invalidate_window(st->window_id);
             }
             return;
@@ -299,12 +320,25 @@ static void kef_minimal_on_destroy(app_t* self) {
     printk("[KEFJSON] destroy win=%d\n", st->window_id);
 }
 
+static void kef_minimal_on_update(app_t* self) {
+    kef_minimal_state_t* st = (kef_minimal_state_t*)self->user;
+    if (!st || !st->loaded) return;
+
+    for (int i = 0; i < st->widget_count; i++) {
+        kef_widget_t* w = &st->widgets[i];
+        if (w->type == KEF_WIDGET_INPUT && w->focused) {
+            wm_invalidate_window(st->window_id);
+            return;
+        }
+    }
+}
+
 const app_vtbl_t g_kef_minimal_vtbl = {
     .on_create = kef_minimal_on_create,
     .on_destroy = kef_minimal_on_destroy,
     .on_mouse = kef_minimal_on_mouse,
     .on_key = kef_minimal_on_key,
-    .on_update = 0,
+    .on_update = kef_minimal_on_update,
     .on_draw = kef_minimal_on_draw,
     .on_close_request = 0,
     .on_wheel = 0,

@@ -34,7 +34,11 @@ struct kef_widget {
     int hovered;
     int focused;
     int cursor_pos;
+    int value_len;
 
+    /* textbox caret */
+    int caret_visible;
+    uint32_t caret_last_toggle;
 
     /* combobox */
     char combo_items[KEF_MAX_COMBO_ITEMS][KEF_MAX_COMBO_TEXT];
