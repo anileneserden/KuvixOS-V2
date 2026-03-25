@@ -51,7 +51,18 @@ static const seed_text_t k_seed_texts[] = {
         "/system/ui/desktop.json",
         "{\n"
         "  \"type\": \"Screen\",\n"
-        "  \"backgroundColor\": \"#FFFFFF\"\n"
+        "  \"backgroundColor\": \"#000000\",\n"
+        "  \"children\": [\n"
+        "    {\n"
+        "      \"id\": \"panel1\",\n"
+        "      \"type\": \"Panel\",\n"
+        "      \"x\": 100,\n"
+        "      \"y\": 100,\n"
+        "      \"width\": 300,\n"
+        "      \"height\": 50,\n"
+        "      \"backgroundColor\": \"#ffffff\"\n"
+        "    }\n"
+        "  ]\n"
         "}\n"
     }
 };

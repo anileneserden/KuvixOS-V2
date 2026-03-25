@@ -5,7 +5,9 @@
 #include <lib/string.h>
 #include <stdint.h>
 
-/* --- helpers --- */
+/* -------------------------------------------------- */
+/* helpers                                            */
+/* -------------------------------------------------- */
 
 static int hex_val(char c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -14,13 +16,73 @@ static int hex_val(char c) {
     return -1;
 }
 
-/* --- color parse --- */
+static const char* skip_ws(const char* p) {
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    return p;
+}
+
+static const char* find_json_string_value(const char* json, const char* key) {
+    const char* p = strstr(json, key);
+    if (!p) return 0;
+
+    p = strchr(p, ':');
+    if (!p) return 0;
+    p++;
+    p = skip_ws(p);
+
+    if (*p != '"') return 0;
+    p++;
+
+    return p;
+}
+
+static int find_json_int_value(const char* json, const char* key, int fallback) {
+    const char* p = strstr(json, key);
+    int sign = 1;
+    int v = 0;
+    int found = 0;
+
+    if (!p) return fallback;
+
+    p = strchr(p, ':');
+    if (!p) return fallback;
+    p++;
+    p = skip_ws(p);
+
+    if (*p == '-') {
+        sign = -1;
+        p++;
+    }
+
+    while (*p >= '0' && *p <= '9') {
+        v = (v * 10) + (*p - '0');
+        p++;
+        found = 1;
+    }
+
+    if (!found) return fallback;
+    return v * sign;
+}
+
+static int copy_json_string(const char* src, char* out, int out_sz) {
+    int i = 0;
+    if (!src || !out || out_sz <= 0) return 0;
+
+    while (src[i] && src[i] != '"' && i < out_sz - 1) {
+        out[i] = src[i];
+        i++;
+    }
+    out[i] = '\0';
+    return i;
+}
+
+/* -------------------------------------------------- */
+/* color                                              */
+/* -------------------------------------------------- */
 
 uint32_t ui_parse_color(const char* s) {
     if (!s || s[0] != '#') return 0x000000;
-
-    int len = (int)strlen(s);
-    if (len != 7) return 0x000000; // #RRGGBB
+    if ((int)strlen(s) != 7) return 0x000000; /* #RRGGBB */
 
     int r1 = hex_val(s[1]), r2 = hex_val(s[2]);
     int g1 = hex_val(s[3]), g2 = hex_val(s[4]);
@@ -36,36 +98,69 @@ uint32_t ui_parse_color(const char* s) {
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-/* --- JSON helper --- */
+/* -------------------------------------------------- */
+/* panel parse (ilk sürüm: sadece ilk Panel)          */
+/* -------------------------------------------------- */
 
-static const char* find_json_string_value(const char* json, const char* key) {
-    const char* p = strstr(json, key);
-    if (!p) return 0;
+static int ui_parse_first_panel(const char* json, ui_panel_t* out) {
+    const char* children;
+    const char* panel_type;
+    const char* idv;
+    const char* bgv;
+    char color_buf[8];
 
-    p = strchr(p, ':');
-    if (!p) return 0;
-    p++;
+    if (!json || !out) return 0;
 
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    out->used = 0;
+    out->visible = 1;
+    out->background_color = 0x202020;
 
-    if (*p != '"') return 0;
-    p++;
+    children = strstr(json, "\"children\"");
+    if (!children) return 0;
 
-    return p;
+    panel_type = strstr(children, "\"type\": \"Panel\"");
+    if (!panel_type) return 0;
+
+    idv = find_json_string_value(panel_type, "\"id\"");
+    if (idv) {
+        copy_json_string(idv, out->id, sizeof(out->id));
+    } else {
+        out->id[0] = '\0';
+    }
+
+    out->x = find_json_int_value(panel_type, "\"x\"", 0);
+    out->y = find_json_int_value(panel_type, "\"y\"", 0);
+    out->width = find_json_int_value(panel_type, "\"width\"", 0);
+    out->height = find_json_int_value(panel_type, "\"height\"", 0);
+
+    bgv = find_json_string_value(panel_type, "\"backgroundColor\"");
+    if (bgv) {
+        copy_json_string(bgv, color_buf, sizeof(color_buf));
+        out->background_color = ui_parse_color(color_buf);
+    }
+
+    out->used = 1;
+    return 1;
 }
 
-/* --- main loader --- */
+/* -------------------------------------------------- */
+/* main loader                                        */
+/* -------------------------------------------------- */
 
 int ui_screen_load(const char* path, ui_screen_t* out) {
+    char buf[4096];
+    uint32_t out_sz = 0;
+    int ok;
+    const char* bgv;
+    char color_buf[8];
+
     if (!path || !out) return 0;
 
     out->background_color = 0x000000;
     out->loaded = 0;
+    out->panel.used = 0;
 
-    char buf[1024];
-    uint32_t out_sz = 0;
-
-    int ok = vfs_read_all(path, (uint8_t*)buf, sizeof(buf) - 1, &out_sz);
+    ok = vfs_read_all(path, (uint8_t*)buf, sizeof(buf) - 1, &out_sz);
     if (!ok) {
         printk("[ui] read failed: %s\n", path);
         return 0;
@@ -73,25 +168,20 @@ int ui_screen_load(const char* path, ui_screen_t* out) {
 
     buf[out_sz] = '\0';
 
-    const char* val = find_json_string_value(buf, "\"backgroundColor\"");
-    if (!val) {
-        printk("[ui] backgroundColor not found\n");
-        out->loaded = 1;
-        return 1;
+    bgv = find_json_string_value(buf, "\"backgroundColor\"");
+    if (bgv) {
+        copy_json_string(bgv, color_buf, sizeof(color_buf));
+        out->background_color = ui_parse_color(color_buf);
     }
 
-    char color[8];
-    int i = 0;
+    ui_parse_first_panel(buf, &out->panel);
 
-    while (val[i] && val[i] != '"' && i < 7) {
-        color[i] = val[i];
-        i++;
-    }
-    color[i] = '\0';
-
-    out->background_color = ui_parse_color(color);
     out->loaded = 1;
 
-    printk("[ui] loaded screen: %s (%s)\n", path, color);
+    printk("[ui] loaded screen: %s\n", path);
+    printk("[ui] bg=0x%x panel_used=%d\n",
+           (unsigned)out->background_color,
+           out->panel.used);
+
     return 1;
 }
