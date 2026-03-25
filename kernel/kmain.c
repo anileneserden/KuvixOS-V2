@@ -24,10 +24,13 @@
 #include <ui/session.h>
 
 #include <kernel/fs/fs_init.h>
+#include <kernel/fs/vfs.h>
 
 #include <ui/inputtest.h>
 
 #include <ui/theme.h>
+
+#include <kernel/system/seed_files.h>
 
 extern void gdt_init(void);
 extern void idt_init(void);
@@ -123,12 +126,18 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     asm volatile("sti");
 
     fs_init_once();
+    seed_files_run();
+
+    uint8_t tmp[128];
+    uint32_t out_sz = 0;
+    int ok = vfs_read_all("/system/ui/desktop.json", tmp, sizeof(tmp) - 1, &out_sz);
+    printk("[test] read after seed = %d size=%u\n", ok, out_sz);
 
     ui_theme_bootstrap_default();
 
     // UI
     ui_session_init();
-    ui_session_switch(UI_SESSION_DESKTOP);
+    ui_session_switch(UI_SESSION_JSON_SCREEN);
 
     while (1) {
         // klavye event dispatch

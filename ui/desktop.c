@@ -43,6 +43,7 @@
 
 #include <ui/desktop_icons/folder_icon.h>
 
+#include <ui/screen.h>
 
 // --- DIŞ BİLDİRİMLER ---
 extern char kbd_scancode_to_ascii(uint8_t scancode);
@@ -121,6 +122,8 @@ static int g_dbg_wheel_total = 0;
 static bool g_need_redraw = true;
 
 static int g_dbg_redraw_reason = 0;
+
+static ui_screen_t g_desktop_screen;
 
 void desktop_request_redraw(void) {
     g_need_redraw = true;
@@ -1307,7 +1310,11 @@ void ui_desktop_tick(void) {
     g_force_full_present = false;
 
     // ---------- Render scene ----------
-    fb_clear(ui_get_desktop_bg());
+    if (g_desktop_screen.loaded) {
+        ui_screen_render(&g_desktop_screen);
+    } else {
+        fb_clear(ui_get_desktop_bg());
+    }
     desktop_icons_draw_all();
     topbar_draw();
 

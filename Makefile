@@ -64,6 +64,7 @@ SRC_C = \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
+    kernel/system/seed_files.c \
     ui/apps/calculator.c \
     ui/apps/controls_test.c \
     ui/apps/demo.c \
@@ -111,11 +112,14 @@ SRC_C = \
     ui/desktop_icons.c \
     ui/desktop_seed.c \
     ui/desktop.c \
+    ui/json_screen.c \
     ui/icons/ui_icons.c \
     ui/inputtest.c \
     ui/mouse.c \
     ui/notification.c \
     ui/power_screen.c \
+    ui/screen_json.c \
+    ui/screen_render.c \
     ui/select.c \
     ui/session.c \
     ui/theme_bootstrap.c \
@@ -127,6 +131,7 @@ SRC_C = \
     ui/ui_button.c \
     ui/ui_init.c \
     ui/ui_label.c \
+    ui/ui_render.c \
     ui/ui_settings.c \
     ui/wallpaper.c \
     ui/window_chrome.c \
