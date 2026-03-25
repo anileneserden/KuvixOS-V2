@@ -148,6 +148,8 @@ static int ui_parse_first_label(const char* json, ui_label_t* out) {
     const char* label_type;
     const char* idv;
     const char* textv;
+    const char* bindv;
+    const char* formatv;
     const char* colorv;
     char color_buf[8];
 
@@ -171,6 +173,12 @@ static int ui_parse_first_label(const char* json, ui_label_t* out) {
 
     textv = find_json_string_value(label_type, "\"text\"");
     if (textv) copy_json_string(textv, out->text, sizeof(out->text));
+
+    bindv = find_json_string_value(label_type, "\"bind\"");
+    if (bindv) copy_json_string(bindv, out->bind, sizeof(out->bind));
+
+    formatv = find_json_string_value(label_type, "\"format\"");
+    if (formatv) copy_json_string(formatv, out->format, sizeof(out->format));
 
     colorv = find_json_string_value(label_type, "\"color\"");
     if (colorv) {

@@ -17,6 +17,8 @@ typedef struct {
     int x;
     int y;
     char text[128];
+    char bind[64];
+    char format[64];
     uint32_t color;
     int visible;
     int used;
@@ -26,8 +28,8 @@ typedef struct {
     uint32_t background_color;
     int loaded;
 
-    ui_panel_t panel; /* ilk sürüm: sadece 1 panel */
-    ui_label_t label; /* ilk sürüm: sadece 1 label */
+    ui_panel_t panel;
+    ui_label_t label;
 } ui_screen_t;
 
 int ui_screen_load(const char* path, ui_screen_t* out);
