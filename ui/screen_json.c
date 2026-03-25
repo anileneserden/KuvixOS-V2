@@ -99,7 +99,7 @@ uint32_t ui_parse_color(const char* s) {
 }
 
 /* -------------------------------------------------- */
-/* panel parse (ilk sürüm: sadece ilk Panel)          */
+/* panel parse                                        */
 /* -------------------------------------------------- */
 
 static int ui_parse_first_panel(const char* json, ui_panel_t* out) {
@@ -111,7 +111,7 @@ static int ui_parse_first_panel(const char* json, ui_panel_t* out) {
 
     if (!json || !out) return 0;
 
-    out->used = 0;
+    memset(out, 0, sizeof(*out));
     out->visible = 1;
     out->background_color = 0x202020;
 
@@ -122,11 +122,7 @@ static int ui_parse_first_panel(const char* json, ui_panel_t* out) {
     if (!panel_type) return 0;
 
     idv = find_json_string_value(panel_type, "\"id\"");
-    if (idv) {
-        copy_json_string(idv, out->id, sizeof(out->id));
-    } else {
-        out->id[0] = '\0';
-    }
+    if (idv) copy_json_string(idv, out->id, sizeof(out->id));
 
     out->x = find_json_int_value(panel_type, "\"x\"", 0);
     out->y = find_json_int_value(panel_type, "\"y\"", 0);
@@ -137,6 +133,49 @@ static int ui_parse_first_panel(const char* json, ui_panel_t* out) {
     if (bgv) {
         copy_json_string(bgv, color_buf, sizeof(color_buf));
         out->background_color = ui_parse_color(color_buf);
+    }
+
+    out->used = 1;
+    return 1;
+}
+
+/* -------------------------------------------------- */
+/* label parse                                        */
+/* -------------------------------------------------- */
+
+static int ui_parse_first_label(const char* json, ui_label_t* out) {
+    const char* children;
+    const char* label_type;
+    const char* idv;
+    const char* textv;
+    const char* colorv;
+    char color_buf[8];
+
+    if (!json || !out) return 0;
+
+    memset(out, 0, sizeof(*out));
+    out->visible = 1;
+    out->color = 0xFFFFFF;
+
+    children = strstr(json, "\"children\"");
+    if (!children) return 0;
+
+    label_type = strstr(children, "\"type\": \"Label\"");
+    if (!label_type) return 0;
+
+    idv = find_json_string_value(label_type, "\"id\"");
+    if (idv) copy_json_string(idv, out->id, sizeof(out->id));
+
+    out->x = find_json_int_value(label_type, "\"x\"", 0);
+    out->y = find_json_int_value(label_type, "\"y\"", 0);
+
+    textv = find_json_string_value(label_type, "\"text\"");
+    if (textv) copy_json_string(textv, out->text, sizeof(out->text));
+
+    colorv = find_json_string_value(label_type, "\"color\"");
+    if (colorv) {
+        copy_json_string(colorv, color_buf, sizeof(color_buf));
+        out->color = ui_parse_color(color_buf);
     }
 
     out->used = 1;
@@ -156,9 +195,9 @@ int ui_screen_load(const char* path, ui_screen_t* out) {
 
     if (!path || !out) return 0;
 
+    memset(out, 0, sizeof(*out));
     out->background_color = 0x000000;
     out->loaded = 0;
-    out->panel.used = 0;
 
     ok = vfs_read_all(path, (uint8_t*)buf, sizeof(buf) - 1, &out_sz);
     if (!ok) {
@@ -175,13 +214,15 @@ int ui_screen_load(const char* path, ui_screen_t* out) {
     }
 
     ui_parse_first_panel(buf, &out->panel);
+    ui_parse_first_label(buf, &out->label);
 
     out->loaded = 1;
 
     printk("[ui] loaded screen: %s\n", path);
-    printk("[ui] bg=0x%x panel_used=%d\n",
+    printk("[ui] bg=0x%x panel=%d label=%d\n",
            (unsigned)out->background_color,
-           out->panel.used);
+           out->panel.used,
+           out->label.used);
 
     return 1;
 }

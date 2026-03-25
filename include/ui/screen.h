@@ -13,10 +13,21 @@ typedef struct {
 } ui_panel_t;
 
 typedef struct {
+    char id[64];
+    int x;
+    int y;
+    char text[128];
+    uint32_t color;
+    int visible;
+    int used;
+} ui_label_t;
+
+typedef struct {
     uint32_t background_color;
     int loaded;
 
     ui_panel_t panel; /* ilk sürüm: sadece 1 panel */
+    ui_label_t label; /* ilk sürüm: sadece 1 label */
 } ui_screen_t;
 
 int ui_screen_load(const char* path, ui_screen_t* out);

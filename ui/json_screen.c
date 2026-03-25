@@ -14,6 +14,7 @@ void ui_json_screen_init(void) {
         g_screen.background_color = 0x000000;
         g_screen.loaded = 0;
         g_screen.panel.used = 0;
+        g_screen.label.used = 0;
         printk("[json_screen] fallback background\n");
     }
 }
