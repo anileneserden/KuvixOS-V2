@@ -4,18 +4,20 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // String fonksiyonları
 int      strcmp(const char* s1, const char* s2);
-int      streq(const char* s1, const char* s2); // 1: eşit, 0: değil
-// String fonksiyonları altına ekle
-int    strncmp(const char* s1, const char* s2, size_t n);
-char* strncpy(char* dest, const char* src, size_t n);
+int      streq(const char* s1, const char* s2);
+int      strncmp(const char* s1, const char* s2, size_t n);
+char*    strncpy(char* dest, const char* src, size_t n);
 size_t   strlen(const char* str);
-char* strcpy(char* dest, const char* src);
-// include/lib/string.h içine eklenecekler:
-char* strchr(const char* s, int c);
-char* strrchr(const char* s, int c);
-char* strstr(const char* haystack, const char* needle);
+char*    strcpy(char* dest, const char* src);
+char*    strchr(const char* s, int c);
+char*    strrchr(const char* s, int c);
+char*    strstr(const char* haystack, const char* needle);
 
 // Bellek fonksiyonları
 void* memcpy(void* dest, const void* src, size_t n);
@@ -24,5 +26,9 @@ void* memmove(void* dest, const void* src, size_t n);
 
 char* strcat(char* dest, const char* src);
 char* strncat(char* dest, const char* src, size_t n);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -160,11 +160,17 @@ SRC_C = \
     lib/string/string.c
 
 SRC_CPP = \
+    ui/kui/cpp/widgets/label_widget.cpp \
+    ui/kui/cpp/widgets/panel_widget.cpp \
+    ui/kui/cpp/widgets/rect_widget.cpp \
     ui/kui/cpp/fb.cpp \
     ui/kui/cpp/graphics.cpp \
+    ui/kui/cpp/memory.cpp \
     ui/kui/cpp/print.cpp \
+    ui/kui/cpp/test_ui_c_bridge.cpp \
     ui/kui/cpp/test_ui.cpp \
-    ui/kui/cpp/test_ui_c_bridge.cpp
+    ui/kui/cpp/ui_root.cpp \
+    ui/kui/cpp/widget.cpp
 
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
