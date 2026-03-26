@@ -2,11 +2,10 @@
 #  KuvixOS-V2 Makefile
 # ==========================
 
-CC = gcc
-LD = gcc
-AS = nasm
-# 64-bit matematik işlemleri için gerekli yardımcı kütüphane
-LIBGCC := $(shell $(CC) $(CFLAGS) -m32 -print-libgcc-file-name)
+CC  = gcc
+CXX = g++
+LD  = g++
+AS  = nasm
 
 BUILD  = build
 ISO    = iso
@@ -19,6 +18,13 @@ CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -Iinclude -DTIMEZONE_OFFSET=3
 #          -DKBD_SERIAL_DEBUG
 
+CXXFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra \
+           -fno-pie -fno-stack-protector \
+           -fno-exceptions -fno-rtti \
+           -nostdlib -nostartfiles \
+           -Iinclude -DTIMEZONE_OFFSET=3 \
+           -std=gnu++17
+
 ASFLAGS = -m32
 NASMFLAGS = -f elf32
 
@@ -26,9 +32,17 @@ LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments \
           -Wl,--no-gc-sections
 
+# 64-bit matematik işlemleri için gerekli yardımcı kütüphane
+LIBGCC := $(shell $(CC) $(CFLAGS) -m32 -print-libgcc-file-name)
+
+# Eğer sonra global new/delete gibi şeyler gerekirse buraya libstdc++ eklenebilir.
+# Şimdilik kullanmıyoruz.
+# LIBSTDCXX := $(shell $(CXX) $(CXXFLAGS) -m32 -print-file-name=libstdc++.a)
+
 # --- Kaynak Dosyalar ---
 SRC_S = boot/boot.S
 SRC_ASM = kernel/arch/x86/interrupt_entry.asm
+
 SRC_C = \
     kernel/kmain.c \
     kernel/panic.c \
@@ -143,14 +157,22 @@ SRC_C = \
     lib/service/service_registry.c \
     lib/service/service.c \
     lib/shell/shell.c \
-    lib/string/string.c \
+    lib/string/string.c
+
+SRC_CPP = \
+    ui/kui/cpp/fb.cpp \
+    ui/kui/cpp/graphics.cpp \
+    ui/kui/cpp/test_ui.cpp \
+    ui/kui/cpp/test_ui_c_bridge.cpp
 
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 
-OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
-       $(SRC_ASM:%.asm=$(BUILD)/%.o) \
-       $(SRC_C:%.c=$(BUILD)/%.o)
+OBJS = \
+    $(SRC_S:%.S=$(BUILD)/%.o) \
+    $(SRC_ASM:%.asm=$(BUILD)/%.o) \
+    $(SRC_C:%.c=$(BUILD)/%.o) \
+    $(SRC_CPP:%.cpp=$(BUILD)/%.o)
 
 # --- Kurallar ---
 
@@ -159,6 +181,10 @@ all: $(KERNEL)
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)
