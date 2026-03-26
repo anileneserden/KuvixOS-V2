@@ -162,6 +162,7 @@ SRC_C = \
 SRC_CPP = \
     ui/kui/cpp/fb.cpp \
     ui/kui/cpp/graphics.cpp \
+    ui/kui/cpp/print.cpp \
     ui/kui/cpp/test_ui.cpp \
     ui/kui/cpp/test_ui_c_bridge.cpp
 

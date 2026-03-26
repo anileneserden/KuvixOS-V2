@@ -2,10 +2,11 @@
 
 #ifdef __cplusplus
 extern "C" {
-    #endif
+#endif
 
-    void kui_cpp_test_ui_run(void);
+void kui_cpp_test_ui_init(void);
+void kui_cpp_test_ui_tick(void);
 
-    #ifdef __cplusplus
+#ifdef __cplusplus
 }
 #endif

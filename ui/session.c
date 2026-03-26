@@ -26,7 +26,6 @@ void ui_session_init(void) {
 
 void ui_session_switch(ui_session_t s) {
     g_current = s;
-    printk("[session] switch -> %d\n", (int)s);
 
     if (s == UI_SESSION_TTY1) {
         fb_console_set_enabled(true);
@@ -49,9 +48,8 @@ void ui_session_switch(ui_session_t s) {
 
     if (s == UI_SESSION_KUI_TEST) {
         fb_console_set_enabled(false);
-
-        printk("[session] running KUI C++ test\n");
-        kui_cpp_test_ui_run();
+        fb_console_clear();
+        kui_cpp_test_ui_init();
         return;
     }
 }
@@ -73,9 +71,7 @@ void ui_session_tick(void) {
     }
 
     if (g_current == UI_SESSION_KUI_TEST) {
-        // Şimdilik statik test ekranı.
-        // İstersen burada ileride:
-        // kui_cpp_test_ui_tick();
+        kui_cpp_test_ui_tick();
         return;
     }
 }
@@ -92,15 +88,11 @@ void ui_session_handle_scancode(uint16_t sc) {
     }
 
     if (g_current == UI_SESSION_JSON_SCREEN) {
-        // Şimdilik JSON screen için özel scancode handler yok.
-        // İleride eklersen buradan çağır:
-        // ui_json_screen_handle_scancode(sc);
         (void)sc;
         return;
     }
 
     if (g_current == UI_SESSION_KUI_TEST) {
-        // Şimdilik test session input almıyor.
         (void)sc;
         return;
     }

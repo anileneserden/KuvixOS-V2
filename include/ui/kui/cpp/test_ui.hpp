@@ -1,9 +1,6 @@
 #pragma once
 
-namespace kui {
-    namespace test {
-
-        void runTestUI();
-
-    } // namespace test
-} // namespace kui
+namespace kui::test {
+    void initTestUI();
+    void tickTestUI();
+}

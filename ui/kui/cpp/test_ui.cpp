@@ -2,20 +2,23 @@
 #include <ui/kui/cpp/fb.hpp>
 #include <ui/kui/cpp/graphics.hpp>
 #include <ui/kui/cpp/color.hpp>
+#include <ui/kui/cpp/print.hpp>
 
 namespace kui::test {
 
-    void runTestUI() {
-        kui::Framebuffer fb;
-        kui::Graphics gfx(fb);
+void initTestUI() {
+    print("KUI test init\n");
+}
 
-        gfx.clear(kui::Color::Gray);
+void tickTestUI() {
+    kui::Framebuffer fb;
+    kui::Graphics gfx(fb);
 
-        gfx.fillRect(20, 20, 120, 80, kui::Color::White);
-        gfx.fillRect(30, 30, 20, 20, kui::Color::Red);
+    gfx.clear(kui::Color::Gray);
+    gfx.drawTextUtf8(20, 20, kui::Color::White, "ONLY THIS");
 
-        gfx.drawTextUtf8(20, 120, kui::Color::White, "Deneme");
-        gfx.drawTextUtf8(20, 140, kui::Color::Red, "KUI C++ Test");
-    }
+    // çok önemli
+    gfx.present();
+}
 
 }

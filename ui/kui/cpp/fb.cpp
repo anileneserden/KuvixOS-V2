@@ -4,6 +4,7 @@ extern "C" {
     void fb_putpixel(int x, int y, unsigned int color);
     int fb_get_width(void);
     int fb_get_height(void);
+    void fb_present(void);
 }
 
 namespace kui {
@@ -18,6 +19,10 @@ int Framebuffer::width() const {
 
 int Framebuffer::height() const {
     return fb_get_height();
+}
+
+void Framebuffer::present() {
+    fb_present();
 }
 
 } // namespace kui
