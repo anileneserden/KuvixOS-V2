@@ -1,9 +1,9 @@
 #pragma once
 
 namespace kui {
-namespace test {
+    namespace test {
 
-void runTestUI();
+        void runTestUI();
 
-} // namespace test
+    } // namespace test
 } // namespace kui

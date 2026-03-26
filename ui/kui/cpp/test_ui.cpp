@@ -1,21 +1,21 @@
 #include <ui/kui/cpp/test_ui.hpp>
 #include <ui/kui/cpp/fb.hpp>
 #include <ui/kui/cpp/graphics.hpp>
+#include <ui/kui/cpp/color.hpp>
 
-namespace kui {
-namespace test {
+namespace kui::test {
 
-void runTestUI() {
-    kui::Framebuffer fb;
-    kui::Graphics gfx(fb);
+    void runTestUI() {
+        kui::Framebuffer fb;
+        kui::Graphics gfx(fb);
 
-    gfx.clear(0x00202020);
+        gfx.clear(kui::Color::Gray);
 
-    gfx.fillRect(20, 20, 120, 80, 0x00FFFFFF);
-    gfx.fillRect(30, 30, 20, 20, 0x00FF0000);
+        gfx.fillRect(20, 20, 120, 80, kui::Color::White);
+        gfx.fillRect(30, 30, 20, 20, kui::Color::Red);
 
-    gfx.putPixel(10, 10, 0x00FFFFFF);
+        gfx.drawTextUtf8(20, 120, kui::Color::White, "Deneme");
+        gfx.drawTextUtf8(20, 140, kui::Color::Red, "KUI C++ Test");
+    }
+
 }
-
-} // namespace test
-} // namespace kui
