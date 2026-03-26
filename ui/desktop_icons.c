@@ -1,11 +1,8 @@
-// ui/desktop_icons.c
-
 #include <ui/desktop_icons.h>
 #include <ui/desktop.h>
 #include <ui/desktop_icons/text_file.h>
 #include <ui/desktop_icons/generic_file.h>
 #include <ui/desktop_icons/folder_icon.h>
-#include <ui/desktop.h>
 
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
@@ -28,6 +25,38 @@ static int icon_count = 0;
 static bool snap_to_grid = true;
 static int drag_off_x[MAX_DESKTOP_ICONS];
 static int drag_off_y[MAX_DESKTOP_ICONS];
+
+static desktop_icons_style_t g_style = {
+    .card_width = 72,
+    .card_height = 72,
+    .corner_radius = 12,
+
+    .grid_cell = 90,
+    .offset_x = 20,
+    .offset_y = 40,
+
+    .icon_base = 20,
+    .icon_scale = 2,
+    .icon_pad_top = 8,
+
+    .label_pad_bottom = 6,
+    .label_max_chars = 10,
+
+    .shadow_color = 0x101010,
+    .normal_color = 0x2A2A2A,
+    .hover_color = 0x0078D7,
+    .selected_color = 0x005FB3,
+    .text_color = 0x00FFFFFF,
+};
+
+void desktop_icons_set_style(const desktop_icons_style_t* style) {
+    if (!style) return;
+    g_style = *style;
+}
+
+const desktop_icons_style_t* desktop_icons_get_style(void) {
+    return &g_style;
+}
 
 // ------------------------------------------------------------
 // Helpers
@@ -57,19 +86,21 @@ static void icons_add(const char* full_path, const char* label, bool is_dir) {
     desktop_icon_t* ic = &icons[icon_count];
     memset(ic, 0, sizeof(*ic));
 
-    // full path
     strncpy(ic->vfs_name, full_path, 63);
     ic->vfs_name[63] = '\0';
 
-    // label
     strncpy(ic->label, label, 31);
     ic->label[31] = '\0';
 
     ic->is_dir = is_dir;
 
-    // basit dizilim
-    ic->x = 40 + (icon_count / 5 * 100);
-    ic->y = 40 + (icon_count % 5 * 90);
+    // style ile uyumlu kaba başlangıç yerleşimi
+    {
+        int col = icon_count / 5;
+        int row = icon_count % 5;
+        ic->x = g_style.offset_x + (col * g_style.grid_cell);
+        ic->y = g_style.offset_y + (row * g_style.grid_cell);
+    }
 
     ic->is_selected = false;
     ic->dragging = false;
@@ -84,7 +115,6 @@ static void strip_ext(char* out, int out_sz, const char* name, const char* ext) 
     out[0] = '\0';
     if (!name) return;
 
-    // default: name'i kopyala
     strncpy(out, name, out_sz - 1);
     out[out_sz - 1] = '\0';
 
@@ -94,7 +124,7 @@ static void strip_ext(char* out, int out_sz, const char* name, const char* ext) 
     int elen = (int)strlen(ext);
 
     if (nlen >= elen && strcmp(out + (nlen - elen), ext) == 0) {
-        out[nlen - elen] = '\0'; // ext'i kırp
+        out[nlen - elen] = '\0';
     }
 }
 
@@ -102,11 +132,11 @@ static void strip_ext(char* out, int out_sz, const char* name, const char* ext) 
 // vfs_list callback -> ikon üret
 // ------------------------------------------------------------
 static int desktop_load_callback(const char* path, uint32_t size, void* u) {
-    (void)size; (void)u;
+    (void)size;
+    (void)u;
 
     if (icon_count >= MAX_DESKTOP_ICONS) return 0;
 
-    // Bazı root entry'leri atla (güvenlik)
     if (!path || path[0] == '\0') return 1;
     if (strcmp(path, "/home") == 0 ||
         strcmp(path, "/home/desktop") == 0 ||
@@ -115,45 +145,38 @@ static int desktop_load_callback(const char* path, uint32_t size, void* u) {
         strcmp(path, USER_DESKTOP_PATH "/") == 0 ||
         strcmp(path, "/") == 0) {
         return 1;
-     }
+    }
 
     const char* filename = base_name(path);
 
-    // gizli dosyalar / boş isim atla
     if (filename[0] == '\0' || filename[0] == '.') return 1;
 
-    // dir mi?
     vfs_stat_t st;
     bool stat_ok = (vfs_stat(path, &st) == 1);
     bool is_dir = false;
 
     if (stat_ok) is_dir = (st.type == VFS_T_DIR);
 
-    // klasör
     if (is_dir) {
         icons_add(path, filename, true);
         return 1;
     }
 
-    // .ksf -> kısayol dosyası (parse AppManager tarafında)
     if (ends_with(filename, ".ksf")) {
         char label[32];
         strip_ext(label, sizeof(label), filename, ".ksf");
-        // boş kalırsa fallback
         if (label[0] == '\0') strncpy(label, filename, sizeof(label) - 1);
         label[sizeof(label) - 1] = '\0';
 
-        icons_add(path, label, false);   // ✅ uzantısız label
+        icons_add(path, label, false);
         return 1;
     }
 
-    // .txt -> text dosyası
     if (ends_with(filename, ".txt")) {
         icons_add(path, filename, false);
         return 1;
     }
 
-    // diğer dosyalar
     icons_add(path, filename, false);
     return 1;
 }
@@ -163,15 +186,11 @@ static int desktop_load_callback(const char* path, uint32_t size, void* u) {
 // ------------------------------------------------------------
 void desktop_icons_init(void) {
     icons_clear();
-
-    // Masaüstünü tara
     vfs_list(USER_DESKTOP_PATH, desktop_load_callback, 0);
-
     desktop_icons_snap_all();
 }
 
-// 20x20 ikon bitmap'ini 2x scale ile kart içine çizer
-static void draw_icon_card72(
+static void draw_icon_card(
     int x, int y,
     const char* label,
     bool hover,
@@ -179,76 +198,85 @@ static void draw_icon_card72(
     const uint8_t icon20[20][20],
     bool is_dir
 ) {
-    const int w = 72, h = 72, rad = 12;
+    const int w = g_style.card_width;
+    const int h = g_style.card_height;
+    const int rad = g_style.corner_radius;
 
-    uint32_t col_shadow = 0x101010;
+    uint32_t card = g_style.normal_color;
+    if (selected) card = g_style.selected_color;
+    else if (hover) card = g_style.hover_color;
 
-    // normal gri
-    uint32_t col_norm   = 0x2A2A2A;
-
-    // hover / selected mavi
-    uint32_t col_hover  = 0x0078D7;
-    uint32_t col_sel    = 0x005FB3;
-
-    uint32_t card = col_norm;
-    if (selected) card = col_sel;
-    else if (hover) card = col_hover;
-
-    // shadow + kart
-    gfx_fill_round_rect(x + 2, y + 2, w, h, rad, col_shadow);
+    gfx_fill_round_rect(x + 2, y + 2, w, h, rad, g_style.shadow_color);
     gfx_fill_round_rect(x, y, w, h, rad, card);
 
-    // --- ikon (2x scale) ---
-    const int scale = 2;
-    const int base = 20;
-    const int icon_w = base * scale;
-    const int pad_top = 8;
+    // ikon
+    {
+        const int scale = g_style.icon_scale;
+        const int base = g_style.icon_base;
+        const int icon_w = base * scale;
+        const int pad_top = g_style.icon_pad_top;
 
-    int ix = x + (w - icon_w) / 2;
-    int iy = y + pad_top;
+        int ix = x + (w - icon_w) / 2;
+        int iy = y + pad_top;
 
-    for (int rr = 0; rr < base; rr++) {
-        for (int cc = 0; cc < base; cc++) {
-            uint8_t p = icon20[rr][cc];
+        for (int rr = 0; rr < base; rr++) {
+            for (int cc = 0; cc < base; cc++) {
+                uint8_t p = icon20[rr][cc];
+                uint32_t col = 0;
 
-            uint32_t col = 0;
-            if (p == 1)      col = 0x000000;
-            else if (p == 2) col = is_dir ? 0xFFCC00 : 0xFFFFFF;
-            else if (p == 3) col = is_dir ? 0xCC9900 : 0xE6E6E6;
-            else if (p == 4) col = 0xFFFFFF;
+                if (p == 1)      col = 0x000000;
+                else if (p == 2) col = is_dir ? 0xFFCC00 : 0xFFFFFF;
+                else if (p == 3) col = is_dir ? 0xCC9900 : 0xE6E6E6;
+                else if (p == 4) col = 0xFFFFFF;
 
-            if (p != 0) {
-                for (int sy = 0; sy < scale; sy++)
-                    for (int sx = 0; sx < scale; sx++)
-                        gfx_putpixel(ix + cc*scale + sx, iy + rr*scale + sy, col);
+                if (p != 0) {
+                    for (int sy = 0; sy < scale; sy++) {
+                        for (int sx = 0; sx < scale; sx++) {
+                            gfx_putpixel(ix + cc * scale + sx,
+                                         iy + rr * scale + sy,
+                                         col);
+                        }
+                    }
+                }
             }
         }
     }
 
-    // --- label (kart içinde altta, ortalı) ---
+    // label
     if (!label) label = "";
 
-    // çok uzunsa kısalt (kartta taşmasın)
-    char tmp[32];
-    int len = (int)strlen(label);
-    if (len > 10) {
-        // 8 char + ".."
-        int k = 0;
-        for (; k < 8 && k < (int)sizeof(tmp)-1; k++) tmp[k] = label[k];
-        if (k < (int)sizeof(tmp)-3) { tmp[k++]='.'; tmp[k++]='.'; }
-        tmp[k] = 0;
-        label = tmp;
-        len = (int)strlen(label);
+    {
+        char tmp[32];
+        int len = (int)strlen(label);
+
+        if (len > g_style.label_max_chars) {
+            int keep = g_style.label_max_chars - 2;
+            int k = 0;
+            if (keep < 1) keep = 1;
+
+            for (; k < keep && k < (int)sizeof(tmp) - 1; k++) {
+                tmp[k] = label[k];
+            }
+            if (k < (int)sizeof(tmp) - 3) {
+                tmp[k++] = '.';
+                tmp[k++] = '.';
+            }
+            tmp[k] = 0;
+            label = tmp;
+            len = (int)strlen(label);
+        }
+
+        {
+            int label_w = len * 8;
+            int label_h = 16;
+            int pad_bottom = g_style.label_pad_bottom;
+
+            int text_x = x + (w - label_w) / 2;
+            int text_y = y + h - label_h - pad_bottom;
+
+            gfx_draw_text_utf8(text_x, text_y, g_style.text_color, label);
+        }
     }
-
-    int label_w = len * 8;
-    int label_h = 16;
-    int pad_bottom = 6;
-
-    int text_x = x + (w - label_w) / 2;
-    int text_y = y + h - label_h - pad_bottom;
-
-    gfx_draw_text_utf8(text_x, text_y, 0x00FFFFFF, label);
 }
 
 void desktop_icons_draw_all(void) {
@@ -258,24 +286,22 @@ void desktop_icons_draw_all(void) {
     for (int i = 0; i < icon_count; i++) {
         desktop_icon_t* icon = &icons[i];
 
-        // Kart hitbox: 72x72
-        bool is_hover = (mx >= icon->x && mx <= icon->x + 72 &&
-                         my >= icon->y && my <= icon->y + 72);
+        bool is_hover =
+            (mx >= icon->x && mx <= icon->x + g_style.card_width &&
+             my >= icon->y && my <= icon->y + g_style.card_height);
 
-        // hangi ikon bitmap?
         const uint8_t (*bmp)[20] = generic_file_icon;
 
-        // NOTE: icon->label içinde .ksf uzantısını kırpmıştın, o yüzden is_ksf label'dan çıkmayabilir.
-        // Bu yüzden path'e de bakmak mantıklı:
         bool is_txt  = ends_with(icon->vfs_name, ".txt");
         bool is_ksf  = ends_with(icon->vfs_name, ".ksf");
         bool is_html = ends_with(icon->vfs_name, ".html");
+        (void)is_html;
 
         if (icon->is_dir) bmp = folder_icon;
         else if (is_txt || is_ksf) bmp = text_file_icon;
         else bmp = generic_file_icon;
 
-        draw_icon_card72(
+        draw_icon_card(
             icon->x, icon->y,
             icon->label,
             is_hover,
@@ -283,13 +309,9 @@ void desktop_icons_draw_all(void) {
             bmp,
             icon->is_dir
         );
-
-        // rename edit modunu şimdilik sonra entegre edelim
-        // (istersen bunu da karta entegre edebiliriz)
     }
 }
 
-// Klavye girişini işle (rename edit buffer)
 void desktop_icons_handle_key(uint16_t scancode, char ascii) {
     (void)scancode;
 
@@ -335,8 +357,8 @@ int desktop_icons_get_hit(int mx, int my) {
     for (int i = 0; i < icon_count; i++) {
         int x = icons[i].x;
         int y = icons[i].y;
-        int w = 72;
-        int h = 72;
+        int w = g_style.card_width;
+        int h = g_style.card_height;
 
         if (mx >= x && mx <= x + w &&
             my >= y && my <= y + h) {
@@ -351,8 +373,6 @@ void desktop_icons_process_click(int index) {
     desktop_icon_t* icon = &icons[index];
 
     printk("[Desktop] open: label=%s path=%s\n", icon->label, icon->vfs_name);
-
-    // açma mantığı AppManager'da
     appmgr_open_path(icon->vfs_name);
 }
 
@@ -384,8 +404,8 @@ void desktop_icons_select(int index) {
 }
 
 void desktop_icons_move_dragging(int mx, int my) {
-    const int W = 72;
-    const int H = 72;
+    const int W = g_style.card_width;
+    const int H = g_style.card_height;
     const int PAD = 6;
 
     for (int i = 0; i < icon_count; i++) {
@@ -398,15 +418,12 @@ void desktop_icons_move_dragging(int mx, int my) {
 
             if (newx == oldx && newy == oldy) continue;
 
-            // 1) eski yeri temizle
-            desktop_damage_rect(oldx - PAD, oldy - PAD, W + PAD*2 + 2, H + PAD*2 + 2);
+            desktop_damage_rect(oldx - PAD, oldy - PAD, W + PAD * 2 + 2, H + PAD * 2 + 2);
 
-            // update
             icons[i].x = newx;
             icons[i].y = newy;
 
-            // 2) yeni yeri çiz
-            desktop_damage_rect(newx - PAD, newy - PAD, W + PAD*2 + 2, H + PAD*2 + 2);
+            desktop_damage_rect(newx - PAD, newy - PAD, W + PAD * 2 + 2, H + PAD * 2 + 2);
         }
     }
 
@@ -415,20 +432,17 @@ void desktop_icons_move_dragging(int mx, int my) {
 
 void desktop_icons_set_dragging(int index, bool state, int mx, int my) {
     if (!state) {
-        // drag kapat
         for (int i = 0; i < icon_count; i++) icons[i].dragging = false;
         return;
     }
 
     if (index < 0 || index >= icon_count) return;
 
-    // Eğer tıklanan ikon seçili değilse -> sadece onu seç (grup değil tek drag)
     if (!icons[index].is_selected) {
         desktop_icons_deselect_all();
         icons[index].is_selected = true;
     }
 
-    // Seçili ikonların hepsini drag moduna al + offset kaydet
     for (int i = 0; i < icon_count; i++) {
         if (icons[i].is_selected) {
             icons[i].dragging = true;
@@ -449,14 +463,14 @@ void desktop_icons_stop_dragging_all(void) {
 void desktop_icons_snap_all(void) {
     if (!snap_to_grid) return;
 
-    const int cell = 90;      // aralık
-    const int offx = 20;
-    const int offy = 40;
+    const int cell = g_style.grid_cell;
+    const int offx = g_style.offset_x;
+    const int offy = g_style.offset_y;
 
     for (int i = 0; i < icon_count; i++) {
         icons[i].x = (icons[i].x / cell) * cell + offx;
         icons[i].y = (icons[i].y / cell) * cell + offy;
-        if (icons[i].y < 35) icons[i].y = 40;
+        if (icons[i].y < 35) icons[i].y = offy;
     }
 }
 
@@ -466,8 +480,8 @@ void desktop_icons_select_in_rect(int x1, int y1, int x2, int y2) {
     int min_y = (y1 < y2) ? y1 : y2;
     int max_y = (y1 > y2) ? y1 : y2;
 
-    const int W = 72;
-    const int H = 72;
+    const int W = g_style.card_width;
+    const int H = g_style.card_height;
 
     for (int i = 0; i < icon_count; i++) {
         bool overlap = !(icons[i].x + W < min_x || icons[i].x > max_x ||
@@ -505,7 +519,7 @@ bool desktop_icons_get_rect(int index, int* x, int* y, int* w, int* h) {
 
     *x = icons[index].x;
     *y = icons[index].y;
-    *w = 72;
-    *h = 72;
+    *w = g_style.card_width;
+    *h = g_style.card_height;
     return true;
 }

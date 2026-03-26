@@ -142,6 +142,8 @@ static void ensure_desktop_dirs(void) {
 
 void desktop_seed_default_shortcuts(bool overwrite) {
   ensure_desktop_dirs();
+  vfs_mkdir(USER_HOME_PATH);
+  vfs_mkdir(USER_DESKTOP_PATH);
 
   char path[160];
 

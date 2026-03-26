@@ -16,6 +16,28 @@ typedef struct {
     char edit_buffer[32];
 } desktop_icon_t;
 
+typedef struct {
+    int card_width;
+    int card_height;
+    int corner_radius;
+
+    int grid_cell;
+    int offset_x;
+    int offset_y;
+
+    int icon_base;
+    int icon_scale;
+    int icon_pad_top;
+
+    int label_pad_bottom;
+    int label_max_chars;
+
+    uint32_t shadow_color;
+    uint32_t normal_color;
+    uint32_t hover_color;
+    uint32_t selected_color;
+    uint32_t text_color;
+} desktop_icons_style_t;
 
 // Temel Yönetim
 void desktop_icons_init(void);
@@ -25,6 +47,10 @@ void desktop_icons_process_click(int index);
 void desktop_icons_snap_all(void);
 int desktop_icons_get_count(void);
 const char* desktop_icons_get_name(int index);
+
+// Style
+void desktop_icons_set_style(const desktop_icons_style_t* style);
+const desktop_icons_style_t* desktop_icons_get_style(void);
 
 // Sürükleme
 void desktop_icons_set_dragging(int index, bool state, int mx, int my);

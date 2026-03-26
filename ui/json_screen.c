@@ -1,5 +1,7 @@
 #include <ui/json_screen.h>
 #include <ui/screen.h>
+#include <ui/desktop_icons.h>
+#include <ui/desktop_seed.h>
 
 #include <kernel/printk.h>
 #include <kernel/drivers/video/fb.h>
@@ -15,7 +17,18 @@ void ui_json_screen_init(void) {
         g_screen.loaded = 0;
         g_screen.panel.used = 0;
         g_screen.label.used = 0;
+        g_screen.desktop_icons.used = 0;
         printk("[json_screen] fallback background\n");
+    }
+
+    if (g_screen.desktop_icons.used) {
+        desktop_icons_set_style(&g_screen.desktop_icons.style);
+
+        /* varsayılan .ksf kısayollarını üretir */
+        /* içinde desktop_icons_init + snap de var */
+        desktop_seed_default_shortcuts(false);
+
+        printk("[json_screen] icon count = %d\n", desktop_icons_get_count());
     }
 }
 

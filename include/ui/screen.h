@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <ui/desktop_icons.h>
 
 typedef struct {
     char id[64];
@@ -25,11 +26,19 @@ typedef struct {
 } ui_label_t;
 
 typedef struct {
+    char id[64];
+    int used;
+    int visible;
+    desktop_icons_style_t style;
+} ui_desktop_icons_t;
+
+typedef struct {
     uint32_t background_color;
     int loaded;
 
     ui_panel_t panel;
     ui_label_t label;
+    ui_desktop_icons_t desktop_icons;
 } ui_screen_t;
 
 int ui_screen_load(const char* path, ui_screen_t* out);

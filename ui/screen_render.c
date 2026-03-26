@@ -1,4 +1,5 @@
 #include <ui/screen.h>
+#include <ui/desktop_icons.h>
 
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
@@ -23,7 +24,6 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
     if (!out || !dt) return;
 
     if (!fmt || !fmt[0] || strcmp(fmt, "HH:mm:ss") == 0) {
-        /* HH:mm:ss */
         two_digit(out + 0, dt->hour);
         out[2] = ':';
         two_digit(out + 3, dt->min);
@@ -33,8 +33,7 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
         return;
     }
 
-    if (!fmt || !fmt[0] || strcmp(fmt, "mm:ss") == 0) {
-        /* mm:ss */
+    if (strcmp(fmt, "mm:ss") == 0) {
         two_digit(out + 0, dt->min);
         out[2] = ':';
         two_digit(out + 3, dt->sec);
@@ -47,9 +46,8 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
         out[2] = '\0';
         return;
     }
-    
+
     if (strcmp(fmt, "HH:mm") == 0) {
-        /* HH:mm */
         two_digit(out + 0, dt->hour);
         out[2] = ':';
         two_digit(out + 3, dt->min);
@@ -58,7 +56,6 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
     }
 
     if (strcmp(fmt, "DD.MM.YYYY") == 0) {
-        /* DD.MM.YYYY */
         two_digit(out + 0, dt->day);
         out[2] = '.';
         two_digit(out + 3, dt->month);
@@ -69,7 +66,6 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
     }
 
     if (strcmp(fmt, "DD.MM.YYYY HH:mm") == 0) {
-        /* DD.MM.YYYY HH:mm */
         two_digit(out + 0, dt->day);
         out[2] = '.';
         two_digit(out + 3, dt->month);
@@ -84,7 +80,6 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
     }
 
     if (strcmp(fmt, "YYYY:MM:DD") == 0) {
-        /* YYYY:MM:DD */
         four_digit(out + 0, dt->year);
         out[4] = ':';
         two_digit(out + 5, dt->month);
@@ -95,7 +90,6 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
     }
 
     if (strcmp(fmt, "YYYY-MM-DD") == 0) {
-        /* YYYY-MM-DD */
         four_digit(out + 0, dt->year);
         out[4] = '-';
         two_digit(out + 5, dt->month);
@@ -106,7 +100,6 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
     }
 
     if (strcmp(fmt, "YYYY.MM.DD") == 0) {
-        /* YYYY.MM.DD */
         four_digit(out + 0, dt->year);
         out[4] = '.';
         two_digit(out + 5, dt->month);
@@ -132,7 +125,6 @@ static void format_time_string(char* out, int out_sz, const rtc_datetime_t* dt, 
         return;
     }
 
-    /* fallback */
     two_digit(out + 0, dt->hour);
     out[2] = ':';
     two_digit(out + 3, dt->min);
@@ -184,5 +176,9 @@ void ui_screen_render(const ui_screen_t* screen) {
 
     if (screen->label.used) {
         ui_render_label(&screen->label);
+    }
+
+    if (screen->desktop_icons.used) {
+        desktop_icons_draw_all();
     }
 }
