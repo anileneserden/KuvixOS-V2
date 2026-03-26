@@ -9,6 +9,7 @@ extern "C" {
 
 extern int mouse_x;
 extern int mouse_y;
+extern uint8_t mouse_buttons;
 
 // (Opsiyonel) telemetri/debug
 extern volatile int32_t g_mouse_last_dx;
@@ -30,6 +31,11 @@ int ps2_mouse_pop(int* dx, int* dy, int* wheel, uint8_t* buttons);
 
 void ps2_mouse_poll(void);
 void ps2_mouse_update(void);
+
+// KUI / C++ bridge için getter'lar
+int mouse_get_x(void);
+int mouse_get_y(void);
+uint8_t mouse_get_buttons(void);
 
 #ifdef __cplusplus
 }

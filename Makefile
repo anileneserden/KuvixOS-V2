@@ -160,6 +160,7 @@ SRC_C = \
     lib/string/string.c
 
 SRC_CPP = \
+    ui/kui/cpp/input/mouse.cpp \
     ui/kui/cpp/widgets/label_widget.cpp \
     ui/kui/cpp/widgets/panel_widget.cpp \
     ui/kui/cpp/widgets/rect_widget.cpp \

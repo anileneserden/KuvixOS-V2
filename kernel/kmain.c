@@ -146,6 +146,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
             ui_session_handle_scancode(sc);
         }
 
+        ps2_mouse_update();
+
         // frame tick
         ui_session_tick();
 

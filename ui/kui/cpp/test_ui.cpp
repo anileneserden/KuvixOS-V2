@@ -7,6 +7,8 @@
 #include <ui/kui/cpp/widgets/rect_widget.hpp>
 #include <ui/kui/cpp/widgets/label_widget.hpp>
 #include <ui/kui/cpp/widgets/panel_widget.hpp>
+#include <ui/kui/cpp/input/mouse.hpp>
+#include <lib/string.h>
 
 namespace kui::test {
 
@@ -24,6 +26,33 @@ static void copy_text(char* dst, const char* src, int max_len) {
     dst[i] = '\0';
 }
 
+static void append_uint(char* dst, int max_len, unsigned int value) {
+    char tmp[16];
+    int ti = 0;
+
+    if (max_len <= 0) return;
+
+    if (value == 0) {
+        size_t len = strlen(dst);
+        if ((int)len < max_len - 1) {
+            dst[len] = '0';
+            dst[len + 1] = '\0';
+        }
+        return;
+    }
+
+    while (value > 0 && ti < (int)sizeof(tmp)) {
+        tmp[ti++] = (char)('0' + (value % 10));
+        value /= 10;
+    }
+
+    size_t len = strlen(dst);
+    while (ti > 0 && (int)len < max_len - 1) {
+        dst[len++] = tmp[--ti];
+    }
+    dst[len] = '\0';
+}
+
 void initTestUI() {
     print("KUI widget test init\n");
 
@@ -31,7 +60,6 @@ void initTestUI() {
 
     g_ui = new kui::UIRoot();
 
-    // Root panel
     kui::PanelWidget* root = g_ui->root();
     root->x = 0;
     root->y = 0;
@@ -40,7 +68,6 @@ void initTestUI() {
     root->backgroundColor = kui::Color::Gray;
     root->radius = 0;
 
-    // Beyaz kart
     kui::RectWidget* whiteCard = new kui::RectWidget();
     copy_text(whiteCard->id, "whiteCard", 64);
     whiteCard->x = 20;
@@ -50,7 +77,6 @@ void initTestUI() {
     whiteCard->radius = 12;
     whiteCard->color = kui::Color::White;
 
-    // Kırmızı küçük kutu
     kui::RectWidget* redBox = new kui::RectWidget();
     copy_text(redBox->id, "redBox", 64);
     redBox->x = 30;
@@ -60,7 +86,6 @@ void initTestUI() {
     redBox->radius = 4;
     redBox->color = kui::Color::Red;
 
-    // Başlık
     kui::LabelWidget* title = new kui::LabelWidget();
     copy_text(title->id, "title", 64);
     title->x = 20;
@@ -68,7 +93,6 @@ void initTestUI() {
     title->color = kui::Color::White;
     copy_text(title->text, "KUI Widget Test", 128);
 
-    // Alt başlık
     kui::LabelWidget* sub = new kui::LabelWidget();
     copy_text(sub->id, "sub", 64);
     sub->x = 20;
@@ -76,10 +100,10 @@ void initTestUI() {
     sub->color = kui::Color::Red;
     copy_text(sub->text, "Rect + Label + Panel", 128);
 
-    root->addChild(whiteCard);
-    root->addChild(redBox);
-    root->addChild(title);
-    root->addChild(sub);
+    g_ui->root()->addChild(whiteCard);
+    g_ui->root()->addChild(redBox);
+    g_ui->root()->addChild(title);
+    g_ui->root()->addChild(sub);
 }
 
 void tickTestUI() {
@@ -91,6 +115,23 @@ void tickTestUI() {
     if (g_ui) {
         g_ui->draw(gfx);
     }
+
+    // Mouse test
+    kui::MouseState ms = kui::Mouse::state();
+
+    // Mouse cursor gibi küçük kutu
+    gfx.fillRoundRect(ms.x, ms.y, 12, 12, 3, kui::Color::White);
+
+    // Mouse koordinat text'i
+    char buf[64];
+    buf[0] = '\0';
+
+    copy_text(buf, "Mouse: x=", 64);
+    append_uint(buf, 64, (unsigned int)ms.x);
+    copy_text(buf + strlen(buf), " y=", 64 - (int)strlen(buf));
+    append_uint(buf, 64, (unsigned int)ms.y);
+
+    gfx.drawTextUtf8(20, 200, kui::Color::White, buf);
 
     gfx.present();
 }
