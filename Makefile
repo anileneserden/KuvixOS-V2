@@ -72,6 +72,7 @@ SRC_C = \
     ui/desktop.c \
     ui/desktop_icons.c \
     ui/desktop_seed.c \
+    ui/editor.c \
     ui/inputtest.c \
     ui/installer.c \
     ui/kbi.c \
