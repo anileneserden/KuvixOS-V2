@@ -15,8 +15,4 @@ void shell_set_username(const char* u);
 void shell_set_hostname(const char* h);
 void shell_set_cwd(const char* p);
 
-/* key debug */
-void shell_set_key_debug(int enabled);
-int  shell_get_key_debug(void);
-
 #endif

@@ -12,26 +12,21 @@
 #include <stdint.h>
 
 // ------------------------------------------------------------
-// Debug
+// Debug (Makefile: -DKBD_SERIAL_DEBUG)
 // ------------------------------------------------------------
-static int g_shell_key_debug = 0;
-
-void shell_set_key_debug(int enabled) {
-    g_shell_key_debug = enabled ? 1 : 0;
-}
-
-int shell_get_key_debug(void) {
-    return g_shell_key_debug;
-}
+#ifdef KBD_SERIAL_DEBUG
+#define SHELL_KEY_DEBUG 1
+#else
+#define SHELL_KEY_DEBUG 0
+#endif
 
 static void shell_debug_key(uint16_t key) {
-    if (!g_shell_key_debug) return;
-
-    printk("\n[KEY raw=0x%04X", key);
+#if SHELL_KEY_DEBUG
+    printk("\n[KEY raw=0x%x", (unsigned int)key);
 
     if ((key & 0xFF00) == 0xFF00) {
         uint8_t code = (uint8_t)(key & 0xFF);
-        printk(" SPECIAL=0x%02X", code);
+        printk(" SPECIAL=0x%x", (unsigned int)code);
 
         if (code == KBD_UP)    printk(" UP");
         if (code == KBD_DOWN)  printk(" DOWN");
@@ -47,15 +42,15 @@ static void shell_debug_key(uint16_t key) {
         } else if (c >= 32 && c <= 126) {
             printk(" CHAR='%c'", (char)c);
         } else {
-            printk(" CHAR=0x%02X", c);
+            printk(" CHAR=0x%x", (unsigned int)c);
         }
     }
 
     printk("]\n");
     fb_console_flush();
-
-    // debug satırından sonra prompt tekrar kaybolmasın diye
-    // bir sonraki shell inputta prompt yeniden çizilecek
+#else
+    (void)key;
+#endif
 }
 
 // ------------------------------------------------------------
@@ -188,7 +183,6 @@ static void shell_submit_line(void) {
 // Public API
 // ------------------------------------------------------------
 void shell_init(void) {
-    shell_set_key_debug(1);
     shell_history_init();
 
     commands_set_output(shell_cmd_out, NULL);
@@ -200,7 +194,7 @@ void shell_init(void) {
 
     printk("KuvixOS Shell V2 Hazir!\n");
     printk("Komutlar icin 'help' yazabilirsiniz.\n");
-    printk("Key debug: %s\n\n", g_shell_key_debug ? "ON" : "OFF");
+    printk("Key debug: %s\n\n", SHELL_KEY_DEBUG ? "ON" : "OFF");
     fb_console_flush();
 }
 
@@ -217,17 +211,17 @@ void shell_handle_key(uint16_t key) {
 
     shell_debug_key(key);
 
+#if SHELL_KEY_DEBUG
     // debug satırı prompt'u bozduğu için yeniden prompt bas
-    if (g_shell_key_debug) {
-        g_prompt_visible = 0;
-        shell_print_prompt();
+    g_prompt_visible = 0;
+    shell_print_prompt();
 
-        if (g_len > 0) {
-            for (int i = 0; i < g_len; i++) {
-                shell_echo_char((uint8_t)g_line[i]);
-            }
+    if (g_len > 0) {
+        for (int i = 0; i < g_len; i++) {
+            shell_echo_char((uint8_t)g_line[i]);
         }
     }
+#endif
 
     // --------------------------------------------------------
     // Special keys
