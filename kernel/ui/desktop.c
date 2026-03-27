@@ -23,7 +23,7 @@ extern void terminal_handle_key(char c);
 extern void appmgr_init(void);
 extern app_t* appmgr_start_app(int app_id);
 extern int kbd_has_character(void);
-extern char kbd_get_char(void);
+extern int kbd_get_char(void);
 extern app_t* appmgr_get_app_by_window_id(int win_id);
 
 #define GRID_SIZE_W 80
@@ -114,12 +114,12 @@ void ui_desktop_run(void) {
 
         // 2. KLAVYE KONTROLÜ
         if (kbd_has_character()) {
-            char c = kbd_get_char();
+            int key = kbd_get_char();
             int active_win = wm_get_active_id();
             if (active_win != -1) {
                 app_t* active_app = appmgr_get_app_by_window_id(active_win);
                 if (active_app && active_app->v && active_app->v->on_key) {
-                    active_app->v->on_key(active_app, (uint16_t)c); 
+                    active_app->v->on_key(active_app, (uint16_t)key); 
                 }
             }
         }

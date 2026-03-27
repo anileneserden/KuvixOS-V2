@@ -1,5 +1,5 @@
 #include <kernel/fs/vfs.h>
-#include <lib/shell.h>
+#include <lib/shell/shell.h>
 #include <lib/string.h>
 #include <kernel/drivers/video/gfx.h>
 #include <ui/desktop.h>

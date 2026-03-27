@@ -17,7 +17,7 @@
 #include <kernel/debug/debug_kbd.h>
 #endif
 
-#include <lib/shell.h>   // shell_init()
+#include <lib/shell/shell.h>
 
 extern void gdt_init(void);
 extern void idt_init(void);

@@ -3,24 +3,18 @@
 #include <arch/x86/io.h>
 #include <lib/string.h>
 #include <stdint.h>
-
-// ✅ SERIAL DEBUG
 #include <kernel/serial.h>
 
 #define KBD_DATA_PORT 0x60
 #define KBD_STATUS_PORT 0x64
 
-/* Basit bir event kuyruğu */
 static uint16_t kbd_buffer[256];
 static uint8_t head = 0;
 static uint8_t tail = 0;
 
-// --- Shift state ---
 static uint8_t g_shift = 0;
+static uint8_t g_e0 = 0;
 
-// Set1 scancodes:
-// LSHIFT down 0x2A, up 0xAA
-// RSHIFT down 0x36, up 0xB6
 static int is_shift_make(uint8_t sc) { return (sc == 0x2A || sc == 0x36); }
 static int is_shift_break(uint8_t sc){ return (sc == 0xAA || sc == 0xB6); }
 
@@ -37,19 +31,15 @@ void kbd_push_scan_code(uint8_t scancode) {
 }
 
 void kbd_init(void) {
-    // TEMİZLİK: Sadece klavye verilerini temizle, fare verilerine dokunma
     uint8_t status;
     while ((status = inb(KBD_STATUS_PORT)) & 0x01) {
         (void)inb(KBD_DATA_PORT);
     }
 
-    outb(KBD_STATUS_PORT, 0xAE); // Klavyeyi aktif et
+    outb(KBD_STATUS_PORT, 0xAE);
     current_layout = &layout_trq;
     g_shift = 0;
-
-#ifdef KBD_SERIAL_DEBUG
-    serial_write("[KBD] init done\n");
-#endif
+    g_e0 = 0;
 }
 
 uint16_t kbd_pop_event(void) {
@@ -59,44 +49,48 @@ uint16_t kbd_pop_event(void) {
     return code;
 }
 
-char kbd_get_char(void) {
+int kbd_get_char(void) {
     while (1) {
         uint16_t scancode = kbd_pop_event();
         if (scancode == 0) return 0;
 
         uint8_t sc = (uint8_t)scancode;
 
-        // Shift state güncelle (Set1 make/break)
-        if (is_shift_make(sc)) { g_shift = 1; continue; }
-        if (is_shift_break(sc)) { g_shift = 0; continue; }
+        // 🔥 E0 prefix
+        if (sc == 0xE0) {
+            g_e0 = 1;
+            continue;
+        }
 
-        // Release bit set ise karakter üretme
+        // Shift
+        if (is_shift_make(sc)) { g_shift = 1; continue; }
+        if (is_shift_break(sc)){ g_shift = 0; continue; }
+
+        // release ignore
         if (sc & 0x80) continue;
+
+        // 🔥 SPECIAL KEYS
+        if (g_e0) {
+            g_e0 = 0;
+
+            if (sc == 0x48) return 0xFF00 | KBD_UP;
+            if (sc == 0x50) return 0xFF00 | KBD_DOWN;
+            if (sc == 0x4B) return 0xFF00 | KBD_LEFT;
+            if (sc == 0x4D) return 0xFF00 | KBD_RIGHT;
+
+            continue;
+        }
 
         if (!current_layout) return 0;
 
-        uint8_t code = (uint8_t)(sc & 0x7F);
+        uint8_t code = sc & 0x7F;
         const uint8_t* table = g_shift ? current_layout->shift : current_layout->normal;
         if (!table) return 0;
 
         uint8_t ch = table[code];
         if (ch == 0) continue;
 
-#ifdef KBD_SERIAL_DEBUG
-        serial_write("[KBD] sc=0x");
-        serial_write_hex8(sc);
-        serial_write(" code=0x");
-        serial_write_hex8(code);
-        serial_write(" shift=");
-        serial_putc(g_shift ? '1' : '0');
-        serial_write(" -> ch=0x");
-        serial_write_hex8(ch);
-        serial_write(" '");
-        serial_putc((ch >= 32 && ch <= 126) ? (char)ch : '.');
-        serial_write("'\n");
-#endif
-
-        return (char)ch;
+        return (int)ch;
     }
 }
 
@@ -104,28 +98,15 @@ int kbd_has_character(void) {
     return (head != tail);
 }
 
-/**
- * @brief Donanım portunu kontrol eder. 
- * Çakışmayı önlemek için 5. biti kontrol eder.
- */
 void kbd_poll(void) {
     uint8_t status = inb(KBD_STATUS_PORT);
 
-    // Veri var mı ve mouse verisi değil mi?
     if ((status & 0x01) && !(status & 0x20)) {
         uint8_t sc = inb(KBD_DATA_PORT);
-
-#ifdef KBD_SERIAL_DEBUG
-        serial_write("[KBD] raw=0x");
-        serial_write_hex8(sc);
-        serial_write("\n");
-#endif
-
         kbd_push_scan_code(sc);
     }
 }
 
-// Assembly'deki "call kbd_handler" burayı çalıştıracak
 void kbd_handler(void) {
     uint8_t status = inb(KBD_STATUS_PORT);
 
@@ -133,11 +114,6 @@ void kbd_handler(void) {
         uint8_t data = inb(KBD_DATA_PORT);
 
         if (!(status & 0x20)) {
-#ifdef KBD_SERIAL_DEBUG
-            serial_write("[KBD] irq raw=0x");
-            serial_write_hex8(data);
-            serial_write("\n");
-#endif
             kbd_push_scan_code(data);
         }
     }

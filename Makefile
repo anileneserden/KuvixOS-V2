@@ -90,6 +90,7 @@ SRC_C = \
     kernel/ui/theme_parser.c \
     kernel/ui/theme_builtin_data.c \
     kernel/ui/ui_button.c \
+    lib/shell/shell_history.c \
     lib/shell/shell.c \
     lib/commands/commands.c \
     lib/service/service.c \

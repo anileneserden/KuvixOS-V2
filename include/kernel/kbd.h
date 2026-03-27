@@ -12,8 +12,8 @@ typedef struct {
 
 void kbd_init(void);
 void kbd_poll(void);
-int  kbd_has_character(void); // <-- BU SATIRI EKLE
-char kbd_get_char(void);
+int  kbd_has_character(void);
+int kbd_get_char(void);
 void kbd_handle_byte(uint8_t sc);
 
 void kbd_set_layout(const char* name);
