@@ -5,7 +5,7 @@
 
 void cmd_layout(int argc, char** argv) {
     if (argc < 2) {
-        printk("Kullanım: layout <trq|us>\n");
+        commands_puts("Kullanım: layout <trq|us>\n");
         return;
     }
 
@@ -14,7 +14,7 @@ void cmd_layout(int argc, char** argv) {
 
     // Değişikliği doğrula
     const kbd_layout_t* current = kbd_get_current_layout();
-    printk("Klavye düzeni '%s' olarak değiştirildi.\n", current->name);
+    commands_printf("Klavye düzeni '%s' olarak değiştirildi.\n", current->name);
 }
 
 // Otomatik kayıt makrosu

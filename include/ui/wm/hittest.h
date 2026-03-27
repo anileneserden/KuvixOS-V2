@@ -1,4 +1,4 @@
-// src/lib/ui/wm/hittest.h
+// ui/wm/hittest.h
 #pragma once
 
 typedef enum {
@@ -8,9 +8,7 @@ typedef enum {
     HT_BTN_MIN,
     HT_BTN_MAX,
     HT_CLIENT,
-    HT_GRIP_BR, // Bottom-right grip
-
-    // Boyutlandırma Kenarları
+    HT_GRIP_BR,
     HT_RESIZE_LEFT,
     HT_RESIZE_RIGHT,
     HT_RESIZE_TOP,
@@ -18,8 +16,12 @@ typedef enum {
     HT_RESIZE_TOP_LEFT,
     HT_RESIZE_TOP_RIGHT,
     HT_RESIZE_BOTTOM_LEFT,
-    HT_RESIZE_BOTTOM_RIGHT
-} wm_hittest_t;
+    HT_RESIZE_BOTTOM_RIGHT,
+    HT_RESIZE_RIGHT_BOTTOM,
 
-// Hit-test sonuçlarına ekle
-#define HT_RESIZE_RIGHT_BOTTOM 10
+    // Titlebar tab hitleri (şimdilik wm.c'de kullanıyoruz)
+    HT_TAB0 = 100,
+    HT_TAB1 = 101,
+    HT_TAB2 = 102,
+    HT_TAB_ADD = 110
+} wm_hittest_t;

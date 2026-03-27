@@ -12,6 +12,53 @@
 #include <stdint.h>
 
 // ------------------------------------------------------------
+// Debug
+// ------------------------------------------------------------
+static int g_shell_key_debug = 0;
+
+void shell_set_key_debug(int enabled) {
+    g_shell_key_debug = enabled ? 1 : 0;
+}
+
+int shell_get_key_debug(void) {
+    return g_shell_key_debug;
+}
+
+static void shell_debug_key(uint16_t key) {
+    if (!g_shell_key_debug) return;
+
+    printk("\n[KEY raw=0x%04X", key);
+
+    if ((key & 0xFF00) == 0xFF00) {
+        uint8_t code = (uint8_t)(key & 0xFF);
+        printk(" SPECIAL=0x%02X", code);
+
+        if (code == KBD_UP)    printk(" UP");
+        if (code == KBD_DOWN)  printk(" DOWN");
+        if (code == KBD_LEFT)  printk(" LEFT");
+        if (code == KBD_RIGHT) printk(" RIGHT");
+    } else {
+        uint8_t c = (uint8_t)key;
+
+        if (c == '\n' || c == '\r') {
+            printk(" ENTER");
+        } else if (c == '\b' || c == 8 || c == 127) {
+            printk(" BACKSPACE");
+        } else if (c >= 32 && c <= 126) {
+            printk(" CHAR='%c'", (char)c);
+        } else {
+            printk(" CHAR=0x%02X", c);
+        }
+    }
+
+    printk("]\n");
+    fb_console_flush();
+
+    // debug satırından sonra prompt tekrar kaybolmasın diye
+    // bir sonraki shell inputta prompt yeniden çizilecek
+}
+
+// ------------------------------------------------------------
 // Identity
 // ------------------------------------------------------------
 static char g_username[32] = "root";
@@ -71,8 +118,8 @@ static void shell_print_prompt(void) {
 
     fb_console_set_color(0x00FFFFFF, 0x00000000);
     printk("$ ");
-
     fb_console_flush();
+
     g_prompt_visible = 1;
 }
 
@@ -129,7 +176,6 @@ static void shell_submit_line(void) {
         commands_set_output(shell_cmd_out, NULL);
         commands_set_clear(shell_cmd_clear, NULL);
         commands_execute(g_line);
-
         fb_console_flush();
     }
 
@@ -142,6 +188,7 @@ static void shell_submit_line(void) {
 // Public API
 // ------------------------------------------------------------
 void shell_init(void) {
+    shell_set_key_debug(1);
     shell_history_init();
 
     commands_set_output(shell_cmd_out, NULL);
@@ -152,7 +199,8 @@ void shell_init(void) {
     g_prompt_visible = 0;
 
     printk("KuvixOS Shell V2 Hazir!\n");
-    printk("Komutlar icin 'help' yazabilirsiniz.\n\n");
+    printk("Komutlar icin 'help' yazabilirsiniz.\n");
+    printk("Key debug: %s\n\n", g_shell_key_debug ? "ON" : "OFF");
     fb_console_flush();
 }
 
@@ -165,6 +213,20 @@ void shell_tick(void) {
 void shell_handle_key(uint16_t key) {
     if (!g_prompt_visible) {
         shell_print_prompt();
+    }
+
+    shell_debug_key(key);
+
+    // debug satırı prompt'u bozduğu için yeniden prompt bas
+    if (g_shell_key_debug) {
+        g_prompt_visible = 0;
+        shell_print_prompt();
+
+        if (g_len > 0) {
+            for (int i = 0; i < g_len; i++) {
+                shell_echo_char((uint8_t)g_line[i]);
+            }
+        }
     }
 
     // --------------------------------------------------------
@@ -210,6 +272,13 @@ void shell_handle_key(uint16_t key) {
             g_line[g_len] = '\0';
             shell_echo_char((uint8_t)c);
         }
-        return;
     }
+}
+
+// ------------------------------------------------------------
+// Backward compatibility
+// Eski kod hala shell_handle_scancode() çağırıyorsa kırılmasın
+// ------------------------------------------------------------
+void shell_handle_scancode(uint16_t sc) {
+    shell_handle_key(sc);
 }

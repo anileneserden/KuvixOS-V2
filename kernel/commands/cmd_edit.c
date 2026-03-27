@@ -8,12 +8,12 @@
 
 void cmd_edit(int argc, char** argv) {
     if (argc < 2) {
-        printk("Kullanim: edit <dosya_adi>\n");
+        commands_puts("Kullanim: edit <dosya_adi>\n");
         return;
     }
 
     const char* filename = argv[1];
-    printk("%s dosyasi aciliyor...\n", filename);
+    commands_printf("%s dosyasi aciliyor...\n", filename);
 
     // TODO: VFS'den dosyayı oku
     // TODO: Grafik moduna (UI_EDITOR) geçiş yap

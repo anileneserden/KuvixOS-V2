@@ -1,7 +1,11 @@
 #pragma once
 #include <stdint.h>
+#include <stdbool.h>
 
 void fb_console_init(uint32_t fg, uint32_t bg);
+
+void fb_console_enable(bool on);     // ✅ EKLE
+
 void fb_console_putc(char c);
 void fb_console_write(const char* s);
 void fb_console_write_utf8(const char* s);
@@ -14,3 +18,6 @@ void fb_console_get_cursor(int* out_col, int* out_row);
 
 int fb_console_cols(void);
 int fb_console_rows(void);
+
+void fb_console_set_enabled(bool enabled);
+bool fb_console_is_enabled(void);

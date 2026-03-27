@@ -1,13 +1,77 @@
-// src/lib/fs/vfs.c
+#include <kernel/memory/kmalloc.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/ramfs.h>
 #include <kernel/fs/kvxfs.h>
 #include <lib/string.h>
 
-// senin toyfs headerın:
-#include <kernel/fs/toyfs.h>   // toyfs_open / toyfs_read / toyfs_close / toyfs_list
+// toyfs header:
+#include <kernel/fs/toyfs.h>   // toyfs_open / toyfs_read / toyfs_close / toyfs_iter
 
 static void path_pop(char *path);
+
+// ----------------------------------------------------------
+// Removable mount view: /removable -> ToyFS root
+// ----------------------------------------------------------
+#define REMOUNT_PREFIX "/removable"
+#define REMOUNT_PREFIX_LEN 10
+
+static void copy_str(char* dst, const char* src, uint32_t cap);
+
+static int is_removable_path(const char* path) {
+    if (!path) return 0;
+    // must be exactly "/removable" or start with "/removable/"
+    if (strncmp(path, REMOUNT_PREFIX, REMOUNT_PREFIX_LEN) != 0) return 0;
+    return (path[REMOUNT_PREFIX_LEN] == 0 || path[REMOUNT_PREFIX_LEN] == '/');
+}
+
+// "/removable" -> "/"
+// "/removable/abc" -> "/abc"
+static void removable_to_toy(const char* in, char* out, uint32_t cap) {
+    if (!out || cap == 0) return;
+    out[0] = 0;
+
+    if (!in || !is_removable_path(in)) {
+        copy_str(out, in, cap);
+        return;
+    }
+
+    const char* p = in + REMOUNT_PREFIX_LEN;
+    if (*p == 0) {
+        copy_str(out, "/", cap);
+        return;
+    }
+
+    // p starts with '/'
+    copy_str(out, p, cap);
+}
+
+typedef struct {
+    int (*cb)(const char* path, uint32_t size, void* u);
+    void* u;
+} rem_wrap_t;
+
+// ToyFS path -> /removable + toy_path
+static int rem_cb_prefix(const char* toy_path, uint32_t size, void* u2) {
+    rem_wrap_t* w = (rem_wrap_t*)u2;
+    if (!w || !w->cb) return 0;
+
+    char outp[VFS_PATH_MAX];
+    outp[0] = 0;
+
+    // "/removable"
+    copy_str(outp, REMOUNT_PREFIX, sizeof(outp));
+
+    // toy_path "/" ise root'u temsil ediyor olabilir, onu atlayabiliriz.
+    // (vfs_list tarafında zaten parent skip yapıyorsun ama burada da güvenli tutalım)
+    if (toy_path && strcmp(toy_path, "/") != 0) {
+        // toy_path absolute başlar: "/system/.."
+        strncat(outp, toy_path, sizeof(outp) - strlen(outp) - 1);
+    }
+
+    return w->cb(outp, size, w->u);
+}
+
+// ----------------------------------------------------------
 
 static void path_pop(char* path)
 {
@@ -51,7 +115,7 @@ struct vfs_file {
     // ram
     int           rfd;
     // toy
-    int           th; // toyfs handle (int varsaydım)
+    int           th; // toyfs handle
 };
 
 static char vfs_cwd[128] = "/";
@@ -93,12 +157,9 @@ void vfs_init(void) {
 }
 
 // ----------------------------------------------------------
-// NOTE: toyfs API uyarlama noktası
-// Burada toyfs_open(path, &handle) gibi varsaydım.
-// Eğer sende farklıysa: sadece bu üç fonksiyonu düzelt.
+// ToyFS API adapt
 // ----------------------------------------------------------
 static int toy_open_ro(const char* path, int* out_h) {
-    // örnek: int toyfs_open(const char* path); handle döner
     int h = toyfs_open(path);
     if (h < 0) return 0;
     *out_h = h;
@@ -119,6 +180,30 @@ static void toy_close(int h) {
 
 int vfs_open(const char* path, int flags, vfs_file_t** out) {
     if (!path || !out) return 0;
+
+    // ------------------------------------------------------
+    // /removable -> ToyFS only (read-only mount view)
+    // ------------------------------------------------------
+    if (is_removable_path(path)) {
+        int want_write2 = (flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR);
+        if (want_write2) return 0;
+
+        char real[VFS_PATH_MAX];
+        removable_to_toy(path, real, sizeof(real));
+
+        int th;
+        if (!toy_open_ro(real, &th)) return 0;
+
+        struct vfs_file* f = alloc_slot();
+        if (!f) { toy_close(th); return 0; }
+
+        f->back  = BACK_TOY;
+        f->flags = flags;
+        f->rfd   = -1;
+        f->th    = th;
+        *out = f;
+        return 1;
+    }
 
     // write -> always RAM
     int want_write = (flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR);
@@ -197,6 +282,27 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
     if (!st) return 0;
     st->type = 0; st->size = 0; st->backend = 0;
 
+    // /removable -> toyfs view
+    if (is_removable_path(path)) {
+        char real[VFS_PATH_MAX];
+        removable_to_toy(path, real, sizeof(real));
+
+        if (toyfs_iter(real, 0, 0)) {
+            st->type = VFS_T_DIR;
+            st->backend = 2;
+            return 1;
+        }
+
+        int h = toyfs_open(real);
+        if (h >= 0) {
+            toyfs_close(h);
+            st->type = VFS_T_FILE;
+            st->backend = 2;
+            return 1;
+        }
+        return 0;
+    }
+
     if (ramfs_is_dir(path)) {
         st->type = VFS_T_DIR;
         st->backend = 1;
@@ -269,7 +375,6 @@ int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_siz
     if (out_size) *out_size = 0;
 
     if (path && path[0] == '/' && path[1] == 'p') {
-        // kvxfs_read_all artık uint8_t* bekliyor, tip uyumlu oldu
         if (kvxfs_read_all(path, out, cap, out_size)) return 1;
     }
 
@@ -279,7 +384,6 @@ int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_siz
     uint32_t total = 0;
     while (total < cap) {
         uint32_t got = 0;
-        // Burada zaten uint8_t* cast yapıyordun, artık gerek kalmadı ama durabilir
         if (!vfs_read(f, out + total, cap - total, &got)) break;
         if (got == 0) break;
         total += got;
@@ -293,24 +397,16 @@ int vfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     if (!path || !data) return 0;
 
     if (path[0] == '/' && path[1] == 'p') {
-        // kvxfs_write_all artık const uint8_t* bekliyor
         if (kvxfs_write_all(path, data, size)) return 1;
-
         return 0;
     }
 
     return ramfs_write_all(path, data, size);
 }
 
-__attribute__((unused)) static int list_cb_dedupe(const char* path, uint32_t size, void* u) {
-    // u = original cb + user
-    struct pack { int (*cb)(const char*,uint32_t,void*); void* u; } *p = (struct pack*)u;
-    return p->cb(path, size, p->u);
-}
-
 // vfs_list içinde kullanacağımız küçük wrapper
 typedef struct {
-    const char* dir;   // ⭐ EKLENDİ
+    const char* dir;
     int (*cb)(const char* path, uint32_t size, void* u);
     void* u;
 } vfs_list_wrap_t;
@@ -320,7 +416,7 @@ static int vfs_toyfs_iter_cb(const char* path, uint32_t size, void* u)
     vfs_list_wrap_t* w = (vfs_list_wrap_t*)u;
     if (!w || !w->cb) return 0;
 
-    // 🔴 DİZİNİN KENDİSİNİ ATLAMAK
+    // dizinin kendisini atla
     if (strcmp(path, w->dir) == 0)
         return 1;
 
@@ -342,6 +438,22 @@ int vfs_list(const char* dir_prefix,
         strcpy(resolved, vfs_get_cwd());
     } else {
         vfs_resolve_path(dir_prefix, resolved, sizeof(resolved));
+    }
+
+    // /removable view
+    if (is_removable_path(resolved)) {
+        char real[VFS_PATH_MAX];
+        removable_to_toy(resolved, real, sizeof(real));
+
+        // sadece kontrol (var mı)
+        if (!cb) {
+            if (toyfs_iter(real, 0, 0)) return 1;
+            return 0;
+        }
+
+        rem_wrap_t rw = { cb, u };
+        toyfs_iter(real, rem_cb_prefix, &rw);
+        return 1;
     }
 
     // sadece kontrol (cd için)
@@ -405,4 +517,76 @@ int vfs_resolve_path(const char* in, char* out, uint32_t cap)
     return 1;
 }
 
-int vfs_remove_node(const char* path) { (void)path; return -1; }
+int vfs_remove(const char* path) {
+    if (!path) return 0;
+
+    char resolved[VFS_PATH_MAX];
+    if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
+
+    if (ramfs_exists(resolved) || ramfs_is_dir(resolved)) {
+        return ramfs_remove(resolved);
+    }
+
+    // ToyFS read-only
+    return 0;
+}
+
+int vfs_rename(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return 0;
+
+    char res_old[VFS_PATH_MAX];
+    char res_new[VFS_PATH_MAX];
+
+    if (!vfs_resolve_path(old_path, res_old, sizeof(res_old))) return 0;
+    if (!vfs_resolve_path(new_path, res_new, sizeof(res_new))) return 0;
+
+    if (ramfs_exists(res_old) || ramfs_is_dir(res_old)) {
+        return ramfs_rename(res_old, res_new);
+    }
+
+    // ToyFS read-only
+    return 0;
+}
+
+int vfs_read_all_alloc(const char* path, uint8_t** out_buf, uint32_t* out_size) {
+    if (out_size) *out_size = 0;
+    if (out_buf) *out_buf = 0;
+    if (!path || !out_buf) return 0;
+
+    vfs_file_t* f = 0;
+    if (!vfs_open(path, VFS_O_RDONLY, &f)) return 0;
+
+    uint32_t cap = 1024;
+    uint8_t* buf = (uint8_t*)kmalloc(cap + 1);
+    if (!buf) { vfs_close(f); return 0; }
+
+    uint32_t total = 0;
+
+    while (1) {
+        if (total == cap) {
+            uint32_t newcap = cap * 2;
+            uint8_t* nb = (uint8_t*)kmalloc(newcap + 1);
+            if (!nb) break;
+            memcpy(nb, buf, cap);
+            kfree(buf);
+            buf = nb;
+            cap = newcap;
+        }
+
+        uint32_t got = 0;
+        if (!vfs_read(f, buf + total, cap - total, &got)) break;
+        if (got == 0) break;
+        total += got;
+    }
+
+    vfs_close(f);
+
+    buf[total] = 0;
+    *out_buf = buf;
+    if (out_size) *out_size = total;
+    return 1;
+}
+
+void vfs_free_alloc(void* p) {
+    if (p) kfree(p);
+}

@@ -36,6 +36,8 @@ int  vfs_write_all(const char* path, const uint8_t* data, uint32_t size);
 int  vfs_resolve_path(const char* in, char* out, uint32_t cap);
 int  vfs_stat(const char* path, vfs_stat_t* st);
 int  vfs_mkdir(const char* path);
+int  vfs_remove(const char* path);
+int vfs_rename(const char* old_path, const char* new_path);
 
 // CWD (Current Working Directory)
 const char* vfs_get_cwd(void);
@@ -44,3 +46,6 @@ void        vfs_cd_parent(void);
 
 // List
 int  vfs_list(const char* dir_prefix, int (*cb)(const char* path, uint32_t size, void* u), void* u);
+
+int vfs_read_all_alloc(const char* path, uint8_t** out_buf, uint32_t* out_size);
+void vfs_free_alloc(void* p);

@@ -11,14 +11,14 @@ typedef enum {
 typedef struct {
     int x, y, w, h;
     int prev_x, prev_y, prev_w, prev_h;
-    
-    const char* title;      
-    uint32_t* icon;         
-    
-    win_state_t state;      
-    int is_closed;          
 
-    void* user_data;        // ✅ Bu satırı ekle (Her türlü veriyi/app'i buraya bağlayabiliriz)
+    const char* title;
+    uint32_t* icon;
+
+    win_state_t state;
+    int is_closed;
+
+    void* user_data; // Her türlü veriyi/app'i buraya bağlayabilirsin
 } ui_window_t;
 
 typedef struct {
@@ -43,12 +43,12 @@ void ui_window_draw(const ui_window_t* w, int is_active, int mx, int my);
 // eski wrapper (kolay demo için)
 void ui_draw_window(int x, int y, int w, int h, const char* title);
 
-// hit test için yardımcılar (WM'de çok işine yarar)
+// hit test için yardımcılar
 static inline int ui_window_contains(const ui_window_t* w, int px, int py) {
     return (px >= w->x && px < (w->x + w->w) && py >= w->y && py < (w->y + w->h));
 }
 
 // titlebar varsayımı: 24px
 static inline int ui_window_in_titlebar(const ui_window_t* w, int px, int py) {
-    return ui_window_contains(w, px, py) && (py >= w->y && py < (w->y + 24));
+    return ui_window_contains(w, px, py) && (py >= w->y && py < (w->y + UI_TITLE_H));
 }
