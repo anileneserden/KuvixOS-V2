@@ -491,3 +491,74 @@ void fat_test_read_bigfile(void)
     printk("[FAT] BIGFILE.TXT read ok (%u bytes)\n", sz);
     printk("[FAT] BIGFILE preview: \"%.120s\"\n", bigbuf);
 }
+
+int fat_list_root_cmd(void)
+{
+    uint8_t boot[512];
+    fat_info_t info;
+
+    if (!block_has_root()) {
+        printk("[FAT] no root block device\n");
+        return 0;
+    }
+
+    if (!block_read(0, 1, boot)) {
+        printk("[FAT] failed to read sector 0\n");
+        return 0;
+    }
+
+    if (!fat_probe_from_sector0(boot, &info)) {
+        printk("[FAT] invalid FAT boot sector\n");
+        return 0;
+    }
+
+    if (info.type != FAT_TYPE_16 && info.type != FAT_TYPE_12) {
+        printk("[FAT] list currently supports FAT12/16 only\n");
+        return 0;
+    }
+
+    uint32_t root_dir_start =
+        info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
+
+    uint8_t sec[512];
+
+    for (uint32_t s = 0; s < info.root_dir_sectors; s++) {
+        if (!block_read(root_dir_start + s, 1, sec)) {
+            printk("[FAT] failed to read root dir sector %u\n", root_dir_start + s);
+            return 0;
+        }
+
+        for (int off = 0; off < 512; off += 32) {
+            fat_dirent_t* de = (fat_dirent_t*)(sec + off);
+
+            if (de->name[0] == 0x00) {
+                return 1;
+            }
+            if (de->name[0] == 0xE5) {
+                continue;
+            }
+            if (de->attr == FAT_ATTR_LFN) {
+                continue;
+            }
+            if (de->attr & FAT_ATTR_VOLUME_ID) {
+                continue;
+            }
+
+            char namebuf[20];
+            fat_build_short_name(de, namebuf, sizeof(namebuf));
+
+            if (de->attr & FAT_ATTR_DIRECTORY) {
+                printk("[DIR]  %s\n", namebuf);
+            } else {
+                printk("%d byte  %s\n", de->file_size, namebuf);
+            }
+        }
+    }
+
+    return 1;
+}
+
+int fat_read_root_file(const char* name83, uint8_t* out, uint32_t out_cap, uint32_t* out_size)
+{
+    return fat_read_file_from_root(name83, (char*)out, out_cap, out_size);
+}

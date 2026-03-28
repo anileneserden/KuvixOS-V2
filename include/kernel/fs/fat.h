@@ -22,7 +22,7 @@ typedef struct {
     uint32_t first_data_sector;
     uint32_t data_sectors;
     uint32_t cluster_count;
-    uint32_t root_cluster; // FAT32 için
+    uint32_t root_cluster;
 } fat_info_t;
 
 bool fat_probe_from_sector0(const uint8_t* sector, fat_info_t* out);
@@ -32,3 +32,7 @@ void fat_test_probe_root(void);
 void fat_test_list_root(void);
 void fat_test_read_hello(void);
 void fat_test_read_bigfile(void);
+
+/* pseudo-mount helper API */
+int fat_list_root_cmd(void);
+int fat_read_root_file(const char* name83, uint8_t* out, uint32_t out_cap, uint32_t* out_size);

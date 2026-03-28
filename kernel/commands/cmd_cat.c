@@ -1,4 +1,5 @@
 #include <kernel/fs/vfs.h>
+#include <kernel/fs/fat.h>
 #include <lib/string.h>
 #include <lib/commands.h>
 
@@ -6,14 +7,12 @@ static void build_path(char* out, int out_sz, const char* arg) {
     out[0] = 0;
     if (!arg || !arg[0]) return;
 
-    // absolute ise direkt
     if (arg[0] == '/') {
         strncpy(out, arg, out_sz - 1);
         out[out_sz - 1] = 0;
         return;
     }
 
-    // relative: cwd + "/" + arg
     const char* cwd = commands_get_cwd();
     strncpy(out, cwd, out_sz - 1);
     out[out_sz - 1] = 0;
@@ -32,12 +31,37 @@ void cmd_cat(int argc, char** argv) {
     char path[256];
     build_path(path, sizeof(path), argv[1]);
 
+    /* pseudo FAT mount: /fat/<DOSYA> */
+    if (strncmp(path, "/fat/", 5) == 0) {
+        const char* name = path + 5;
+
+        if (!name[0]) {
+            commands_puts("Hata: FAT dosya adi eksik.\n");
+            return;
+        }
+
+        uint8_t buffer[8192];
+        uint32_t size = 0;
+
+        if (fat_read_root_file(name, buffer, sizeof(buffer) - 1, &size)) {
+            buffer[size] = 0;
+            commands_printf((const char*)buffer, size);
+            commands_puts("\n");
+        } else {
+            commands_puts("Hata: FAT dosyasi okunamadi: ");
+            commands_puts(path);
+            commands_puts("\n");
+        }
+        return;
+    }
+
     uint8_t buffer[4096];
     uint32_t size = 0;
 
     int r = vfs_read_all(path, buffer, sizeof(buffer) - 1, &size);
     if (r >= 0) {
-        commands_printf(buffer, size);
+        buffer[size] = 0;
+        commands_printf((const char*)buffer, size);
         commands_puts("\n");
     } else {
         commands_puts("Hata: Dosya okunamadi: ");
