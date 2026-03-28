@@ -52,7 +52,25 @@ typedef struct {
         } fat32;
     };
 } fat_bpb_t;
+
+typedef struct {
+    uint8_t  name[11];
+    uint8_t  attr;
+    uint8_t  ntres;
+    uint8_t  crt_time_tenth;
+    uint16_t crt_time;
+    uint16_t crt_date;
+    uint16_t last_access_date;
+    uint16_t first_cluster_hi;
+    uint16_t wrt_time;
+    uint16_t wrt_date;
+    uint16_t first_cluster_lo;
+    uint32_t file_size;
+} fat_dirent_t;
 #pragma pack(pop)
+
+#define FAT_ATTR_DIRECTORY 0x10
+#define FAT_ATTR_LFN       0x0F
 
 static uint32_t fat_total_sectors(const fat_bpb_t* bpb)
 {
@@ -76,6 +94,39 @@ static const char* fat_type_name(fat_type_t t)
     }
 }
 
+static void fat_build_short_name(const fat_dirent_t* de, char* out, int out_sz)
+{
+    int p = 0;
+    if (!de || !out || out_sz <= 0) return;
+
+    // base name
+    for (int i = 0; i < 8 && p < out_sz - 1; i++) {
+        char c = (char)de->name[i];
+        if (c == ' ') break;
+        out[p++] = c;
+    }
+
+    // extension var mı?
+    int has_ext = 0;
+    for (int i = 8; i < 11; i++) {
+        if (de->name[i] != ' ') {
+            has_ext = 1;
+            break;
+        }
+    }
+
+    if (has_ext && p < out_sz - 1) {
+        out[p++] = '.';
+        for (int i = 8; i < 11 && p < out_sz - 1; i++) {
+            char c = (char)de->name[i];
+            if (c == ' ') break;
+            out[p++] = c;
+        }
+    }
+
+    out[p] = '\0';
+}
+
 bool fat_probe_from_sector0(const uint8_t* sector, fat_info_t* out)
 {
     if (!sector || !out) return false;
@@ -84,7 +135,6 @@ bool fat_probe_from_sector0(const uint8_t* sector, fat_info_t* out)
 
     const fat_bpb_t* bpb = (const fat_bpb_t*)sector;
 
-    /* 0x55AA imzası */
     uint16_t sig = *(const uint16_t*)(sector + 510);
     if (sig != 0xAA55) return false;
 
@@ -92,9 +142,9 @@ bool fat_probe_from_sector0(const uint8_t* sector, fat_info_t* out)
     if (bpb->sectors_per_cluster == 0) return false;
     if (bpb->num_fats == 0) return false;
 
-    uint32_t total_sectors     = fat_total_sectors(bpb);
-    uint32_t sectors_per_fat   = fat_sectors_per_fat(bpb);
-    uint32_t root_dir_sectors  =
+    uint32_t total_sectors    = fat_total_sectors(bpb);
+    uint32_t sectors_per_fat  = fat_sectors_per_fat(bpb);
+    uint32_t root_dir_sectors =
         ((uint32_t)bpb->root_entry_count * 32U + (bpb->bytes_per_sector - 1U)) /
         bpb->bytes_per_sector;
 
@@ -180,4 +230,89 @@ void fat_test_probe_root(void)
 
     printk("[FAT] FAT boot sector detected on root disk\n");
     fat_debug_dump(&info);
+}
+
+void fat_test_list_root(void)
+{
+    uint8_t boot[512];
+    fat_info_t info;
+
+    if (!block_has_root()) {
+        printk("[FAT] no root block device\n");
+        return;
+    }
+
+    if (!block_read(0, 1, boot)) {
+        printk("[FAT] failed to read sector 0\n");
+        return;
+    }
+
+    if (!fat_probe_from_sector0(boot, &info)) {
+        printk("[FAT] cannot list root: invalid FAT boot sector\n");
+        return;
+    }
+
+    if (info.type != FAT_TYPE_16 && info.type != FAT_TYPE_12) {
+        printk("[FAT] root listing test currently supports FAT12/16 only\n");
+        return;
+    }
+
+    uint32_t root_dir_start =
+        info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
+
+    printk("[FAT] ROOT DIR start=%u sectors=%u\n",
+           root_dir_start, info.root_dir_sectors);
+
+    uint8_t sec[512];
+    int shown = 0;
+
+    for (uint32_t s = 0; s < info.root_dir_sectors; s++) {
+        if (!block_read(root_dir_start + s, 1, sec)) {
+            printk("[FAT] failed to read root dir sector %u\n", root_dir_start + s);
+            return;
+        }
+
+        for (int off = 0; off < 512; off += 32) {
+            fat_dirent_t* de = (fat_dirent_t*)(sec + off);
+
+            // 0x00 => buradan sonrası boş
+            if (de->name[0] == 0x00) {
+                printk("[FAT] root listing done (%d entries)\n", shown);
+                return;
+            }
+
+            // 0xE5 => silinmiş
+            if (de->name[0] == 0xE5) {
+                continue;
+            }
+
+            // LFN şimdilik atla
+            if (de->attr == FAT_ATTR_LFN) {
+                continue;
+            }
+
+            // volume label şimdilik atla
+            if (de->attr & 0x08) {
+                continue;
+            }
+
+            char namebuf[20];
+            fat_build_short_name(de, namebuf, sizeof(namebuf));
+
+            uint32_t first_cluster =
+                ((uint32_t)de->first_cluster_hi << 16) |
+                (uint32_t)de->first_cluster_lo;
+
+            if (de->attr & FAT_ATTR_DIRECTORY) {
+                printk("[FAT] DIR  %s cluster=%u\n", namebuf, first_cluster);
+            } else {
+                printk("[FAT] FILE %s size=%u cluster=%u\n",
+                       namebuf, de->file_size, first_cluster);
+            }
+
+            shown++;
+        }
+    }
+
+    printk("[FAT] root listing done (%d entries)\n", shown);
 }

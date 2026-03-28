@@ -28,5 +28,5 @@ typedef struct {
 bool fat_probe_from_sector0(const uint8_t* sector, fat_info_t* out);
 void fat_debug_dump(const fat_info_t* info);
 
-/* geçici test helper */
 void fat_test_probe_root(void);
+void fat_test_list_root(void);
