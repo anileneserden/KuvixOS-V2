@@ -71,6 +71,7 @@ typedef struct {
 
 #define FAT_ATTR_DIRECTORY 0x10
 #define FAT_ATTR_LFN       0x0F
+#define FAT_ATTR_VOLUME_ID 0x08
 
 static uint32_t fat_total_sectors(const fat_bpb_t* bpb)
 {
@@ -99,14 +100,12 @@ static void fat_build_short_name(const fat_dirent_t* de, char* out, int out_sz)
     int p = 0;
     if (!de || !out || out_sz <= 0) return;
 
-    // base name
     for (int i = 0; i < 8 && p < out_sz - 1; i++) {
         char c = (char)de->name[i];
         if (c == ' ') break;
         out[p++] = c;
     }
 
-    // extension var mı?
     int has_ext = 0;
     for (int i = 8; i < 11; i++) {
         if (de->name[i] != ' ') {
@@ -125,6 +124,60 @@ static void fat_build_short_name(const fat_dirent_t* de, char* out, int out_sz)
     }
 
     out[p] = '\0';
+}
+
+static int fat_name_equals_83(const fat_dirent_t* de, const char* wanted)
+{
+    char tmp[20];
+    fat_build_short_name(de, tmp, sizeof(tmp));
+    return strcmp(tmp, wanted) == 0;
+}
+
+static uint32_t fat_cluster_to_lba(const fat_info_t* info, uint32_t cluster)
+{
+    if (!info || cluster < 2) return 0;
+    return info->first_data_sector + ((cluster - 2) * info->sectors_per_cluster);
+}
+
+static int fat_find_root_entry(const fat_info_t* info, const char* name83, fat_dirent_t* out_de)
+{
+    if (!info || !name83 || !out_de) return 0;
+    if (info->type != FAT_TYPE_12 && info->type != FAT_TYPE_16) return 0;
+
+    uint32_t root_dir_start =
+        info->reserved_sectors + (info->fat_count * info->sectors_per_fat);
+
+    uint8_t sec[512];
+
+    for (uint32_t s = 0; s < info->root_dir_sectors; s++) {
+        if (!block_read(root_dir_start + s, 1, sec)) {
+            return 0;
+        }
+
+        for (int off = 0; off < 512; off += 32) {
+            fat_dirent_t* de = (fat_dirent_t*)(sec + off);
+
+            if (de->name[0] == 0x00) {
+                return 0;
+            }
+            if (de->name[0] == 0xE5) {
+                continue;
+            }
+            if (de->attr == FAT_ATTR_LFN) {
+                continue;
+            }
+            if (de->attr & FAT_ATTR_VOLUME_ID) {
+                continue;
+            }
+
+            if (fat_name_equals_83(de, name83)) {
+                memcpy(out_de, de, sizeof(*out_de));
+                return 1;
+            }
+        }
+    }
+
+    return 0;
 }
 
 bool fat_probe_from_sector0(const uint8_t* sector, fat_info_t* out)
@@ -275,24 +328,17 @@ void fat_test_list_root(void)
         for (int off = 0; off < 512; off += 32) {
             fat_dirent_t* de = (fat_dirent_t*)(sec + off);
 
-            // 0x00 => buradan sonrası boş
             if (de->name[0] == 0x00) {
                 printk("[FAT] root listing done (%d entries)\n", shown);
                 return;
             }
-
-            // 0xE5 => silinmiş
             if (de->name[0] == 0xE5) {
                 continue;
             }
-
-            // LFN şimdilik atla
             if (de->attr == FAT_ATTR_LFN) {
                 continue;
             }
-
-            // volume label şimdilik atla
-            if (de->attr & 0x08) {
+            if (de->attr & FAT_ATTR_VOLUME_ID) {
                 continue;
             }
 
@@ -315,4 +361,87 @@ void fat_test_list_root(void)
     }
 
     printk("[FAT] root listing done (%d entries)\n", shown);
+}
+
+void fat_test_read_hello(void)
+{
+    uint8_t boot[512];
+    fat_info_t info;
+    fat_dirent_t de;
+
+    if (!block_has_root()) {
+        printk("[FAT] no root block device\n");
+        return;
+    }
+
+    if (!block_read(0, 1, boot)) {
+        printk("[FAT] failed to read sector 0\n");
+        return;
+    }
+
+    if (!fat_probe_from_sector0(boot, &info)) {
+        printk("[FAT] cannot read file: invalid FAT boot sector\n");
+        return;
+    }
+
+    if (info.type != FAT_TYPE_12 && info.type != FAT_TYPE_16) {
+        printk("[FAT] file read test currently supports FAT12/16 only\n");
+        return;
+    }
+
+    if (!fat_find_root_entry(&info, "HELLO.TXT", &de)) {
+        printk("[FAT] HELLO.TXT not found in root dir\n");
+        return;
+    }
+
+    if (de.attr & FAT_ATTR_DIRECTORY) {
+        printk("[FAT] HELLO.TXT is a directory?\n");
+        return;
+    }
+
+    uint32_t first_cluster =
+        ((uint32_t)de.first_cluster_hi << 16) |
+        (uint32_t)de.first_cluster_lo;
+
+    uint32_t start_lba = fat_cluster_to_lba(&info, first_cluster);
+    if (start_lba == 0) {
+        printk("[FAT] invalid cluster for HELLO.TXT\n");
+        return;
+    }
+
+    uint32_t cluster_bytes = info.sectors_per_cluster * info.bytes_per_sector;
+    uint32_t read_bytes = de.file_size;
+    if (read_bytes > cluster_bytes) {
+        read_bytes = cluster_bytes;
+        printk("[FAT] warning: file spans multiple clusters, truncating test read to %u bytes\n", read_bytes);
+    }
+
+    uint8_t sec[512];
+    char textbuf[256];
+    uint32_t copied = 0;
+
+    memset(textbuf, 0, sizeof(textbuf));
+
+    for (uint32_t s = 0; s < info.sectors_per_cluster && copied < read_bytes; s++) {
+        if (!block_read(start_lba + s, 1, sec)) {
+            printk("[FAT] failed reading HELLO.TXT data at lba=%u\n", start_lba + s);
+            return;
+        }
+
+        uint32_t remain = read_bytes - copied;
+        uint32_t take = (remain > 512) ? 512 : remain;
+
+        if (copied + take > sizeof(textbuf) - 1) {
+            take = (sizeof(textbuf) - 1) - copied;
+        }
+
+        memcpy(textbuf + copied, sec, take);
+        copied += take;
+    }
+
+    textbuf[copied] = '\0';
+
+    printk("[FAT] read HELLO.TXT size=%u cluster=%u lba=%u\n",
+           de.file_size, first_cluster, start_lba);
+    printk("[FAT] HELLO.TXT content: \"%s\"\n", textbuf);
 }

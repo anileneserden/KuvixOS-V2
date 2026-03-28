@@ -57,8 +57,7 @@ static int meta_write(void) {
 }
 
 static int is_persist_path(const char* path) {
-    if (strncmp(path, "/persist", 8) == 0) return 1;
-    return 0;
+    return (path && strncmp(path, "/persist", 8) == 0);
 }
 
 static int find_ent(const char* path) {
@@ -70,9 +69,7 @@ static int find_ent(const char* path) {
 
 static int alloc_ent(void) {
     for (int i = 0; i < KVX_MAX_FILES; i++) {
-        if (g_meta.ent[i].used == 0) {
-            return i;
-        }
+        if (g_meta.ent[i].used == 0) return i;
     }
     return -1;
 }
@@ -119,11 +116,9 @@ int kvxfs_format(void) {
     if (!ata_pio_is_ready()) return 0;
 
     mem_zero(&g_meta, sizeof(g_meta));
-
     memcpy(g_meta.magic, KVX_MAGIC, 6);
     g_meta.magic[6] = 0;
     g_meta.magic[7] = 0;
-
     g_meta.file_count = 0;
     g_meta.next_free_lba = KVX_DATA_LBA;
 
@@ -140,8 +135,7 @@ int kvxfs_force_format(void) {
 
 int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     if (!path || !data || !is_persist_path(path)) return 0;
-
-    kvxfs_init();
+    if (!kvxfs_init()) return 0;   // KRİTİK
 
     int idx = find_ent(path);
     if (idx < 0) {
@@ -155,6 +149,8 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     }
 
     uint32_t start = g_meta.next_free_lba;
+    if (start < KVX_DATA_LBA) return 0;   // ekstra koruma
+
     uint32_t sectors = (size + 511) / 512;
     uint8_t sec[512];
 
@@ -178,8 +174,7 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
 
 int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size) {
     if (!path || !out || !is_persist_path(path)) return 0;
-
-    kvxfs_init();
+    if (!kvxfs_init()) return 0;   // KRİTİK
 
     int idx = find_ent(path);
     if (idx < 0) return 0;
@@ -201,8 +196,7 @@ int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_s
 
 int kvxfs_mkdir(const char* path) {
     if (!is_persist_path(path)) return -1;
-
-    kvxfs_init();
+    if (!kvxfs_init()) return -10;   // KRİTİK
 
     if (find_ent(path) >= 0) return -2;
 
@@ -214,7 +208,6 @@ int kvxfs_mkdir(const char* path) {
     g_meta.ent[idx].path[63] = '\0';
     g_meta.ent[idx].size = 0xFFFFFFFF;
     g_meta.ent[idx].used = 1;
-
     g_meta.file_count++;
 
     for (volatile int i = 0; i < 20000; i++) io_wait();
@@ -230,7 +223,11 @@ int kvxfs_mkdir(const char* path) {
 }
 
 void kvxfs_list_all(const char* filter_path) {
-    kvxfs_init();
+    if (!kvxfs_init()) {
+        printk("[KVXFS] list skipped: fs not initialized\n");
+        return;
+    }
+
     printk("--- %s Icerigi ---\n", filter_path);
 
     int filter_len = strlen(filter_path);

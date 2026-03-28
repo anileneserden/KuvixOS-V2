@@ -39,6 +39,7 @@ int fs_init_once(void) {
             printk("[FS] root block device set\n");
             fat_test_probe_root();
             fat_test_list_root();
+            fat_test_read_hello();
         } else {
             printk("[FS] ATA bulundu ama blockdev yok\n");
         }
