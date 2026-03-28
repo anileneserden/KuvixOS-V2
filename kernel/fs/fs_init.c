@@ -1,6 +1,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/kvxfs.h>
 #include <kernel/fs/toyfs.h>
+#include <kernel/fs/fat.h>
 #include <kernel/drivers/ata_pio.h>
 #include <kernel/block/block.h>
 #include <kernel/printk.h>
@@ -35,7 +36,13 @@ int fs_init_once(void) {
         blockdev_t* dev = ata_pio_get_dev();
         if (dev) {
             block_set_root(dev);
+            printk("[FS] root block device set\n");
+            fat_test_probe_root();
+        } else {
+            printk("[FS] ATA bulundu ama blockdev yok\n");
         }
+    } else {
+        printk("[FS] ATA disk bulunamadi\n");
     }
 
     if (kvxfs_init()) {
@@ -45,6 +52,5 @@ int fs_init_once(void) {
     }
 
     fs_prepare_user_layout();
-
     return 1;
 }

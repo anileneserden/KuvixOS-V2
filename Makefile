@@ -59,6 +59,7 @@ SRC_C = \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
+    kernel/fs/fat.c \
     kernel/fs/fs_init.c \
     kernel/fs/kvxfs.c \
     kernel/fs/ramfs.c \
@@ -194,10 +195,32 @@ run: iso
 	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
 	@test -f disk2.img || dd if=/dev/zero of=disk2.img bs=1M count=5
 	@chmod 666 disk.img disk2.img
-	qemu-system-i386 -cdrom $(IMAGE) \
+	qemu-system-i386 -boot order=d \
+		-cdrom $(IMAGE) \
 		-drive file=disk.img,format=raw,index=0,media=disk \
 		-drive file=disk2.img,format=raw,index=1,media=disk \
-        -device e1000,netdev=n0 -netdev user,id=n0 \
+		-device e1000,netdev=n0 -netdev user,id=n0 \
+		-m 256M -serial stdio
+
+fat-img:
+	dd if=/dev/zero of=fat.img bs=1M count=16
+	mkfs.vfat fat.img
+
+run-fat: iso
+	@test -f fat.img || $(MAKE) fat-img
+	qemu-system-i386 -boot order=d \
+		-cdrom $(IMAGE) \
+		-drive file=fat.img,format=raw,index=0,media=disk \
+		-device e1000,netdev=n0 -netdev user,id=n0 \
+		-m 256M -serial stdio
+
+run-kvx: iso
+	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
+	@chmod 666 disk.img
+	qemu-system-i386 -boot order=d \
+		-cdrom $(IMAGE) \
+		-drive file=disk.img,format=raw,index=0,media=disk \
+		-device e1000,netdev=n0 -netdev user,id=n0 \
 		-m 256M -serial stdio
 
 clean:
