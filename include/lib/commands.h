@@ -25,8 +25,8 @@ typedef void (*commands_clear_fn_t)(void* user);
 void commands_set_output(commands_out_fn_t fn, void* user);
 void commands_set_clear(commands_clear_fn_t fn, void* user);
 
-void commands_set_cwd(const char* abs_cwd);
 const char* commands_get_cwd(void);
+void commands_set_cwd(const char* path);
 
 void commands_puts(const char* s);
 void commands_putc(char c);

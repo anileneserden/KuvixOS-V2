@@ -18,14 +18,17 @@ static void* g_out_user = NULL;
 static commands_clear_fn_t g_clear = NULL;
 static void* g_clear_user = NULL;
 
-static const char* g_cwd = "/";
-
-void commands_set_cwd(const char* abs_cwd) {
-    g_cwd = (abs_cwd && abs_cwd[0]) ? abs_cwd : "/";
-}
+static char g_cwd[256] = "/home";
 
 const char* commands_get_cwd(void) {
-    return g_cwd ? g_cwd : "/";
+    return g_cwd;
+}
+
+void commands_set_cwd(const char* path) {
+    if (!path || !path[0]) return;
+
+    strncpy(g_cwd, path, sizeof(g_cwd) - 1);
+    g_cwd[sizeof(g_cwd) - 1] = 0;
 }
 
 void commands_set_output(commands_out_fn_t fn, void* user) {
