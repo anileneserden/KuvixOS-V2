@@ -40,6 +40,7 @@ int fs_init_once(void) {
             fat_test_probe_root();
             fat_test_list_root();
             fat_test_read_hello();
+            fat_test_read_bigfile();
         } else {
             printk("[FS] ATA bulundu ama blockdev yok\n");
         }

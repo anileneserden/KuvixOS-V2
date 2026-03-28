@@ -31,3 +31,4 @@ void fat_debug_dump(const fat_info_t* info);
 void fat_test_probe_root(void);
 void fat_test_list_root(void);
 void fat_test_read_hello(void);
+void fat_test_read_bigfile(void);

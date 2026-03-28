@@ -139,6 +139,32 @@ static uint32_t fat_cluster_to_lba(const fat_info_t* info, uint32_t cluster)
     return info->first_data_sector + ((cluster - 2) * info->sectors_per_cluster);
 }
 
+static uint32_t fat16_next_cluster(const fat_info_t* info, uint32_t cluster)
+{
+    if (!info) return 0;
+    if (info->type != FAT_TYPE_16) return 0;
+    if (cluster < 2) return 0;
+
+    uint32_t fat_start = info->reserved_sectors;
+    uint32_t fat_offset = cluster * 2; // FAT16: 2 byte per entry
+    uint32_t fat_sector = fat_start + (fat_offset / info->bytes_per_sector);
+    uint32_t ent_offset = fat_offset % info->bytes_per_sector;
+
+    uint8_t sec[512];
+    if (!block_read(fat_sector, 1, sec)) {
+        return 0;
+    }
+
+    uint16_t next = *(uint16_t*)(sec + ent_offset);
+
+    // FAT16 end-of-chain
+    if (next >= 0xFFF8) return 0xFFFFFFFF;
+    if (next == 0xFFF7) return 0; // bad cluster
+    if (next == 0x0000 || next == 0x0001) return 0;
+
+    return (uint32_t)next;
+}
+
 static int fat_find_root_entry(const fat_info_t* info, const char* name83, fat_dirent_t* out_de)
 {
     if (!info || !name83 || !out_de) return 0;
@@ -363,85 +389,105 @@ void fat_test_list_root(void)
     printk("[FAT] root listing done (%d entries)\n", shown);
 }
 
-void fat_test_read_hello(void)
+static int fat_read_file_from_root(const char* name83, char* out, uint32_t out_cap, uint32_t* out_size)
 {
     uint8_t boot[512];
     fat_info_t info;
     fat_dirent_t de;
 
-    if (!block_has_root()) {
-        printk("[FAT] no root block device\n");
-        return;
-    }
+    if (!out || out_cap == 0) return 0;
+    out[0] = '\0';
 
-    if (!block_read(0, 1, boot)) {
-        printk("[FAT] failed to read sector 0\n");
-        return;
-    }
+    if (!block_has_root()) return 0;
+    if (!block_read(0, 1, boot)) return 0;
+    if (!fat_probe_from_sector0(boot, &info)) return 0;
 
-    if (!fat_probe_from_sector0(boot, &info)) {
-        printk("[FAT] cannot read file: invalid FAT boot sector\n");
-        return;
-    }
+    if (info.type != FAT_TYPE_12 && info.type != FAT_TYPE_16) return 0;
 
-    if (info.type != FAT_TYPE_12 && info.type != FAT_TYPE_16) {
-        printk("[FAT] file read test currently supports FAT12/16 only\n");
-        return;
-    }
+    if (!fat_find_root_entry(&info, name83, &de)) return 0;
+    if (de.attr & FAT_ATTR_DIRECTORY) return 0;
 
-    if (!fat_find_root_entry(&info, "HELLO.TXT", &de)) {
-        printk("[FAT] HELLO.TXT not found in root dir\n");
-        return;
-    }
+    uint32_t file_size =
+        de.file_size;
 
-    if (de.attr & FAT_ATTR_DIRECTORY) {
-        printk("[FAT] HELLO.TXT is a directory?\n");
-        return;
-    }
-
-    uint32_t first_cluster =
+    uint32_t cluster =
         ((uint32_t)de.first_cluster_hi << 16) |
         (uint32_t)de.first_cluster_lo;
 
-    uint32_t start_lba = fat_cluster_to_lba(&info, first_cluster);
-    if (start_lba == 0) {
-        printk("[FAT] invalid cluster for HELLO.TXT\n");
-        return;
-    }
+    if (cluster < 2) return 0;
 
-    uint32_t cluster_bytes = info.sectors_per_cluster * info.bytes_per_sector;
-    uint32_t read_bytes = de.file_size;
-    if (read_bytes > cluster_bytes) {
-        read_bytes = cluster_bytes;
-        printk("[FAT] warning: file spans multiple clusters, truncating test read to %u bytes\n", read_bytes);
-    }
-
-    uint8_t sec[512];
-    char textbuf[256];
     uint32_t copied = 0;
+    uint8_t sec[512];
+
+    while (cluster >= 2 && copied < file_size) {
+        uint32_t lba = fat_cluster_to_lba(&info, cluster);
+        if (lba == 0) return 0;
+
+        for (uint32_t s = 0; s < info.sectors_per_cluster && copied < file_size; s++) {
+            if (!block_read(lba + s, 1, sec)) return 0;
+
+            uint32_t remain = file_size - copied;
+            uint32_t take = (remain > 512) ? 512 : remain;
+
+            if (copied + take > out_cap - 1) {
+                take = (out_cap - 1) - copied;
+            }
+
+            memcpy(out + copied, sec, take);
+            copied += take;
+
+            if (copied >= out_cap - 1) {
+                out[copied] = '\0';
+                if (out_size) *out_size = copied;
+                return 1;
+            }
+        }
+
+        if (copied >= file_size) break;
+
+        if (info.type == FAT_TYPE_16) {
+            uint32_t next = fat16_next_cluster(&info, cluster);
+            if (next == 0xFFFFFFFF) break;
+            if (next < 2) return 0;
+            cluster = next;
+        } else {
+            // FAT12 chain henüz yok
+            return 0;
+        }
+    }
+
+    out[copied] = '\0';
+    if (out_size) *out_size = copied;
+    return 1;
+}
+
+void fat_test_read_hello(void)
+{
+    char textbuf[256];
+    uint32_t sz = 0;
 
     memset(textbuf, 0, sizeof(textbuf));
 
-    for (uint32_t s = 0; s < info.sectors_per_cluster && copied < read_bytes; s++) {
-        if (!block_read(start_lba + s, 1, sec)) {
-            printk("[FAT] failed reading HELLO.TXT data at lba=%u\n", start_lba + s);
-            return;
-        }
-
-        uint32_t remain = read_bytes - copied;
-        uint32_t take = (remain > 512) ? 512 : remain;
-
-        if (copied + take > sizeof(textbuf) - 1) {
-            take = (sizeof(textbuf) - 1) - copied;
-        }
-
-        memcpy(textbuf + copied, sec, take);
-        copied += take;
+    if (!fat_read_file_from_root("HELLO.TXT", textbuf, sizeof(textbuf), &sz)) {
+        printk("[FAT] failed to read HELLO.TXT\n");
+        return;
     }
 
-    textbuf[copied] = '\0';
+    printk("[FAT] HELLO.TXT content (%u bytes): \"%s\"\n", sz, textbuf);
+}
 
-    printk("[FAT] read HELLO.TXT size=%u cluster=%u lba=%u\n",
-           de.file_size, first_cluster, start_lba);
-    printk("[FAT] HELLO.TXT content: \"%s\"\n", textbuf);
+void fat_test_read_bigfile(void)
+{
+    static char bigbuf[8192];
+    uint32_t sz = 0;
+
+    memset(bigbuf, 0, sizeof(bigbuf));
+
+    if (!fat_read_file_from_root("BIGFILE.TXT", bigbuf, sizeof(bigbuf), &sz)) {
+        printk("[FAT] BIGFILE.TXT not found or read failed\n");
+        return;
+    }
+
+    printk("[FAT] BIGFILE.TXT read ok (%u bytes)\n", sz);
+    printk("[FAT] BIGFILE preview: \"%.120s\"\n", bigbuf);
 }
