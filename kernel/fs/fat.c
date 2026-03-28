@@ -133,6 +133,53 @@ static int fat_name_equals_83(const fat_dirent_t* de, const char* wanted)
     return strcmp(tmp, wanted) == 0;
 }
 
+static int fat_make_83_name(const char* in, uint8_t out_name[11])
+{
+    if (!in || !in[0] || !out_name) return 0;
+
+    for (int i = 0; i < 11; i++) out_name[i] = ' ';
+
+    int base_len = 0;
+    int ext_len = 0;
+    const char* dot = 0;
+
+    for (const char* p = in; *p; p++) {
+        if (*p == '.') {
+            if (dot) return 0; /* birden fazla nokta yok */
+            dot = p;
+        }
+    }
+
+    if (dot) {
+        base_len = (int)(dot - in);
+        ext_len = (int)strlen(dot + 1);
+    } else {
+        base_len = (int)strlen(in);
+        ext_len = 0;
+    }
+
+    if (base_len < 1 || base_len > 8) return 0;
+    if (ext_len > 3) return 0;
+
+    for (int i = 0; i < base_len; i++) {
+        char c = in[i];
+        if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+        if (c == '/' || c == '\\' || c == ' ') return 0;
+        out_name[i] = (uint8_t)c;
+    }
+
+    if (dot) {
+        for (int i = 0; i < ext_len; i++) {
+            char c = dot[1 + i];
+            if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+            if (c == '/' || c == '\\' || c == ' ') return 0;
+            out_name[8 + i] = (uint8_t)c;
+        }
+    }
+
+    return 1;
+}
+
 static uint32_t fat_cluster_to_lba(const fat_info_t* info, uint32_t cluster)
 {
     if (!info || cluster < 2) return 0;
@@ -731,6 +778,64 @@ int fat_read_root_file(const char* name83, uint8_t* out, uint32_t out_cap, uint3
     return fat_read_file_from_root(name83, (char*)out, out_cap, out_size);
 }
 
+int fat_create_root_file(const char* name83)
+{
+    uint8_t boot[512];
+    fat_info_t info;
+
+    if (!name83 || !name83[0]) return 0;
+    if (!block_has_root()) return 0;
+    if (!block_read(0, 1, boot)) return 0;
+    if (!fat_probe_from_sector0(boot, &info)) return 0;
+    if (info.type != FAT_TYPE_16 && info.type != FAT_TYPE_12) return 0;
+
+    /* aynı isim var mı? */
+    fat_dirent_t existing;
+    if (fat_find_root_entry(&info, name83, &existing)) {
+        return 0; /* overwrite yok */
+    }
+
+    uint8_t dos_name[11];
+    if (!fat_make_83_name(name83, dos_name)) {
+        return 0;
+    }
+
+    uint32_t root_dir_start =
+        info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
+
+    uint8_t sec[512];
+
+    for (uint32_t s = 0; s < info.root_dir_sectors; s++) {
+        uint32_t lba = root_dir_start + s;
+
+        if (!block_read(lba, 1, sec)) {
+            return 0;
+        }
+
+        for (int off = 0; off < 512; off += 32) {
+            fat_dirent_t* de = (fat_dirent_t*)(sec + off);
+
+            /* boş ya da silinmiş entry kullanılabilir */
+            if (de->name[0] == 0x00 || de->name[0] == 0xE5) {
+                memset(de, 0, sizeof(*de));
+                memcpy(de->name, dos_name, 11);
+                de->attr = 0x00; /* normal file */
+                de->first_cluster_lo = 0;
+                de->first_cluster_hi = 0;
+                de->file_size = 0;
+
+                if (!block_write(lba, 1, sec)) {
+                    return 0;
+                }
+
+                return 1;
+            }
+        }
+    }
+
+    return 0; /* root dolu */
+}
+
 int fat_list_path(const char* path)
 {
     uint8_t boot[512];
@@ -793,6 +898,13 @@ int fat_read_file_path(const char* path, uint8_t* out, uint32_t out_cap, uint32_
     uint32_t cluster =
         ((uint32_t)de.first_cluster_hi << 16) |
         (uint32_t)de.first_cluster_lo;
+
+    /* 0-byte FAT dosyasi: cluster 0 olabilir, bu normal */
+    if (file_size == 0) {
+        out[0] = 0;
+        if (out_size) *out_size = 0;
+        return 1;
+    }
 
     if (cluster < 2) return 0;
 
