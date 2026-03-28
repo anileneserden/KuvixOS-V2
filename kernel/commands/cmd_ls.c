@@ -10,9 +10,10 @@ void cmd_ls(int argc, char** argv) {
 
     if (strncmp(path, "/persist", 8) == 0) {
         kvxfs_list_all(path);
-    } else if (strcmp(path, "/fat") == 0 || strcmp(path, "/fat/") == 0) {
-        if (!fat_list_root_cmd()) {
-            commands_puts("Hata: FAT root listelenemedi.\n");
+    } else if (strncmp(path, "/fat", 4) == 0) {
+        const char* fat_sub = path + 4; /* "", "/", "/ASSETS" */
+        if (!fat_list_path(fat_sub)) {
+            commands_puts("Hata: FAT dizini listelenemedi.\n");
         }
     } else {
         vfs_list(path, (void*)0, (void*)0);

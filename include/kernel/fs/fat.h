@@ -33,6 +33,10 @@ void fat_test_list_root(void);
 void fat_test_read_hello(void);
 void fat_test_read_bigfile(void);
 
-/* pseudo-mount helper API */
+/* root helpers */
 int fat_list_root_cmd(void);
 int fat_read_root_file(const char* name83, uint8_t* out, uint32_t out_cap, uint32_t* out_size);
+
+/* path helpers */
+int fat_list_path(const char* path);
+int fat_read_file_path(const char* path, uint8_t* out, uint32_t out_cap, uint32_t* out_size);

@@ -31,19 +31,13 @@ void cmd_cat(int argc, char** argv) {
     char path[256];
     build_path(path, sizeof(path), argv[1]);
 
-    /* pseudo FAT mount: /fat/<DOSYA> */
     if (strncmp(path, "/fat/", 5) == 0) {
-        const char* name = path + 5;
-
-        if (!name[0]) {
-            commands_puts("Hata: FAT dosya adi eksik.\n");
-            return;
-        }
+        const char* fat_sub = path + 4; /* "/HELLO.TXT" veya "/ASSETS/TEST.TXT" */
 
         uint8_t buffer[8192];
         uint32_t size = 0;
 
-        if (fat_read_root_file(name, buffer, sizeof(buffer) - 1, &size)) {
+        if (fat_read_file_path(fat_sub, buffer, sizeof(buffer) - 1, &size)) {
             buffer[size] = 0;
             commands_printf((const char*)buffer, size);
             commands_puts("\n");
