@@ -15,19 +15,20 @@ void ui_session_init(void) {
 }
 
 void ui_session_switch(ui_session_t s) {
+    if (g_current == s) return;
+
     g_current = s;
 
     if (s == UI_SESSION_TTY1) {
         fb_console_set_enabled(true);
-        fb_console_clear();
-        shell_init();      // ✅ init only
+        shell_init();
     } else if (s == UI_SESSION_DESKTOP) {
         fb_console_set_enabled(false);
         ui_theme_bootstrap_default();
-        ui_desktop_init(); // ✅ init only (bunu ekleyeceğiz)
+        ui_desktop_init();
     } else if (s == UI_SESSION_INPUT) {
         fb_console_set_enabled(false);
-        inputtest_init(); // ✅ init only (bunu ekleyeceğiz)
+        inputtest_init();
     }
 }
 
@@ -35,9 +36,9 @@ void ui_session_tick(void) {
     if (g_current == UI_SESSION_TTY1) {
         shell_tick();
     } else if (g_current == UI_SESSION_DESKTOP) {
-        ui_desktop_tick(); // ✅ desktop loop buraya taşınacak
+        ui_desktop_tick();
     } else if (g_current == UI_SESSION_INPUT) {
-        inputtest_tick(); // ✅ desktop loop buraya taşınacak
+        inputtest_tick();
     }
 }
 
@@ -45,8 +46,8 @@ void ui_session_handle_scancode(uint16_t sc) {
     if (g_current == UI_SESSION_TTY1) {
         shell_handle_scancode(sc);
     } else if (g_current == UI_SESSION_DESKTOP) {
-        ui_desktop_handle_scancode(sc); // desktop.c içindeki klavye kısmını fonksiyona ayır
+        ui_desktop_handle_scancode(sc);
     } else if (g_current == UI_SESSION_INPUT) {
-        inputtest_handle_scancode(sc); // desktop.c içindeki klavye kısmını fonksiyona ayır
+        inputtest_handle_scancode(sc);
     }
 }

@@ -17,7 +17,7 @@ CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
           -Iinclude -DTIMEZONE_OFFSET=3
-#          -DKBD_SERIAL_DEBUG
+# -DKBD_SERIAL_DEBUG (Bu satırı tamamen ayırdık)
 
 ASFLAGS = -m32
 NASMFLAGS = -f elf32
