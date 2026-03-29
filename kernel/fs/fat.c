@@ -1249,7 +1249,6 @@ int fat_create_file_in_dir_cluster(
 
 int fat_write_file_path(const char* path, const uint8_t* data, uint32_t size)
 {
-    /* ilk sürüm: sadece 0-byte dosyaya yaz */
     if (!path || !data) return 0;
 
     uint8_t boot[512];
@@ -1266,8 +1265,8 @@ int fat_write_file_path(const char* path, const uint8_t* data, uint32_t size)
     if (is_root) return 0;
     if (de.attr & FAT_ATTR_DIRECTORY) return 0;
 
-    /* şimdilik sadece boş dosyaya tek cluster yaz */
-    if (de.file_size != 0) return 0;
+    uint32_t cluster_cap = info.sectors_per_cluster * info.bytes_per_sector;
+    if (size > cluster_cap) return 0; /* ilk sürüm: tek cluster */
 
     uint32_t new_cluster = fat16_find_free_cluster(&info);
     if (new_cluster < 2) return 0;
@@ -1280,22 +1279,18 @@ int fat_write_file_path(const char* path, const uint8_t* data, uint32_t size)
 
     uint8_t sec[512];
     uint32_t written = 0;
-    uint32_t cluster_cap = info.sectors_per_cluster * info.bytes_per_sector;
-    if (size > cluster_cap) return 0; /* ilk sürüm: tek cluster */
 
     for (uint32_t s = 0; s < info.sectors_per_cluster; s++) {
         memset(sec, 0, sizeof(sec));
 
-        uint32_t remain = size - written;
-        uint32_t take = (remain > 512) ? 512 : remain;
-
         if (written < size) {
+            uint32_t remain = size - written;
+            uint32_t take = (remain > 512) ? 512 : remain;
             memcpy(sec, data + written, take);
             written += take;
         }
 
         if (!block_write(lba + s, 1, sec)) return 0;
-        if (written >= size && s + 1 >= info.sectors_per_cluster) break;
     }
 
     /* entry güncelle */
@@ -1303,19 +1298,20 @@ int fat_write_file_path(const char* path, const uint8_t* data, uint32_t size)
         const char* last = strrchr(path, '/');
         const char* filename = last ? last + 1 : path;
 
-        uint32_t root_dir_start =
-            info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
-
         uint8_t dirsec[512];
 
         if (!last || last == path) {
-            /* root içindeyse root entry güncelle */
+            /* root entry güncelle */
+            uint32_t root_dir_start =
+                info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
+
             for (uint32_t s = 0; s < info.root_dir_sectors; s++) {
                 uint32_t dlba = root_dir_start + s;
                 if (!block_read(dlba, 1, dirsec)) return 0;
 
                 for (int off = 0; off < 512; off += 32) {
                     fat_dirent_t* e = (fat_dirent_t*)(dirsec + off);
+
                     if (e->name[0] == 0x00) break;
                     if (e->name[0] == 0xE5) continue;
                     if (e->attr == FAT_ATTR_LFN) continue;
@@ -1330,9 +1326,10 @@ int fat_write_file_path(const char* path, const uint8_t* data, uint32_t size)
                     }
                 }
             }
+
             return 0;
         } else {
-            /* subdir içindeyse parent dir'i bul */
+            /* parent dir entry güncelle */
             char parent[256];
             int len = (int)(last - path);
             if (len <= 0 || len >= (int)sizeof(parent)) return 0;
@@ -1342,13 +1339,44 @@ int fat_write_file_path(const char* path, const uint8_t* data, uint32_t size)
 
             fat_dirent_t parent_de;
             int parent_is_root = 0;
+
             if (!fat_resolve_path(&info, parent, &parent_de, &parent_is_root)) return 0;
+
+            if (parent_is_root) {
+                uint32_t root_dir_start =
+                    info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
+
+                for (uint32_t s = 0; s < info.root_dir_sectors; s++) {
+                    uint32_t dlba = root_dir_start + s;
+                    if (!block_read(dlba, 1, dirsec)) return 0;
+
+                    for (int off = 0; off < 512; off += 32) {
+                        fat_dirent_t* e = (fat_dirent_t*)(dirsec + off);
+
+                        if (e->name[0] == 0x00) break;
+                        if (e->name[0] == 0xE5) continue;
+                        if (e->attr == FAT_ATTR_LFN) continue;
+                        if (e->attr & FAT_ATTR_VOLUME_ID) continue;
+
+                        if (fat_name_equals_83(e, filename)) {
+                            e->first_cluster_lo = (uint16_t)new_cluster;
+                            e->first_cluster_hi = 0;
+                            e->file_size = size;
+                            if (!block_write(dlba, 1, dirsec)) return 0;
+                            return 1;
+                        }
+                    }
+                }
+
+                return 0;
+            }
 
             uint32_t parent_cluster =
                 ((uint32_t)parent_de.first_cluster_hi << 16) |
                 (uint32_t)parent_de.first_cluster_lo;
 
             uint32_t cluster = parent_cluster;
+
             while (cluster >= 2) {
                 uint32_t plba = fat_cluster_to_lba(&info, cluster);
                 if (plba == 0) return 0;
@@ -1359,6 +1387,7 @@ int fat_write_file_path(const char* path, const uint8_t* data, uint32_t size)
 
                     for (int off = 0; off < 512; off += 32) {
                         fat_dirent_t* e = (fat_dirent_t*)(dirsec + off);
+
                         if (e->name[0] == 0x00) break;
                         if (e->name[0] == 0xE5) continue;
                         if (e->attr == FAT_ATTR_LFN) continue;
