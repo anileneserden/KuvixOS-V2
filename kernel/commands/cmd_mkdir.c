@@ -26,13 +26,21 @@ static void build_path(char* out, int out_sz, const char* arg) {
 }
 
 void cmd_mkdir(int argc, char** argv) {
-    if (argc < 2) {
-        commands_puts("Kullanim: mkdir <dizin>\n");
+    int p_flag = 0;
+    int arg_index = 1;
+
+    if (argc >= 2 && strcmp(argv[1], "-p") == 0) {
+        p_flag = 1;
+        arg_index = 2;
+    }
+
+    if (argc <= arg_index) {
+        commands_puts("Kullanim: mkdir [-p] <dizin>\n");
         return;
     }
 
     char path[256];
-    build_path(path, sizeof(path), argv[1]);
+    build_path(path, sizeof(path), argv[arg_index]);
 
     /* FAT root mkdir */
     if (strncmp(path, "/fat/", 5) == 0) {
@@ -42,6 +50,25 @@ void cmd_mkdir(int argc, char** argv) {
         if (!fat_sub[0] || strchr(fat_sub, '/')) {
             commands_puts("Hata: Su anda FAT icin sadece root dizinde mkdir destekleniyor.\n");
             return;
+        }
+
+        /* zaten var mı? */
+        {
+            char fat_check[256];
+            fat_check[0] = '/';
+            fat_check[1] = 0;
+            strncat(fat_check, fat_sub, sizeof(fat_check) - 1 - (int)strlen(fat_check));
+
+            if (fat_path_exists(fat_check)) {
+                if (p_flag) {
+                    return; /* sessiz geç */
+                }
+
+                commands_puts("Hata: Dizin zaten var: ");
+                commands_puts(path);
+                commands_puts("\n");
+                return;
+            }
         }
 
         if (fat_create_root_dir(fat_sub)) {
@@ -59,11 +86,16 @@ void cmd_mkdir(int argc, char** argv) {
     /* persist tarafi varsa koru */
     if (strncmp(path, "/persist", 8) == 0) {
         int r = kvxfs_mkdir(path);
+
         if (r == 0) {
             commands_puts("Dizin olusturuldu: ");
             commands_puts(path);
             commands_puts("\n");
         } else {
+            if (p_flag) {
+                return; /* şimdilik sessiz geç */
+            }
+
             commands_puts("Hata: Dizin olusturulamadi: ");
             commands_puts(path);
             commands_puts("\n");
@@ -78,6 +110,10 @@ void cmd_mkdir(int argc, char** argv) {
         commands_puts(path);
         commands_puts("\n");
     } else {
+        if (p_flag) {
+            return; /* şimdilik sessiz geç */
+        }
+
         commands_puts("Hata: Dizin olusturulamadi: ");
         commands_puts(path);
         commands_puts("\n");

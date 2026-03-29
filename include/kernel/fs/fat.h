@@ -44,3 +44,11 @@ int fat_create_root_dir(const char* name83);
 int fat_list_path(const char* path);
 int fat_read_file_path(const char* path, uint8_t* out, uint32_t out_cap, uint32_t* out_size);
 int fat_path_exists(const char* path);
+
+int fat_create_file_in_dir_cluster(
+    const fat_info_t* info,
+    uint32_t dir_cluster,
+    const char* name83
+);
+
+int fat_create_file_path(const char* path);

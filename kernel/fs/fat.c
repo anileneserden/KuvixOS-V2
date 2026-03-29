@@ -1119,6 +1119,55 @@ int fat_read_file_path(const char* path, uint8_t* out, uint32_t out_cap, uint32_
     return 1;
 }
 
+int fat_create_file_path(const char* path)
+{
+    uint8_t boot[512];
+    fat_info_t info;
+
+    if (!path) return 0;
+    if (!block_has_root()) return 0;
+    if (!block_read(0, 1, boot)) return 0;
+    if (!fat_probe_from_sector0(boot, &info)) return 0;
+
+    /* root mu? */
+    const char* last = strrchr(path, '/');
+
+    if (!last) {
+        return fat_create_root_file(path);
+    }
+
+    char parent[256];
+    int len = last - path;
+
+    if (len <= 0) {
+        return fat_create_root_file(last + 1);
+    }
+
+    strncpy(parent, path, len);
+    parent[len] = 0;
+
+    const char* filename = last + 1;
+
+    fat_dirent_t de;
+    int is_root = 0;
+
+    if (!fat_resolve_path(&info, parent, &de, &is_root)) {
+        return 0;
+    }
+
+    if (is_root) {
+        return fat_create_root_file(filename);
+    }
+
+    if (!(de.attr & FAT_ATTR_DIRECTORY)) return 0;
+
+    uint32_t cluster =
+        ((uint32_t)de.first_cluster_hi << 16) |
+        (uint32_t)de.first_cluster_lo;
+
+    return fat_create_file_in_dir_cluster(&info, cluster, filename);
+}
+
 int fat_path_exists(const char* path)
 {
     uint8_t boot[512];
@@ -1144,6 +1193,55 @@ int fat_path_exists(const char* path)
 
     if (de.attr & FAT_ATTR_DIRECTORY) {
         return 1;
+    }
+
+    return 0;
+}
+
+int fat_create_file_in_dir_cluster(
+    const fat_info_t* info,
+    uint32_t dir_cluster,
+    const char* name83)
+{
+    if (!info || !name83) return 0;
+    if (info->type != FAT_TYPE_16) return 0;
+
+    uint8_t dos_name[11];
+    if (!fat_make_83_name(name83, dos_name)) return 0;
+
+    uint32_t cluster = dir_cluster;
+    uint8_t sec[512];
+
+    while (cluster >= 2) {
+        uint32_t lba = fat_cluster_to_lba(info, cluster);
+        if (lba == 0) return 0;
+
+        for (uint32_t s = 0; s < info->sectors_per_cluster; s++) {
+            uint32_t cur_lba = lba + s;
+
+            if (!block_read(cur_lba, 1, sec)) return 0;
+
+            for (int off = 0; off < 512; off += 32) {
+                fat_dirent_t* de = (fat_dirent_t*)(sec + off);
+
+                if (de->name[0] == 0x00 || de->name[0] == 0xE5) {
+                    memset(de, 0, sizeof(*de));
+                    memcpy(de->name, dos_name, 11);
+                    de->attr = 0x00;
+                    de->first_cluster_lo = 0;
+                    de->first_cluster_hi = 0;
+                    de->file_size = 0;
+
+                    if (!block_write(cur_lba, 1, sec)) return 0;
+                    return 1;
+                }
+            }
+        }
+
+        uint32_t next = fat16_next_cluster(info, cluster);
+        if (next == 0xFFFFFFFF) break;
+        if (next < 2) return 0;
+        cluster = next;
     }
 
     return 0;

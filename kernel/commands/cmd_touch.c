@@ -37,13 +37,7 @@ void cmd_touch(int argc, char** argv) {
     if (strncmp(path, "/fat/", 5) == 0) {
         const char* fat_sub = path + 5;
 
-        /* şimdilik sadece root create destekli */
-        if (strchr(fat_sub, '/')) {
-            commands_puts("Hata: Su anda FAT icin sadece root dizinde dosya olusturma destekleniyor.\n");
-            return;
-        }
-
-        if (fat_create_root_file(fat_sub)) {
+        if (fat_create_file_path(fat_sub)) {
             commands_puts("FAT dosyasi olusturuldu: ");
             commands_puts(path);
             commands_puts("\n");
