@@ -778,6 +778,75 @@ int fat_read_root_file(const char* name83, uint8_t* out, uint32_t out_cap, uint3
     return fat_read_file_from_root(name83, (char*)out, out_cap, out_size);
 }
 
+static uint32_t fat16_find_free_cluster(const fat_info_t* info)
+{
+    if (!info) return 0;
+    if (info->type != FAT_TYPE_16) return 0;
+
+    uint8_t sec[512];
+    uint32_t max_cluster = info->cluster_count + 1; /* yaklaşık üst sınır */
+
+    for (uint32_t cluster = 2; cluster <= max_cluster; cluster++) {
+        uint32_t fat_start  = info->reserved_sectors;
+        uint32_t fat_offset = cluster * 2;
+        uint32_t fat_sector = fat_start + (fat_offset / info->bytes_per_sector);
+        uint32_t ent_offset = fat_offset % info->bytes_per_sector;
+
+        if (!block_read(fat_sector, 1, sec)) return 0;
+
+        uint16_t val = *(uint16_t*)(sec + ent_offset);
+        if (val == 0x0000) {
+            return cluster;
+        }
+    }
+
+    return 0;
+}
+
+static int fat16_write_fat_entry(const fat_info_t* info, uint32_t cluster, uint16_t value)
+{
+    if (!info) return 0;
+    if (info->type != FAT_TYPE_16) return 0;
+    if (cluster < 2) return 0;
+
+    uint32_t fat_start  = info->reserved_sectors;
+    uint32_t fat_offset = cluster * 2;
+    uint32_t fat_sector = fat_start + (fat_offset / info->bytes_per_sector);
+    uint32_t ent_offset = fat_offset % info->bytes_per_sector;
+
+    /* her FAT kopyasına yaz */
+    for (uint32_t fat_i = 0; fat_i < info->fat_count; fat_i++) {
+        uint32_t lba = fat_sector + (fat_i * info->sectors_per_fat);
+
+        uint8_t sec[512];
+        if (!block_read(lba, 1, sec)) return 0;
+
+        *(uint16_t*)(sec + ent_offset) = value;
+
+        if (!block_write(lba, 1, sec)) return 0;
+    }
+
+    return 1;
+}
+
+static int fat_zero_cluster(const fat_info_t* info, uint32_t cluster)
+{
+    if (!info) return 0;
+    if (cluster < 2) return 0;
+
+    uint32_t lba = fat_cluster_to_lba(info, cluster);
+    if (lba == 0) return 0;
+
+    uint8_t zero[512];
+    memset(zero, 0, sizeof(zero));
+
+    for (uint32_t s = 0; s < info->sectors_per_cluster; s++) {
+        if (!block_write(lba + s, 1, zero)) return 0;
+    }
+
+    return 1;
+}
+
 int fat_create_root_file(const char* name83)
 {
     uint8_t boot[512];
@@ -834,6 +903,104 @@ int fat_create_root_file(const char* name83)
     }
 
     return 0; /* root dolu */
+}
+
+int fat_create_root_dir(const char* name83)
+{
+    uint8_t boot[512];
+    fat_info_t info;
+
+    if (!name83 || !name83[0]) return 0;
+    if (!block_has_root()) return 0;
+    if (!block_read(0, 1, boot)) return 0;
+    if (!fat_probe_from_sector0(boot, &info)) return 0;
+    if (info.type != FAT_TYPE_16) return 0; /* şimdilik sadece FAT16 */
+
+    /* aynı isim var mı? */
+    fat_dirent_t existing;
+    if (fat_find_root_entry(&info, name83, &existing)) {
+        return 0;
+    }
+
+    uint8_t dos_name[11];
+    if (!fat_make_83_name(name83, dos_name)) {
+        return 0;
+    }
+
+    /* yeni cluster ayır */
+    uint32_t new_cluster = fat16_find_free_cluster(&info);
+    if (new_cluster < 2) return 0;
+
+    /* FAT chain: tek cluster directory => EOC */
+    if (!fat16_write_fat_entry(&info, new_cluster, 0xFFFF)) {
+        return 0;
+    }
+
+    /* cluster sıfırla */
+    if (!fat_zero_cluster(&info, new_cluster)) {
+        return 0;
+    }
+
+    /* "." ve ".." entry yaz */
+    uint32_t dir_lba = fat_cluster_to_lba(&info, new_cluster);
+    if (dir_lba == 0) return 0;
+
+    uint8_t sec[512];
+    memset(sec, 0, sizeof(sec));
+
+    fat_dirent_t* dot = (fat_dirent_t*)(sec + 0);
+    memset(dot, 0, sizeof(*dot));
+    memcpy(dot->name, ".          ", 11);
+    dot->attr = FAT_ATTR_DIRECTORY;
+    dot->first_cluster_lo = (uint16_t)new_cluster;
+    dot->first_cluster_hi = 0;
+    dot->file_size = 0;
+
+    fat_dirent_t* dotdot = (fat_dirent_t*)(sec + 32);
+    memset(dotdot, 0, sizeof(*dotdot));
+    memcpy(dotdot->name, "..         ", 11);
+    dotdot->attr = FAT_ATTR_DIRECTORY;
+    /* root parent => cluster 0 */
+    dotdot->first_cluster_lo = 0;
+    dotdot->first_cluster_hi = 0;
+    dotdot->file_size = 0;
+
+    if (!block_write(dir_lba, 1, sec)) {
+        return 0;
+    }
+
+    /* root directory entry ekle */
+    uint32_t root_dir_start =
+        info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
+
+    for (uint32_t s = 0; s < info.root_dir_sectors; s++) {
+        uint32_t lba = root_dir_start + s;
+
+        if (!block_read(lba, 1, sec)) {
+            return 0;
+        }
+
+        for (int off = 0; off < 512; off += 32) {
+            fat_dirent_t* de = (fat_dirent_t*)(sec + off);
+
+            if (de->name[0] == 0x00 || de->name[0] == 0xE5) {
+                memset(de, 0, sizeof(*de));
+                memcpy(de->name, dos_name, 11);
+                de->attr = FAT_ATTR_DIRECTORY;
+                de->first_cluster_lo = (uint16_t)new_cluster;
+                de->first_cluster_hi = 0;
+                de->file_size = 0;
+
+                if (!block_write(lba, 1, sec)) {
+                    return 0;
+                }
+
+                return 1;
+            }
+        }
+    }
+
+    return 0;
 }
 
 int fat_list_path(const char* path)
@@ -950,4 +1117,34 @@ int fat_read_file_path(const char* path, uint8_t* out, uint32_t out_cap, uint32_
     out[copied] = 0;
     if (out_size) *out_size = copied;
     return 1;
+}
+
+int fat_path_exists(const char* path)
+{
+    uint8_t boot[512];
+    fat_info_t info;
+
+    if (!block_has_root()) return 0;
+    if (!block_read(0, 1, boot)) return 0;
+    if (!fat_probe_from_sector0(boot, &info)) return 0;
+    if (info.type != FAT_TYPE_16 && info.type != FAT_TYPE_12) return 0;
+
+    if (!path || strcmp(path, "") == 0 || strcmp(path, "/") == 0) {
+        return 1;
+    }
+
+    fat_dirent_t de;
+    int is_root = 0;
+
+    if (!fat_resolve_path(&info, path, &de, &is_root)) {
+        return 0;
+    }
+
+    if (is_root) return 1;
+
+    if (de.attr & FAT_ATTR_DIRECTORY) {
+        return 1;
+    }
+
+    return 0;
 }

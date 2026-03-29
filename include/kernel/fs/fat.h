@@ -38,7 +38,9 @@ int fat_read_root_file(const char* name83, uint8_t* out, uint32_t out_cap, uint3
 
 /* write helpers */
 int fat_create_root_file(const char* name83);
+int fat_create_root_dir(const char* name83);
 
 /* path helpers */
 int fat_list_path(const char* path);
 int fat_read_file_path(const char* path, uint8_t* out, uint32_t out_cap, uint32_t* out_size);
+int fat_path_exists(const char* path);
