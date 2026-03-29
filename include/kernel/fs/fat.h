@@ -52,3 +52,6 @@ int fat_create_file_in_dir_cluster(
 );
 
 int fat_create_file_path(const char* path);
+
+int fat_write_file_path(const char* path, const uint8_t* data, uint32_t size);
+int fat_append_file_path(const char* path, const uint8_t* data, uint32_t size);
