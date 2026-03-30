@@ -77,31 +77,37 @@ static void path_pop(char* path)
 {
     uint32_t len = strlen(path);
 
-    // root ise çıkma
+    if (len == 0) {
+        path[0] = '/';
+        path[1] = 0;
+        return;
+    }
+
+    /* root ise cikma */
+    if (strcmp(path, "/") == 0) {
+        return;
+    }
+
+    /* sondaki slash'lari temizle (root haric) */
+    while (len > 1 && path[len - 1] == '/') {
+        path[len - 1] = 0;
+        len--;
+    }
+
+    /* son slash'i bul */
+    while (len > 0 && path[len - 1] != '/') {
+        len--;
+    }
+
+    /* root'a don */
     if (len <= 1) {
         path[0] = '/';
         path[1] = 0;
         return;
     }
 
-    // sondaki '/' varsa sil
-    if (path[len - 1] == '/') {
-        path[len - 1] = 0;
-        len--;
-    }
-
-    // son '/' bul
-    while (len > 0 && path[len - 1] != '/') {
-        len--;
-    }
-
-    // root'a kadar geldiysek
-    if (len == 0) {
-        path[0] = '/';
-        path[1] = 0;
-    } else {
-        path[len] = 0;
-    }
+    /* slash'i de sil */
+    path[len - 1] = 0;
 }
 
 typedef enum {

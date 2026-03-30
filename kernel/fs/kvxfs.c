@@ -446,20 +446,32 @@ void kvxfs_list_all(const char* filter_path) {
         return;
     }
 
-    printk("--- %s Icerigi ---\n", filter_path);
+    char norm[64];
+    kvxfs_trim_trailing_slash(filter_path, norm, sizeof(norm));
+
+    printk("--- %s Icerigi ---\n", norm);
 
     int found = 0;
+
     for (int i = 0; i < KVX_MAX_FILES; i++) {
         if (!g_meta.ent[i].used) continue;
 
-        if (!is_exact_or_child_of(filter_path, g_meta.ent[i].path)) continue;
-        if (strcmp(g_meta.ent[i].path, filter_path) == 0) continue;
+        const char* path = g_meta.ent[i].path;
+
+        /* Kendi yolunu gosterme */
+        if (strcmp(path, norm) == 0) continue;
+
+        /* Sadece direct child goster */
+        if (!kvxfs_path_is_direct_child(norm, path)) continue;
+
+        const char* name = kvxfs_basename_ptr(path);
 
         if (g_meta.ent[i].size == KVX_DIR_SIZE) {
-            printk("[DIR]  %s\n", g_meta.ent[i].path);
+            printk("[DIR]  %s\n", name);
         } else {
-            printk("%d byte  %s\n", g_meta.ent[i].size, g_meta.ent[i].path);
+            printk("%d byte  %s\n", g_meta.ent[i].size, name);
         }
+
         found++;
     }
 
