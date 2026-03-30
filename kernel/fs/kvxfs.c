@@ -413,6 +413,26 @@ static void kvxfs_tree_walk(const char* root_path, int depth) {
     }
 }
 
+static int kvxfs_has_children(const char* path) {
+    if (!path) return 0;
+
+    int plen = strlen(path);
+
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (!g_meta.ent[i].used) continue;
+
+        const char* p = g_meta.ent[i].path;
+
+        if (strcmp(p, path) == 0) continue;
+
+        if (strncmp(p, path, plen) == 0 && p[plen] == '/') {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 int kvxfs_tree(const char* root_path) {
     if (!root_path || !is_persist_path(root_path)) return 0;
     if (!kvxfs_init()) return 0;
@@ -422,5 +442,42 @@ int kvxfs_tree(const char* root_path) {
 
     printk("%s\n", norm);
     kvxfs_tree_walk(norm, 1);
+    return 1;
+}
+
+int kvxfs_remove(const char* path) {
+    if (!path || !is_persist_path(path)) return 0;
+    if (!kvxfs_init()) return 0;
+
+    /* Kritik korumalar */
+    if (strcmp(path, "/persist") == 0) return 0;
+    if (strcmp(path, "/persist/") == 0) return 0;
+
+    int idx = find_ent(path);
+    if (idx < 0) return 0;
+
+    /* Dizinse ve içinde çocuk varsa silme */
+    if (g_meta.ent[idx].size == KVX_DIR_SIZE) {
+        if (kvxfs_has_children(path)) {
+            printk("[KVXFS] remove: directory not empty: %s\n", path);
+            return 0;
+        }
+    }
+
+    /* Slotu temizle */
+    mem_zero(&g_meta.ent[idx], sizeof(kvx_ent_t));
+
+    if (g_meta.file_count > 0) {
+        g_meta.file_count--;
+    }
+
+    for (volatile int i = 0; i < 10000; i++) io_wait();
+
+    if (!meta_write()) {
+        printk("[KVXFS] remove: meta_write FAILED\n");
+        return 0;
+    }
+
+    printk("[KVXFS] removed: %s\n", path);
     return 1;
 }

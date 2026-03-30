@@ -520,14 +520,11 @@ int vfs_resolve_path(const char* in, char* out, uint32_t cap)
 int vfs_remove(const char* path) {
     if (!path) return 0;
 
-    char resolved[VFS_PATH_MAX];
-    if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
-
-    if (ramfs_exists(resolved) || ramfs_is_dir(resolved)) {
-        return ramfs_remove(resolved);
+    if (strncmp(path, "/persist", 8) == 0) {
+        return kvxfs_remove(path);
     }
 
-    // ToyFS read-only
+    /* ileride fat, tmp, ramfs vs eklenebilir */
     return 0;
 }
 

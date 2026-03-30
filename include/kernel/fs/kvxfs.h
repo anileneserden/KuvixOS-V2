@@ -9,6 +9,7 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size);
 int kvxfs_exists(const char* path);
 int kvxfs_force_format(void);
 int kvxfs_mkdir(const char* path);
+int kvxfs_remove(const char* path);
 void kvxfs_list_all(const char* filter_path);
 int kvxfs_tree(const char* root_path);
 int kvxfs_format(void);
