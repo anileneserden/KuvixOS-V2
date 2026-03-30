@@ -67,14 +67,20 @@ void ui_theme_bootstrap_default(void)
         ui_set_theme(&parsed);
 
         printk("[THEME] loaded: %s (%u bytes)\n", THEME_PATH, (unsigned)sz);
-    }
-    else {
+    } else {
         printk("[THEME] no %s — creating default\n", THEME_PATH);
 
-        // 3️⃣ Dosya yoksa oluştur
-        vfs_write_all(THEME_PATH,
-                      (const uint8_t*)g_default_kth,
-                      (uint32_t)strlen(g_default_kth));
+        int wr = vfs_write_all(
+            THEME_PATH,
+            (const uint8_t*)g_default_kth,
+            (uint32_t)strlen(g_default_kth)
+        );
+
+        if (wr >= 0) {
+            printk("[THEME] default theme written: %s\n", THEME_PATH);
+        } else {
+            printk("[THEME] ERROR: failed to write %s\n", THEME_PATH);
+        }
 
         ui_set_theme(&parsed);
     }

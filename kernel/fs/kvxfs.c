@@ -1,20 +1,21 @@
 #include <kernel/fs/kvxfs.h>
 #include <kernel/block/block.h>
-#include <kernel/drivers/ata_pio.h> // BU SATIRI EKLE
+#include <kernel/drivers/ata_pio.h>
 #include <lib/string.h>
 #include <kernel/printk.h>
 #include <arch/x86/io.h>
+#include <stdint.h>
 
-#define KVX_MAGIC "KVXFS1"
+#define KVX_MAGIC     "KVXFS1"
 #define KVX_MAX_FILES 32
-#define KVX_META_LBA 2048   // 8 veya 64 yerine 2048 (1. Megabaytın başı)
-#define KVX_META_SECTORS 4
-#define KVX_DATA_LBA 2100
+#define KVX_META_LBA  2048
+#define KVX_DATA_LBA  2100
+#define KVX_DIR_SIZE  0xFFFFFFFFu
 
 typedef struct {
     char     path[64];
     uint32_t start_lba;
-    uint32_t size;
+    uint32_t size;      // KVX_DIR_SIZE => directory
     uint8_t  used;
     uint8_t  _pad[3];
 } __attribute__((packed)) kvx_ent_t;
@@ -26,65 +27,131 @@ typedef struct {
     kvx_ent_t ent[KVX_MAX_FILES];
 } __attribute__((packed)) kvx_meta_t;
 
+/* sizeof(kvx_meta_t) = 4 sektörü geçebilir; dinamik hesapla */
+#define KVX_META_BYTES   ((uint32_t)sizeof(kvx_meta_t))
+#define KVX_META_SECTORS ((KVX_META_BYTES + 511u) / 512u)
+
 static kvx_meta_t g_meta;
 static int g_inited = 0;
-// Fonksiyonların dışına, dosya seviyesine (static) taşıyalım
 static uint8_t g_io_buf[KVX_META_SECTORS * 512];
 
 static void mem_zero(void* p, uint32_t n) {
     uint8_t* b = (uint8_t*)p;
-    for (uint32_t i=0; i<n; i++) b[i]=0;
-}
-
-static int meta_read(void) {
-    mem_zero(g_io_buf, sizeof(g_io_buf));
-    if (!block_read(KVX_META_LBA, KVX_META_SECTORS, g_io_buf)) return 0;
-    memcpy(&g_meta, g_io_buf, sizeof(g_meta));
-    return 1;
-}
-
-static int meta_write(void) {
-    // 1. IO Buffer'ı tamamen sıfırla (Çöp veriyi engeller)
-    mem_zero(g_io_buf, sizeof(g_io_buf));
-    
-    // 2. Meta yapısını buffer'ın başına kopyala
-    memcpy(g_io_buf, &g_meta, sizeof(g_meta));
-
-    // 3. Yazmadan önce donanıma nefes aldır
-    for(volatile int i=0; i<30000; i++) io_wait();
-
-    // 4. Yazma emri
-    if (!block_write(KVX_META_LBA, KVX_META_SECTORS, g_io_buf)) {
-        return 0;
-    }
-
-    // 5. Yazma bittikten sonra ATA'nın kendine gelmesi için bekle
-    for(volatile int i=0; i<50000; i++) io_wait();
-    
-    return 1;
+    for (uint32_t i = 0; i < n; i++) b[i] = 0;
 }
 
 static int is_persist_path(const char* path) {
-    // "/persist" ile başlıyor mu?
-    if (strncmp(path, "/persist", 8) == 0) return 1;
-    return 0;
+    if (!path) return 0;
+    return strncmp(path, "/persist", 8) == 0;
+}
+
+static int is_exact_or_child_of(const char* parent, const char* path) {
+    if (!parent || !path) return 0;
+
+    int plen = strlen(parent);
+    if (strncmp(parent, path, plen) != 0) return 0;
+
+    if (path[plen] == 0) return 1;
+    if (parent[plen - 1] == '/') return 1;
+    return path[plen] == '/';
 }
 
 static int find_ent(const char* path) {
-    for (int i=0; i<KVX_MAX_FILES; i++) {
-        if (g_meta.ent[i].used && strcmp(g_meta.ent[i].path, path) == 0) return i;
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (g_meta.ent[i].used && strcmp(g_meta.ent[i].path, path) == 0) {
+            return i;
+        }
     }
     return -1;
 }
 
 static int alloc_ent(void) {
     for (int i = 0; i < KVX_MAX_FILES; i++) {
-        // used sadece 0 ise bu slot gerçekten boştur
         if (g_meta.ent[i].used == 0) {
             return i;
         }
     }
     return -1;
+}
+
+static int kvxfs_is_dir_ent(const kvx_ent_t* ent) {
+    return ent && ent->used && ent->size == KVX_DIR_SIZE;
+}
+
+static void kvxfs_trim_trailing_slash(const char* in, char* out, int out_sz) {
+    if (!in || !out || out_sz <= 0) return;
+
+    strncpy(out, in, out_sz - 1);
+    out[out_sz - 1] = 0;
+
+    int len = strlen(out);
+    while (len > 1 && out[len - 1] == '/') {
+        out[len - 1] = 0;
+        len--;
+    }
+}
+
+static const char* kvxfs_basename_ptr(const char* path) {
+    if (!path) return "";
+    const char* last = path;
+    const char* p = path;
+    while (*p) {
+        if (*p == '/') last = p + 1;
+        p++;
+    }
+    return last;
+}
+
+static void kvxfs_print_indent(int depth) {
+    for (int i = 0; i < depth; i++) {
+        printk("  ");
+    }
+}
+
+static int kvxfs_path_is_direct_child(const char* parent, const char* child) {
+    if (!parent || !child) return 0;
+
+    int parent_len = strlen(parent);
+    if (strncmp(child, parent, parent_len) != 0) return 0;
+
+    if (child[parent_len] == 0) return 0;
+    if (child[parent_len] != '/') return 0;
+
+    const char* rest = child + parent_len + 1;
+    if (*rest == 0) return 0;
+
+    while (*rest) {
+        if (*rest == '/') return 0;
+        rest++;
+    }
+
+    return 1;
+}
+
+static int meta_read(void) {
+    mem_zero(g_io_buf, sizeof(g_io_buf));
+    mem_zero(&g_meta, sizeof(g_meta));
+
+    if (!block_read(KVX_META_LBA, KVX_META_SECTORS, g_io_buf)) {
+        return 0;
+    }
+
+    memcpy(&g_meta, g_io_buf, sizeof(g_meta));
+    return 1;
+}
+
+static int meta_write(void) {
+    mem_zero(g_io_buf, sizeof(g_io_buf));
+    memcpy(g_io_buf, &g_meta, sizeof(g_meta));
+
+    for (volatile int i = 0; i < 30000; i++) io_wait();
+
+    if (!block_write(KVX_META_LBA, KVX_META_SECTORS, g_io_buf)) {
+        return 0;
+    }
+
+    for (volatile int i = 0; i < 50000; i++) io_wait();
+    return 1;
 }
 
 int kvxfs_init(void) {
@@ -95,22 +162,37 @@ int kvxfs_init(void) {
         return 0;
     }
 
-    printk("[KVXFS] reading meta lba=%d sectors=%d\n", KVX_META_LBA, KVX_META_SECTORS);
+    printk("[KVXFS] reading meta lba=%d sectors=%d bytes=%d\n",
+           KVX_META_LBA, KVX_META_SECTORS, KVX_META_BYTES);
 
     if (!meta_read()) {
         printk("[KVXFS] meta_read FAILED\n");
         return 0;
     }
 
-    printk("[KVXFS] magic='%.6s'\n", g_meta.magic);
+    printk("[KVXFS] magic bytes: %x %x %x %x %x %x\n",
+        (unsigned char)g_meta.magic[0],
+        (unsigned char)g_meta.magic[1],
+        (unsigned char)g_meta.magic[2],
+        (unsigned char)g_meta.magic[3],
+        (unsigned char)g_meta.magic[4],
+        (unsigned char)g_meta.magic[5]);
+
+    printk("[KVXFS] expect bytes: %x %x %x %x %x %x\n",
+        (unsigned char)KVX_MAGIC[0],
+        (unsigned char)KVX_MAGIC[1],
+        (unsigned char)KVX_MAGIC[2],
+        (unsigned char)KVX_MAGIC[3],
+        (unsigned char)KVX_MAGIC[4],
+        (unsigned char)KVX_MAGIC[5]);
 
     if (strncmp(g_meta.magic, KVX_MAGIC, 6) != 0) {
-        printk("[KVXFS] magic mismatch (need %.6s)\n", KVX_MAGIC);
+        printk("[KVXFS] magic mismatch\n");
         return 0;
     }
 
-    printk("[KVXFS] OK\n");
     g_inited = 1;
+    printk("[KVXFS] OK\n");
     return 1;
 }
 
@@ -126,9 +208,27 @@ int kvxfs_format(void) {
     g_meta.file_count = 0;
     g_meta.next_free_lba = KVX_DATA_LBA;
 
-    if (!meta_write()) return 0;
+    if (!meta_write()) {
+        printk("[KVXFS] format: meta_write FAILED\n");
+        return 0;
+    }
+
+    /* Yazdıktan sonra gerçekten okunuyor mu doğrula */
+    g_inited = 0;
+    mem_zero(&g_meta, sizeof(g_meta));
+
+    if (!meta_read()) {
+        printk("[KVXFS] format: verify meta_read FAILED\n");
+        return 0;
+    }
+
+    if (strncmp(g_meta.magic, KVX_MAGIC, 6) != 0) {
+        printk("[KVXFS] format: verify magic mismatch\n");
+        return 0;
+    }
 
     g_inited = 1;
+    printk("[KVXFS] format OK\n");
     return 1;
 }
 
@@ -137,84 +237,125 @@ int kvxfs_force_format(void) {
     return kvxfs_format();
 }
 
+int kvxfs_exists(const char* path) {
+    if (!path || !is_persist_path(path)) return 0;
+    if (!kvxfs_init()) return 0;
+    return find_ent(path) >= 0;
+}
+
 int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     if (!path || !data || !is_persist_path(path)) return 0;
-    kvxfs_init();
-    
+    if (!kvxfs_init()) return 0;
+
     int idx = find_ent(path);
     if (idx < 0) {
         idx = alloc_ent();
         if (idx < 0) return 0;
-        
-        // Belleği temizleyip veriyi güvenle yazalım
-        mem_zero(g_meta.ent[idx].path, 64);
+
+        mem_zero(&g_meta.ent[idx], sizeof(kvx_ent_t));
         strncpy(g_meta.ent[idx].path, path, 63);
+        g_meta.ent[idx].path[63] = 0;
         g_meta.ent[idx].used = 1;
+        g_meta.file_count++;
     }
 
-    uint32_t start = g_meta.next_free_lba;
-    uint32_t sectors = (size + 511) / 512;
-    uint8_t sec[512];
+    /* Dizin üstüne yazma engeli */
+    if (g_meta.ent[idx].size == KVX_DIR_SIZE) {
+        return 0;
+    }
 
-    for (uint32_t s = 0; s < sectors; s++) {
-        mem_zero(sec, 512);
-        uint32_t take = (size - s * 512 > 512) ? 512 : (size - s * 512);
-        memcpy(sec, data + (s * 512), take);
-        
-        // Her sektör yazımından sonra donanımın rahatlaması için mola
-        if (!block_write(start + s, 1, sec)) return 0;
-        for(volatile int i=0; i<5000; i++) io_wait(); 
+    uint32_t start;
+    uint32_t old_sectors = 0;
+    uint32_t new_sectors = (size + 511u) / 512u;
+
+    if (g_meta.ent[idx].start_lba != 0 && g_meta.ent[idx].size != KVX_DIR_SIZE) {
+        old_sectors = (g_meta.ent[idx].size + 511u) / 512u;
+    }
+
+    /* Aynı ya da daha küçük dosyada mevcut alanı yeniden kullan */
+    if (g_meta.ent[idx].start_lba != 0 && new_sectors <= old_sectors) {
+        start = g_meta.ent[idx].start_lba;
+    } else {
+        start = g_meta.next_free_lba;
+        g_meta.next_free_lba += new_sectors;
+    }
+
+    uint8_t sec[512];
+    for (uint32_t s = 0; s < new_sectors; s++) {
+        mem_zero(sec, sizeof(sec));
+
+        uint32_t offset = s * 512u;
+        uint32_t remain = (size > offset) ? (size - offset) : 0;
+        uint32_t take = (remain > 512u) ? 512u : remain;
+
+        if (take > 0) {
+            memcpy(sec, data + offset, take);
+        }
+
+        if (!block_write(start + s, 1, sec)) {
+            return 0;
+        }
+
+        for (volatile int i = 0; i < 5000; i++) io_wait();
     }
 
     g_meta.ent[idx].start_lba = start;
     g_meta.ent[idx].size = size;
-    g_meta.next_free_lba += sectors;
 
-    // Meta yazmadan önce son bir mola
-    for(volatile int i=0; i<10000; i++) io_wait(); 
-    return meta_write();
+    for (volatile int i = 0; i < 10000; i++) io_wait();
+
+    if (!meta_write()) return 0;
+    return 1;
 }
 
 int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size) {
     if (!path || !out || !is_persist_path(path)) return 0;
-    kvxfs_init();
+    if (!kvxfs_init()) return 0;
+
     int idx = find_ent(path);
     if (idx < 0) return 0;
+    if (g_meta.ent[idx].size == KVX_DIR_SIZE) return 0;
+
     uint32_t sz = (g_meta.ent[idx].size > cap) ? cap : g_meta.ent[idx].size;
     uint32_t start = g_meta.ent[idx].start_lba;
+
     uint8_t sec[512];
-    for (uint32_t s=0; s < (sz+511)/512; s++) {
-        block_read(start + s, 1, sec);
-        uint32_t take = (sz - s*512 > 512) ? 512 : (sz - s*512);
-        memcpy(out + (s*512), sec, take);
+    uint32_t sectors = (sz + 511u) / 512u;
+
+    for (uint32_t s = 0; s < sectors; s++) {
+        if (!block_read(start + s, 1, sec)) return 0;
+
+        uint32_t offset = s * 512u;
+        uint32_t remain = (sz > offset) ? (sz - offset) : 0;
+        uint32_t take = (remain > 512u) ? 512u : remain;
+
+        memcpy(out + offset, sec, take);
     }
+
     if (out_size) *out_size = sz;
     return 1;
 }
 
 int kvxfs_mkdir(const char* path) {
-    if (!is_persist_path(path)) return -1;
-    kvxfs_init();
-    
+    if (!path || !is_persist_path(path)) return -1;
+    if (!kvxfs_init()) return -5;
+
     if (find_ent(path) >= 0) return -2;
 
     int idx = alloc_ent();
     if (idx < 0) return -3;
 
-    // Slot verilerini temizleyip hazırlayalım
     mem_zero(&g_meta.ent[idx], sizeof(kvx_ent_t));
     strncpy(g_meta.ent[idx].path, path, 63);
-    g_meta.ent[idx].size = 0xFFFFFFFF; 
-    g_meta.ent[idx].used = 1; // used bayrağını en son set etmek daha güvenlidir
-    
+    g_meta.ent[idx].path[63] = 0;
+    g_meta.ent[idx].size = KVX_DIR_SIZE;
+    g_meta.ent[idx].used = 1;
     g_meta.file_count++;
 
-    // Donanım önceki işlemden (mesela bir önceki mkdir) kalma komutu bitirsin
-    for(volatile int i=0; i<20000; i++) io_wait(); 
+    for (volatile int i = 0; i < 20000; i++) io_wait();
 
-    printk("DEBUG: mkdir - Meta yaziliyor (Slot: %d)...\n", idx);
+    printk("[KVXFS] mkdir meta write (slot=%d)\n", idx);
     if (!meta_write()) {
-        // Hata durumunda used bayrağını geri çekelim ki tablo kirlenmesin
         g_meta.ent[idx].used = 0;
         g_meta.file_count--;
         return -4;
@@ -224,28 +365,62 @@ int kvxfs_mkdir(const char* path) {
 }
 
 void kvxfs_list_all(const char* filter_path) {
-    kvxfs_init();
+    if (!filter_path) return;
+
+    if (!kvxfs_init()) {
+        printk("[KVXFS] list_all: init basarisiz\n");
+        return;
+    }
+
     printk("--- %s Icerigi ---\n", filter_path);
-    
-    int filter_len = strlen(filter_path);
+
     int found = 0;
-
     for (int i = 0; i < KVX_MAX_FILES; i++) {
-        if (g_meta.ent[i].used) {
-            // Dosya yolu, aradığımız dizin yoluyla başlıyor mu?
-            if (strncmp(g_meta.ent[i].path, filter_path, filter_len) == 0) {
-                
-                // Kendi yolunu listeleme (örn: /persist/system'in içinde /persist/system'i gösterme)
-                if (strcmp(g_meta.ent[i].path, filter_path) == 0) continue;
+        if (!g_meta.ent[i].used) continue;
 
-                if (g_meta.ent[i].size == 0xFFFFFFFF) {
-                    printk("[DIR]  %s\n", g_meta.ent[i].path);
-                } else {
-                    printk("%d byte  %s\n", g_meta.ent[i].size, g_meta.ent[i].path);
-                }
-                found++;
-            }
+        if (!is_exact_or_child_of(filter_path, g_meta.ent[i].path)) continue;
+        if (strcmp(g_meta.ent[i].path, filter_path) == 0) continue;
+
+        if (g_meta.ent[i].size == KVX_DIR_SIZE) {
+            printk("[DIR]  %s\n", g_meta.ent[i].path);
+        } else {
+            printk("%d byte  %s\n", g_meta.ent[i].size, g_meta.ent[i].path);
+        }
+        found++;
+    }
+
+    if (found == 0) {
+        printk("(Dizin bos veya dosya bulunamadi)\n");
+    }
+}
+
+static void kvxfs_tree_walk(const char* root_path, int depth) {
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (!g_meta.ent[i].used) continue;
+
+        const char* path = g_meta.ent[i].path;
+        if (!kvxfs_path_is_direct_child(root_path, path)) continue;
+
+        const char* name = kvxfs_basename_ptr(path);
+        kvxfs_print_indent(depth);
+
+        if (kvxfs_is_dir_ent(&g_meta.ent[i])) {
+            printk("[DIR]  %s\n", name);
+            kvxfs_tree_walk(path, depth + 1);
+        } else {
+            printk("%d byte  %s\n", g_meta.ent[i].size, name);
         }
     }
-    if (found == 0) printk("(Dizin bos veya dosya bulunamadi)\n");
+}
+
+int kvxfs_tree(const char* root_path) {
+    if (!root_path || !is_persist_path(root_path)) return 0;
+    if (!kvxfs_init()) return 0;
+
+    char norm[64];
+    kvxfs_trim_trailing_slash(root_path, norm, sizeof(norm));
+
+    printk("%s\n", norm);
+    kvxfs_tree_walk(norm, 1);
+    return 1;
 }
