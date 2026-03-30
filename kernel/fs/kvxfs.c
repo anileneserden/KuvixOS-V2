@@ -65,6 +65,55 @@ static int find_ent(const char* path) {
     return -1;
 }
 
+static int kvxfs_parent_path(const char* path, char* out, int out_sz) {
+    if (!path || !out || out_sz <= 0) return 0;
+
+    int len = strlen(path);
+    if (len <= 0) return 0;
+
+    if (len >= out_sz) len = out_sz - 1;
+
+    strncpy(out, path, len);
+    out[len] = 0;
+
+    /* Sondaki slash'lari temizle */
+    while (len > 1 && out[len - 1] == '/') {
+        out[len - 1] = 0;
+        len--;
+    }
+
+    /* Son slash'i bul */
+    int last_slash = -1;
+    for (int i = 0; out[i]; i++) {
+        if (out[i] == '/') last_slash = i;
+    }
+
+    if (last_slash < 0) return 0;
+
+    /* root parent */
+    if (last_slash == 0) {
+        out[1] = 0;
+        return 1;
+    }
+
+    out[last_slash] = 0;
+    return 1;
+}
+
+static int kvxfs_dir_exists(const char* path) {
+    if (!path) return 0;
+
+    /* /persist kokunu dizin gibi kabul et */
+    if (strcmp(path, "/persist") == 0 || strcmp(path, "/persist/") == 0) {
+        return 1;
+    }
+
+    int idx = find_ent(path);
+    if (idx < 0) return 0;
+
+    return g_meta.ent[idx].used && g_meta.ent[idx].size == KVX_DIR_SIZE;
+}
+
 static int alloc_ent(void) {
     for (int i = 0; i < KVX_MAX_FILES; i++) {
         if (g_meta.ent[i].used == 0) {
@@ -247,6 +296,17 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     if (!path || !data || !is_persist_path(path)) return 0;
     if (!kvxfs_init()) return 0;
 
+    char parent[64];
+    if (!kvxfs_parent_path(path, parent, sizeof(parent))) {
+        printk("[KVXFS] write: parent path parse failed: %s\n", path);
+        return 0;
+    }
+
+    if (!kvxfs_dir_exists(parent)) {
+        printk("[KVXFS] write: parent dir missing: %s\n", parent);
+        return 0;
+    }
+
     int idx = find_ent(path);
     if (idx < 0) {
         idx = alloc_ent();
@@ -339,6 +399,14 @@ int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_s
 int kvxfs_mkdir(const char* path) {
     if (!path || !is_persist_path(path)) return -1;
     if (!kvxfs_init()) return -5;
+
+    char parent[64];
+    if (!kvxfs_parent_path(path, parent, sizeof(parent))) return -6;
+
+    if (!kvxfs_dir_exists(parent)) {
+        printk("[KVXFS] mkdir: parent dir missing: %s\n", parent);
+        return -7;
+    }
 
     if (find_ent(path) >= 0) return -2;
 

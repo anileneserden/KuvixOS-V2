@@ -42,7 +42,7 @@ void cmd_write(int argc, char** argv) {
     }
 
     int wrote = vfs_write_all(path, (const uint8_t*)buf, (uint32_t)strlen(buf));
-    if (wrote >= 0) {
+    if (wrote > 0) {
         printk("Yazildi: %s (%d byte)\n", path, (int)strlen(buf));
     } else {
         printk("Hata: dosya yazilamadi: %s\n", path);

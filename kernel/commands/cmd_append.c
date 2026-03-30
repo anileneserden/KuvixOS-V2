@@ -90,7 +90,7 @@ void cmd_append(int argc, char** argv) {
     finalbuf[pos] = 0;
 
     int wrote = vfs_write_all(path, (const uint8_t*)finalbuf, (uint32_t)pos);
-    if (wrote >= 0) {
+    if (wrote > 0) {
         printk("Eklendi: %s (%d byte)\n", path, pos);
     } else {
         printk("Hata: append basarisiz: %s\n", path);
