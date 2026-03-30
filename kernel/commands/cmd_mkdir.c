@@ -1,19 +1,25 @@
 #include <kernel/fs/vfs.h>
-#include <kernel/fs/kvxfs.h> // BU SATIRI EKLEDİK
-#include <kernel/printk.h>
 #include <lib/commands.h>
+#include <lib/string.h>
 
 void cmd_mkdir(int argc, char** argv) {
     if (argc < 2) {
-        commands_puts("Kullanım: mkdir <dizin_adi>\n");
+        commands_puts("Kullanim: mkdir <dizin>\n");
+        commands_puts("Ornek: mkdir /persist/test\n");
         return;
     }
 
-    // Doğrudan KVXFS'i çağırıyoruz
-    if (kvxfs_mkdir(argv[1]) == 0) {
-        commands_printf("Dizin oluşturuldu: %s\n", argv[1]);
+    char resolved[VFS_PATH_MAX];
+    if (!vfs_resolve_path(argv[1], resolved, sizeof(resolved))) {
+        commands_puts("Hata: yol cozumlenemedi.\n");
+        return;
+    }
+
+    if (vfs_mkdir(resolved)) {
+        commands_printf("Dizin oluşturuldu: %s\n", resolved);
     } else {
-        commands_printf("Hata: Dizin oluşturulamadı (KVXFS Hatası): %s\n", argv[1]);
+        commands_printf("Hata: Dizin oluşturulamadı (KVXFS Hatası): %s\n", resolved);
     }
 }
-REGISTER_COMMAND(mkdir, cmd_mkdir, "Yeni bir dizin oluşturur");
+
+REGISTER_COMMAND(mkdir, cmd_mkdir, "Dizin oluşturur");

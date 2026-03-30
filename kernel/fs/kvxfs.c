@@ -27,7 +27,6 @@ typedef struct {
     kvx_ent_t ent[KVX_MAX_FILES];
 } __attribute__((packed)) kvx_meta_t;
 
-/* sizeof(kvx_meta_t) = 4 sektörü geçebilir; dinamik hesapla */
 #define KVX_META_BYTES   ((uint32_t)sizeof(kvx_meta_t))
 #define KVX_META_SECTORS ((KVX_META_BYTES + 511u) / 512u)
 
@@ -76,13 +75,11 @@ static int kvxfs_parent_path(const char* path, char* out, int out_sz) {
     strncpy(out, path, len);
     out[len] = 0;
 
-    /* Sondaki slash'lari temizle */
     while (len > 1 && out[len - 1] == '/') {
         out[len - 1] = 0;
         len--;
     }
 
-    /* Son slash'i bul */
     int last_slash = -1;
     for (int i = 0; out[i]; i++) {
         if (out[i] == '/') last_slash = i;
@@ -90,7 +87,6 @@ static int kvxfs_parent_path(const char* path, char* out, int out_sz) {
 
     if (last_slash < 0) return 0;
 
-    /* root parent */
     if (last_slash == 0) {
         out[1] = 0;
         return 1;
@@ -103,7 +99,6 @@ static int kvxfs_parent_path(const char* path, char* out, int out_sz) {
 static int kvxfs_dir_exists(const char* path) {
     if (!path) return 0;
 
-    /* /persist kokunu dizin gibi kabul et */
     if (strcmp(path, "/persist") == 0 || strcmp(path, "/persist/") == 0) {
         return 1;
     }
@@ -262,7 +257,6 @@ int kvxfs_format(void) {
         return 0;
     }
 
-    /* Yazdıktan sonra gerçekten okunuyor mu doğrula */
     g_inited = 0;
     mem_zero(&g_meta, sizeof(g_meta));
 
@@ -292,6 +286,20 @@ int kvxfs_exists(const char* path) {
     return find_ent(path) >= 0;
 }
 
+int kvxfs_is_dir(const char* path) {
+    if (!path || !is_persist_path(path)) return 0;
+    if (!kvxfs_init()) return 0;
+
+    if (strcmp(path, "/persist") == 0 || strcmp(path, "/persist/") == 0) {
+        return 1;
+    }
+
+    int idx = find_ent(path);
+    if (idx < 0) return 0;
+
+    return g_meta.ent[idx].used && g_meta.ent[idx].size == KVX_DIR_SIZE;
+}
+
 int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     if (!path || !data || !is_persist_path(path)) return 0;
     if (!kvxfs_init()) return 0;
@@ -319,7 +327,6 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
         g_meta.file_count++;
     }
 
-    /* Dizin üstüne yazma engeli */
     if (g_meta.ent[idx].size == KVX_DIR_SIZE) {
         return 0;
     }
@@ -332,7 +339,6 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
         old_sectors = (g_meta.ent[idx].size + 511u) / 512u;
     }
 
-    /* Aynı ya da daha küçük dosyada mevcut alanı yeniden kullan */
     if (g_meta.ent[idx].start_lba != 0 && new_sectors <= old_sectors) {
         start = g_meta.ent[idx].start_lba;
     } else {
@@ -517,14 +523,12 @@ int kvxfs_remove(const char* path) {
     if (!path || !is_persist_path(path)) return 0;
     if (!kvxfs_init()) return 0;
 
-    /* Kritik korumalar */
     if (strcmp(path, "/persist") == 0) return 0;
     if (strcmp(path, "/persist/") == 0) return 0;
 
     int idx = find_ent(path);
     if (idx < 0) return 0;
 
-    /* Dizinse ve içinde çocuk varsa silme */
     if (g_meta.ent[idx].size == KVX_DIR_SIZE) {
         if (kvxfs_has_children(path)) {
             printk("[KVXFS] remove: directory not empty: %s\n", path);
@@ -532,7 +536,6 @@ int kvxfs_remove(const char* path) {
         }
     }
 
-    /* Slotu temizle */
     mem_zero(&g_meta.ent[idx], sizeof(kvx_ent_t));
 
     if (g_meta.file_count > 0) {

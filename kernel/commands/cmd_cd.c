@@ -1,9 +1,14 @@
-#include <kernel/printk.h>
+#include <kernel/fs/vfs.h>
 #include <lib/commands.h>
 
 void cmd_cd(int argc, char** argv) {
-    (void)argc; (void)argv; // İkisini de sustur
-    commands_puts("CD komutu yakinda VFS'ye uyarlanacak...\n");
+    const char* path = (argc > 1) ? argv[1] : "/";
+
+    if (vfs_set_cwd(path)) {
+        return;
+    }
+
+    commands_printf("Hata: dizin degistirilemedi: %s\n", path);
 }
 
-REGISTER_COMMAND(cd, cmd_cd, "Çalışma dizinini değiştirir");
+REGISTER_COMMAND(cd, cmd_cd, "Calisma dizinini degistirir");

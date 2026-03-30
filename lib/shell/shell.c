@@ -8,6 +8,8 @@
 #include <lib/string.h>
 #include <stdint.h>
 
+#include <kernel/fs/vfs.h>
+
 #include <kernel/drivers/input/keyboard.h>
 
 // ------------------------------------------------------------
@@ -48,7 +50,7 @@ static void shell_print_prompt(void) {
     fb_console_set_color(0x0000FF00, 0x00000000);
     printk("%s", g_username);
     printk("@%s", g_hostname);
-    printk(":%s", g_cwd);
+    printk(":%s", vfs_get_cwd());
 
     fb_console_set_color(0x00FFFFFF, 0x00000000);
     printk("$ ");
