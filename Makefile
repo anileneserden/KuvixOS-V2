@@ -68,6 +68,7 @@ SRC_C = \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
     kernel/system/seed_files.c \
+    kernel/system/zip_reader.c \
     ui/apps/calculator.c \
     ui/apps/controls_test.c \
     ui/apps/demo.c \
