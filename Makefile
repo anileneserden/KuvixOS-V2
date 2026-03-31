@@ -122,6 +122,7 @@ SRC_C = \
     ui/notification.c \
     ui/power_screen.c \
     ui/select.c \
+    ui/session_runtime.c \
     ui/session.c \
     ui/theme_bootstrap.c \
     ui/theme_builtin_data.c \
