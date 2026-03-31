@@ -16,3 +16,12 @@ typedef struct {
 typedef int (*zip_entry_callback_t)(const zip_entry_t* entry, void* user);
 
 int zip_list_entries(const char* path, zip_entry_callback_t cb, void* user);
+
+/* only for store-only (method 0) entries */
+int zip_extract_stored_entry(
+    const char* zip_path,
+    const zip_entry_t* entry,
+    uint8_t* out_buf,
+    uint32_t out_buf_size,
+    uint32_t* out_len
+);

@@ -23,6 +23,11 @@ static uint32_t zip_rd32(const uint8_t* p) {
     );
 }
 
+static int zip_read_all(const char* path, uint8_t* buf, uint32_t buf_size, uint32_t* out_sz) {
+    if (!path || !buf || !out_sz) return 0;
+    return vfs_read_all(path, buf, buf_size, out_sz);
+}
+
 int zip_list_entries(const char* path, zip_entry_callback_t cb, void* user) {
     static uint8_t buf[1024 * 1024];
     uint32_t sz = 0;
@@ -33,7 +38,7 @@ int zip_list_entries(const char* path, zip_entry_callback_t cb, void* user) {
         return 0;
     }
 
-    if (!vfs_read_all(path, buf, sizeof(buf), &sz)) {
+    if (!zip_read_all(path, buf, sizeof(buf), &sz)) {
         printk("[zip] read failed: %s\n", path);
         return 0;
     }
@@ -120,6 +125,59 @@ int zip_list_entries(const char* path, zip_entry_callback_t cb, void* user) {
             off = next_off;
         }
     }
+
+    return 1;
+}
+
+int zip_extract_stored_entry(
+    const char* zip_path,
+    const zip_entry_t* entry,
+    uint8_t* out_buf,
+    uint32_t out_buf_size,
+    uint32_t* out_len
+) {
+    static uint8_t zip_buf[1024 * 1024];
+    uint32_t sz = 0;
+    uint32_t off;
+    uint16_t name_len;
+    uint16_t extra_len;
+    uint32_t data_off;
+    uint32_t copy_len;
+
+    if (out_len) *out_len = 0;
+
+    if (!zip_path || !entry || !out_buf) return 0;
+    if (entry->is_dir) return 0;
+    if (entry->method != 0) {
+        printk("[zip] unsupported method=%u for %s\n",
+               (unsigned)entry->method, entry->name);
+        return 0;
+    }
+
+    if (!zip_read_all(zip_path, zip_buf, sizeof(zip_buf), &sz)) {
+        printk("[zip] read failed: %s\n", zip_path);
+        return 0;
+    }
+
+    off = entry->local_header_offset;
+    if (off + 30 > sz) return 0;
+    if (zip_rd32(zip_buf + off) != ZIP_LOCAL_FILE_HEADER_SIG) return 0;
+
+    name_len = zip_rd16(zip_buf + off + 26);
+    extra_len = zip_rd16(zip_buf + off + 28);
+    data_off = off + 30 + (uint32_t)name_len + (uint32_t)extra_len;
+
+    if (data_off > sz) return 0;
+    if (data_off + entry->compressed_size > sz) return 0;
+
+    copy_len = entry->compressed_size;
+    if (copy_len > out_buf_size) {
+        printk("[zip] output buffer too small for %s\n", entry->name);
+        return 0;
+    }
+
+    memcpy(out_buf, zip_buf + data_off, copy_len);
+    if (out_len) *out_len = copy_len;
 
     return 1;
 }
