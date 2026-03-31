@@ -165,6 +165,56 @@ static void ui_render_label(const ui_label_t* l) {
     gfx_draw_text_utf8(l->x, l->y, l->color, buf);
 }
 
+static void ui_render_window(const ui_screen_window_t* w) {
+    int title_text_x;
+    int title_text_y;
+
+    if (!w || !w->used || !w->visible) return;
+    if (w->width <= 0 || w->height <= 0) return;
+
+    /* pencere gövdesi */
+    gfx_fill_rect(
+        w->x,
+        w->y,
+        w->width,
+        w->height,
+        w->background_color
+    );
+
+    /* başlık çubuğu */
+    if (w->titlebar_height > 0) {
+        gfx_fill_rect(
+            w->x,
+            w->y,
+            w->width,
+            w->titlebar_height,
+            w->titlebar_color
+        );
+    }
+
+    /* basit border */
+    if (w->border_thickness > 0) {
+        int t = w->border_thickness;
+        uint32_t border_color = w->titlebar_color;
+
+        /* üst */
+        gfx_fill_rect(w->x, w->y, w->width, t, border_color);
+        /* alt */
+        gfx_fill_rect(w->x, w->y + w->height - t, w->width, t, border_color);
+        /* sol */
+        gfx_fill_rect(w->x, w->y, t, w->height, border_color);
+        /* sağ */
+        gfx_fill_rect(w->x + w->width - t, w->y, t, w->height, border_color);
+    }
+
+    /* başlık metni */
+    if (w->title[0]) {
+        title_text_x = w->x + 8;
+        title_text_y = w->y + 8;
+        gfx_draw_text_utf8(title_text_x, title_text_y, w->title_color, w->title);
+    }
+}
+
 void ui_screen_render(const ui_screen_t* screen) {
     if (!screen) return;
 
@@ -176,6 +226,10 @@ void ui_screen_render(const ui_screen_t* screen) {
 
     if (screen->label.used) {
         ui_render_label(&screen->label);
+    }
+
+    if (screen->window.used) {
+        ui_render_window(&screen->window);
     }
 
     if (screen->desktop_icons.used) {

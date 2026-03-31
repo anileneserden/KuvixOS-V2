@@ -91,11 +91,13 @@ uint32_t ui_parse_color(const char* s) {
     if (r1 < 0 || r2 < 0 || g1 < 0 || g2 < 0 || b1 < 0 || b2 < 0)
         return 0x000000;
 
-    uint8_t r = (uint8_t)((r1 << 4) | r2);
-    uint8_t g = (uint8_t)((g1 << 4) | g2);
-    uint8_t b = (uint8_t)((b1 << 4) | b2);
+    {
+        uint8_t r = (uint8_t)((r1 << 4) | r2);
+        uint8_t g = (uint8_t)((g1 << 4) | g2);
+        uint8_t b = (uint8_t)((b1 << 4) | b2);
 
-    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+        return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+    }
 }
 
 /* -------------------------------------------------- */
@@ -291,6 +293,79 @@ static int ui_parse_desktop_icons(const char* json, ui_desktop_icons_t* out) {
 }
 
 /* -------------------------------------------------- */
+/* window parse                                       */
+/* -------------------------------------------------- */
+
+static int ui_parse_first_window(const char* json, ui_screen_window_t* out) {
+    const char* children;
+    const char* win_type;
+    const char* idv;
+    const char* titlev;
+    const char* bgv;
+    const char* tbarv;
+    const char* titlecv;
+    char color_buf[8];
+
+    if (!json || !out) return 0;
+
+    memset(out, 0, sizeof(*out));
+    out->visible = 1;
+
+    /* defaults */
+    out->x = 80;
+    out->y = 60;
+    out->width = 320;
+    out->height = 180;
+    out->radius = 0;
+    out->border_thickness = 1;
+    out->titlebar_height = 28;
+    out->background_color = 0x1E1E1E;
+    out->titlebar_color = 0x2A2A2A;
+    out->title_color = 0xFFFFFF;
+
+    children = strstr(json, "\"children\"");
+    if (!children) return 0;
+
+    win_type = strstr(children, "\"type\": \"Window\"");
+    if (!win_type) return 0;
+
+    idv = find_json_string_value(win_type, "\"id\"");
+    if (idv) copy_json_string(idv, out->id, sizeof(out->id));
+
+    titlev = find_json_string_value(win_type, "\"title\"");
+    if (titlev) copy_json_string(titlev, out->title, sizeof(out->title));
+
+    out->x = find_json_int_value(win_type, "\"x\"", out->x);
+    out->y = find_json_int_value(win_type, "\"y\"", out->y);
+    out->width = find_json_int_value(win_type, "\"width\"", out->width);
+    out->height = find_json_int_value(win_type, "\"height\"", out->height);
+    out->radius = find_json_int_value(win_type, "\"radius\"", out->radius);
+    out->border_thickness = find_json_int_value(win_type, "\"borderThickness\"", out->border_thickness);
+    out->titlebar_height = find_json_int_value(win_type, "\"titlebarHeight\"", out->titlebar_height);
+
+    bgv = find_json_string_value(win_type, "\"backgroundColor\"");
+    if (bgv) {
+        copy_json_string(bgv, color_buf, sizeof(color_buf));
+        out->background_color = ui_parse_color(color_buf);
+    }
+
+    tbarv = find_json_string_value(win_type, "\"titlebarColor\"");
+    if (tbarv) {
+        copy_json_string(tbarv, color_buf, sizeof(color_buf));
+        out->titlebar_color = ui_parse_color(color_buf);
+    }
+
+    titlecv = find_json_string_value(win_type, "\"titleColor\"");
+    if (titlecv) {
+        copy_json_string(titlecv, color_buf, sizeof(color_buf));
+        out->title_color = ui_parse_color(color_buf);
+    }
+
+    out->used = 1;
+    return 1;
+}
+
+/* -------------------------------------------------- */
 /* main loader                                        */
 /* -------------------------------------------------- */
 
@@ -324,15 +399,17 @@ int ui_screen_load(const char* path, ui_screen_t* out) {
     ui_parse_first_panel(buf, &out->panel);
     ui_parse_first_label(buf, &out->label);
     ui_parse_desktop_icons(buf, &out->desktop_icons);
+    ui_parse_first_window(buf, &out->window);
 
     out->loaded = 1;
 
     printk("[ui] loaded screen: %s\n", path);
-    printk("[ui] bg=0x%x panel=%d label=%d desktop_icons=%d\n",
+    printk("[ui] bg=0x%x panel=%d label=%d desktop_icons=%d window=%d\n",
            (unsigned)out->background_color,
            out->panel.used,
            out->label.used,
-           out->desktop_icons.used);
+           out->desktop_icons.used,
+           out->window.used);
 
     return 1;
 }

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <stdint.h>
 #include <ui/desktop_icons.h>
 
@@ -33,12 +34,34 @@ typedef struct {
 } ui_desktop_icons_t;
 
 typedef struct {
+    int used;
+    int visible;
+
+    char id[32];
+    char title[64];
+
+    int x;
+    int y;
+    int width;
+    int height;
+
+    int radius;
+    int border_thickness;
+    int titlebar_height;
+
+    uint32_t background_color;
+    uint32_t titlebar_color;
+    uint32_t title_color;
+} ui_screen_window_t;
+
+typedef struct {
     uint32_t background_color;
     int loaded;
 
     ui_panel_t panel;
     ui_label_t label;
     ui_desktop_icons_t desktop_icons;
+    ui_screen_window_t window;
 } ui_screen_t;
 
 int ui_screen_load(const char* path, ui_screen_t* out);
