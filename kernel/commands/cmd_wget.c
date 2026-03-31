@@ -2,79 +2,72 @@
 #include <kernel/drivers/net/net.h>
 #include <lib/commands.h>
 #include <lib/string.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/fs/kvxfs.h>
 #include <stdint.h>
 
-// Loading Bar Çizici
-void print_progress_bar(int current, int total) {
+static void print_progress_bar(int current, int total) {
     const int bar_width = 20;
-    commands_puts("\r[");
+    if (total <= 0) return;
+    int percentage = (current * 100) / total;
+    printk("\r[");
     int pos = (current * bar_width) / total;
     for (int i = 0; i < bar_width; ++i) {
-        if (i < pos) commands_puts("=");
-        else if (i == pos) commands_puts(">");
-        else commands_puts(" ");
+        if (i < pos) printk("=");
+        else if (i == pos) printk(">");
+        else printk(" ");
     }
-    commands_puts("] ");
-    // Yüzde hesapla ve bas
+    printk("] %d%%", percentage);
 }
 
 static void cmd_wget(int argc, char** argv) {
     if (argc < 2) {
-        commands_puts("Kullanim: wget <dosya_adi>\n");
-        commands_puts("Ornek: wget index.html\n");
+        printk("Kullanim: wget <dosya_adi>\n");
         return;
     }
 
     char* filename = argv[1];
-    uint32_t server_ip = 0;
-    char* host = "kuvixos.com.tr";
-    char path[128] = "/";
-    strncat(path, filename, 120);
+    uint32_t server_ip = (10 << 24) | (0 << 16) | (2 << 8) | 2; 
+    char path[128];
+    ksprintf(path, "/%s", filename);
 
-    commands_puts("Sunucuya baglaniliyor: "); commands_puts(host); commands_puts("\n");
+    static char download_buf[16384]; 
+    int total_len = 0;
+    memset(download_buf, 0, sizeof(download_buf));
 
-    // DNS Çözümleme (Google DNS kullanarak)
-    if (!net_dns_resolve_a(host, 0x08080808, &server_ip)) {
-        commands_puts("Hata: Host bulunamadi.\n");
-        return;
-    }
+    printk("Baglanti kuruluyor: 10.0.2.2:8080%s\n", path);
 
-    // İndirme hazırlığı
-    static char download_buf[65536]; // 64KB'a çıkardık
-    int downloaded_len = 0;
-    
-    commands_puts("Indiriliyor...\n");
-    
-    // Simülatif veya net_http_get_to_buf içinden çağrılan loading bar
-    // Not: net_http_get_to_buf içinde callback varsa oraya bağlamak daha iyi olur
-    for(int i = 0; i <= 100; i += 20) { 
-        print_progress_bar(i, 100);
-        // Burada gerçek net_http_get_to_buf çağrısı yapılacak
-    }
+    // Tek bir çağrı, ama içeride tüm paketleri toplamalı
+    int ok = net_http_get_to_buf(server_ip, 8080, path, download_buf, sizeof(download_buf), &total_len);
 
-    int ok = net_http_get_to_buf(server_ip, 80, path, download_buf, sizeof(download_buf), &downloaded_len);
+    if (ok && total_len > 0) {
+        char* data_start = strstr(download_buf, "\r\n\r\n");
+        if (data_start) data_start += 4;
+        else {
+            data_start = strstr(download_buf, "\n\n");
+            if (data_start) data_start += 2;
+        }
 
-    if (ok) {
-        commands_puts("\nTamamlandi! Boyut: ");
-        // printk ile sayısal boyutu basabilirsin
+        if (!data_start || (total_len - (int)(data_start - download_buf)) <= 0) {
+            printk("Hata: Paket yarim kaldi (%d byte). Header:\n", total_len);
+            for(int i=0; i<total_len && i<128; i++) {
+                if(download_buf[i] >= 32) printk("%c", download_buf[i]);
+                else if(download_buf[i] == '\n') printk("\n");
+            }
+            return;
+        }
+
+        int actual_len = total_len - (int)(data_start - download_buf);
+        char persist_path[128];
+        ksprintf(persist_path, "/persist/%s", filename);
         
-        char full_path[256] = "/home/anil/desktop/";
-        strncat(full_path, filename, 64);
-
-        commands_puts("\nMasaustune kaydediliyor: "); commands_puts(full_path); commands_puts("\n");
-
-        /* BURADA DOSYA YAZMA İŞLEMİ:
-           int fd = vfs_open(full_path, VFS_WRITE | VFS_CREATE);
-           if (fd >= 0) {
-               vfs_write(fd, download_buf, downloaded_len);
-               vfs_close(fd);
-           }
-        */
-        
-        commands_puts("Dosya basariyla olusturuldu.\n");
+        kvxfs_init();
+        if (kvxfs_write_all(persist_path, (uint8_t*)data_start, (uint32_t)actual_len)) {
+            printk("Basarili! /persist/%s kaydedildi (%d byte).\n", filename, actual_len);
+        }
     } else {
-        commands_puts("\nHata: HTTP istegi basarisiz.\n");
+        printk("Hata: Sunucudan yanit yok.\n");
     }
 }
 
-REGISTER_COMMAND(wget, cmd_wget, "Web sitesinden dosya indirir ve masaustune koyar.");
+REGISTER_COMMAND(wget, cmd_wget, "Agdan dosya indirir ve /persist altina kaydeder.");

@@ -168,3 +168,62 @@ void printk(const char* fmt, ...) {
 
     va_end(args);
 }
+
+// printk.c dosyasının en altına ekle
+int ksprintf(char *buf, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    
+    char *p_buf = buf;
+    for (const char* p = fmt; *p; p++) {
+        if (*p != '%') {
+            *p_buf++ = *p;
+            continue;
+        }
+
+        p++; // '%' karakterini geç
+        switch (*p) {
+            case 's': {
+                char* s = va_arg(args, char*);
+                if (!s) s = "(null)";
+                while (*s) *p_buf++ = *s++;
+                break;
+            }
+            case 'd': {
+                int val = va_arg(args, int);
+                if (val == 0) { *p_buf++ = '0'; break; }
+                if (val < 0) { *p_buf++ = '-'; val = -val; }
+                char tmp[12]; int i = 0;
+                while (val > 0) { tmp[i++] = (val % 10) + '0'; val /= 10; }
+                while (i--) *p_buf++ = tmp[i];
+                break;
+            }
+            case 'u': {
+                unsigned int val = va_arg(args, unsigned int);
+                if (val == 0) { *p_buf++ = '0'; break; }
+                char tmp[12]; int i = 0;
+                while (val > 0) { tmp[i++] = (val % 10) + '0'; val /= 10; }
+                while (i--) *p_buf++ = tmp[i];
+                break;
+            }
+            case 'x': {
+                unsigned int val = va_arg(args, unsigned int);
+                if (val == 0) { *p_buf++ = '0'; break; }
+                char *hex = "0123456789ABCDEF";
+                char tmp[12]; int i = 0;
+                while (val > 0) { tmp[i++] = hex[val % 16]; val /= 16; }
+                while (i--) *p_buf++ = tmp[i];
+                break;
+            }
+            case 'c':
+                *p_buf++ = (char)va_arg(args, int);
+                break;
+            default:
+                *p_buf++ = *p;
+                break;
+        }
+    }
+    *p_buf = '\0'; // Stringi sonlandır
+    va_end(args);
+    return (int)(p_buf - buf); // Yazılan karakter sayısını dön
+}
