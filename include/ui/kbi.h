@@ -1,15 +1,17 @@
 #pragma once
+
 #include <stdint.h>
 #include <stdbool.h>
 
 typedef struct {
-    uint16_t w;
-    uint16_t h;
-    uint32_t* pixels;   // ARGB8888: 0xAARRGGBB
+    int width;
+    int height;
+    int palette_size;
+    uint32_t palette[256];
+    uint8_t* pixels;
 } kbi_image_t;
 
-bool kbi_load(const char* path, kbi_image_t* out);
+int  kbi_load(const char* path, kbi_image_t* out);
 void kbi_free(kbi_image_t* img);
-
-// ✅ origin destekli çizim (gfx üzerinden)
-void kbi_draw(const kbi_image_t* img, int x, int y);
+void kbi_draw_scaled(const kbi_image_t* img, int dst_x, int dst_y, int scale);
+bool kbi_is_loaded(const kbi_image_t* img);

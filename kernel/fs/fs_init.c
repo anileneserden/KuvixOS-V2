@@ -22,6 +22,7 @@ int fs_prepare_user_layout(void) {
     ensure_dir(USER_TRASH_PATH);
     ensure_dir(USER_HTML_PATH);
     ensure_dir(USER_HTML_TEST_PATH);
+    ensure_dir("/images");
 
     printk("[FS] user layout ok: %s\n", USER_HOME_PATH);
     return 1;

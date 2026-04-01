@@ -46,7 +46,24 @@ static const seed_text_t k_seed_texts[] = {
         "/home/anil/html/deneme/index.html",
         "<h1>Deneme Local</h1>",
         "<p>KuvixBrowser local vhost test</p>"
-    }
+    },
+    {
+        "/images/test.kbi",
+        "KBI1\n"
+        "width=4\n"
+        "height=4\n"
+        "palette_size=4\n"
+        "palette:\n"
+        "0=000000\n"
+        "1=FFFFFF\n"
+        "2=FF0000\n"
+        "3=00FF00\n"
+        "pixels:\n"
+        "2233\n"
+        "2233\n"
+        "0011\n"
+        "0011\n"
+    },
 };
 
 /* --- entry --- */

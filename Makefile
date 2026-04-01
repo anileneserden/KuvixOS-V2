@@ -117,6 +117,7 @@ SRC_C = \
     ui/icons/ui_icons.c \
     ui/inputtest.c \
     ui/kbi_test.c \
+    ui/kbi.c \
     ui/mouse.c \
     ui/net_status.c \
     ui/notification.c \
