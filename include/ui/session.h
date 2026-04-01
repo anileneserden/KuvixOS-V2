@@ -6,7 +6,8 @@ typedef enum {
     UI_SESSION_TTY1 = 1,
     UI_SESSION_DESKTOP = 2,
     UI_SESSION_INPUT = 3,
-    UI_SESSION_THEME = 4
+    UI_SESSION_THEME = 4,
+    UI_SESSION_KBI_TEST = 5
 } ui_session_t;
 
 void ui_session_init(void);
