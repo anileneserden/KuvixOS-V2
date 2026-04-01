@@ -200,10 +200,7 @@ run: iso
 		-device e1000,netdev=n0 -netdev user,id=n0 \
 		-m 256M -serial stdio
 
-# --- Yardımcı hedefler ---
-rebuild: clean all
-
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)
 
-.PHONY: all iso run clean rebuild
+.PHONY: all iso run clean

@@ -142,6 +142,13 @@ void printk(const char* fmt, ...) {
                 outc((char)va_arg(args, int));
                 break;
 
+            case 'C': {
+                unsigned int fg = va_arg(args, unsigned int);
+                unsigned int bg = va_arg(args, unsigned int);
+                fb_console_set_color(fg, bg);
+                break;
+            }
+
             case 'u': {
                 unsigned int v = va_arg(args, unsigned int);
                 print_uint(v, 10);   // yoksa print_int benzeri unsigned versiyon yaz
