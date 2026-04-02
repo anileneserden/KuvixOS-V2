@@ -1,4 +1,5 @@
 #include <kernel/drivers/usb/xhci.h>
+#include <kernel/drivers/usb/usb.h>
 #include <kernel/printk.h>
 #include <kernel/memory/kmalloc.h>
 #include <lib/string.h>
@@ -35,11 +36,63 @@ typedef struct __attribute__((packed)) {
 } xhci_input_context_t;
 
 enum {
+    TRB_TYPE_NORMAL = 1,
+    TRB_TYPE_SETUP_STAGE = 2,
+    TRB_TYPE_DATA_STAGE = 3,
+    TRB_TYPE_STATUS_STAGE = 4,
     TRB_TYPE_LINK = 6, 
     TRB_TYPE_ENABLE_SLOT_CMD = 9,
     TRB_TYPE_ADDRESS_DEVICE = 11, 
+    TRB_TYPE_TRANSFER_EVT = 32,
     TRB_TYPE_CMD_COMPLETION_EVT = 33,
+
+    XHCI_PORTSC_CCS = 1u << 0,
+    XHCI_PORTSC_PED = 1u << 1,
+    XHCI_PORTSC_PR  = 1u << 4,
+    XHCI_PORTSC_SPEED_SHIFT = 10,
+    XHCI_PORTSC_SPEED_MASK = 0xFu << XHCI_PORTSC_SPEED_SHIFT,
+    XHCI_PORTSC_CHANGE_BITS = (1u << 17) | (1u << 18) | (1u << 19) |
+                             (1u << 20) | (1u << 21) | (1u << 22) |
+                             (1u << 23),
+
+    XHCI_TRB_IOC = 1u << 5,
+    XHCI_TRB_IDT = 1u << 6,
+    XHCI_TRB_CHAIN = 1u << 4,
+    XHCI_TRB_DIR_IN = 1u << 16,
+    XHCI_TRB_TRT_NONE = 0u << 16,
+    XHCI_TRB_TRT_OUT  = 2u << 16,
+    XHCI_TRB_TRT_IN   = 3u << 16,
 };
+
+typedef struct {
+    xhci_trb_t* trbs;
+    uint32_t phys;
+    uint32_t cycle;
+    uint32_t index;
+    uint32_t size;
+} xhci_transfer_ring_t;
+
+typedef struct {
+    uint32_t type;
+    uint32_t completion_code;
+    uint32_t slot_id;
+    uint32_t endpoint_id;
+    uint32_t d0;
+    uint32_t d1;
+    uint32_t d2;
+    uint32_t d3;
+} xhci_event_info_t;
+
+typedef struct {
+    uint8_t valid;
+    uint8_t interface_number;
+    uint8_t subclass;
+    uint8_t protocol;
+    uint8_t bulk_in_ep;
+    uint8_t bulk_out_ep;
+    uint16_t bulk_in_mps;
+    uint16_t bulk_out_mps;
+} xhci_msc_state_t;
 
 // ---- Global Durum Değişkenleri ----
 static xhci_trb_t* g_cmd_ring = 0;
@@ -58,6 +111,12 @@ static uint32_t g_dcbaa_phys = 0;
 static uint32_t g_xhci_mmio_base = 0;
 static uint8_t  g_xhci_caplen = 0;
 static uint32_t g_xhci_max_ports = 0;
+static xhci_transfer_ring_t g_ep0_ring = {0};
+static xhci_transfer_ring_t g_msc_bulk_in_ring = {0};
+static xhci_transfer_ring_t g_msc_bulk_out_ring = {0};
+static xhci_msc_state_t g_msc = {0};
+static uint32_t g_current_slot = 0;
+static uint32_t g_current_port = 0;
 
 // ---- Desktop.c ve Linker İçin Gerekli Fonksiyonlar ----
 
@@ -112,17 +171,65 @@ static void xhci_cmd_push(xhci_trb_t trb) {
     }
 }
 
-static int xhci_poll_cmd_completion(uint32_t mmio, uint32_t rtsoff) {
+static int xhci_transfer_ring_init(xhci_transfer_ring_t* ring, uint32_t trb_count) {
+    if (!ring || trb_count < 2) {
+        return 0;
+    }
+
+    memset(ring, 0, sizeof(*ring));
+
+    ring->trbs = xhci_alloc_aligned(sizeof(xhci_trb_t) * trb_count, 64, &ring->phys);
+    if (!ring->trbs) {
+        return 0;
+    }
+
+    ring->cycle = 1;
+    ring->index = 0;
+    ring->size = trb_count;
+
+    ring->trbs[trb_count - 1].d0 = ring->phys;
+    ring->trbs[trb_count - 1].d1 = 0;
+    ring->trbs[trb_count - 1].d2 = 0;
+    ring->trbs[trb_count - 1].d3 = (TRB_TYPE_LINK << 10) | (1u << 1) | 1u;
+    return 1;
+}
+
+static int __attribute__((unused)) xhci_transfer_ring_push(xhci_transfer_ring_t* ring, xhci_trb_t trb) {
+    if (!ring || !ring->trbs || ring->size < 2) {
+        return 0;
+    }
+
+    trb.d3 = (trb.d3 & ~1u) | (ring->cycle & 1u);
+    ring->trbs[ring->index++] = trb;
+
+    if (ring->index >= ring->size - 1) {
+        ring->trbs[ring->size - 1].d3 = (TRB_TYPE_LINK << 10) | (1u << 1) | (ring->cycle & 1u);
+        ring->index = 0;
+        ring->cycle ^= 1u;
+    }
+
+    return 1;
+}
+
+static int xhci_poll_event(uint32_t mmio, uint32_t rtsoff, uint32_t spins, xhci_event_info_t* out) {
     uint32_t intr0 = mmio + (rtsoff & ~0x1F) + 0x20;
 
-    for (uint32_t spin = 0; spin < 5000000; spin++) {
+    for (uint32_t spin = 0; spin < spins; spin++) {
         xhci_trb_t* e = &g_evt_ring[g_evt_ring_index];
-        
+
         // Donanım TRB'yi yazdı mı? (Cycle bit kontrolü)
         if ((e->d3 & 1u) == (g_evt_ring_cycle & 1u)) {
-            uint32_t type = (e->d3 >> 10) & 0x3F;
-            uint32_t res = (e->d3 >> 24) & 0xFF; // Slot ID buradadır
-            
+            if (out) {
+                out->type = (e->d3 >> 10) & 0x3F;
+                out->completion_code = (e->d2 >> 24) & 0xFF;
+                out->slot_id = (e->d3 >> 24) & 0xFF;
+                out->endpoint_id = (e->d3 >> 16) & 0x1F;
+                out->d0 = e->d0;
+                out->d1 = e->d1;
+                out->d2 = e->d2;
+                out->d3 = e->d3;
+            }
+
             g_evt_ring_index++;
             if (g_evt_ring_index >= g_evt_ring_size) {
                 g_evt_ring_index = 0;
@@ -133,20 +240,400 @@ static int xhci_poll_cmd_completion(uint32_t mmio, uint32_t rtsoff) {
             uint32_t erdp_val = g_evt_ring_phys + (g_evt_ring_index * sizeof(xhci_trb_t));
             mmio_write64(intr0, 0x18, erdp_val | 0x8);
 
-            if (type == TRB_TYPE_CMD_COMPLETION_EVT) return (int)res;
+            return 1;
         }
         delay(100);
     }
+    return 0;
+}
+
+static int xhci_poll_cmd_completion(uint32_t mmio, uint32_t rtsoff) {
+    xhci_event_info_t evt;
+
+    while (xhci_poll_event(mmio, rtsoff, 5000000, &evt)) {
+        if (evt.type == TRB_TYPE_CMD_COMPLETION_EVT) {
+            return (int)evt.slot_id;
+        }
+    }
+
     return -1;
 }
 
-void xhci_minimal_init(uint32_t mmio) {
-    printk("[xHCI] Starting Minimal Init at %x...\n", mmio);
-    xhci_set_global(mmio);
-    
+static int xhci_poll_transfer_completion(uint32_t mmio, uint32_t rtsoff, uint32_t slot_id, uint32_t endpoint_id) {
+    xhci_event_info_t evt;
+
+    while (xhci_poll_event(mmio, rtsoff, 5000000, &evt)) {
+        printk("[xHCI] Event: type=%d cc=%d slot=%d ep=%d raw=%x:%x:%x:%x\n",
+            evt.type,
+            evt.completion_code,
+            evt.slot_id,
+            evt.endpoint_id,
+            evt.d0,
+            evt.d1,
+            evt.d2,
+            evt.d3);
+
+        if (evt.type != TRB_TYPE_TRANSFER_EVT) {
+            continue;
+        }
+
+        if (slot_id && evt.slot_id != slot_id) {
+            continue;
+        }
+
+        if (endpoint_id && evt.endpoint_id != endpoint_id) {
+            continue;
+        }
+
+        return (int)evt.completion_code;
+    }
+
+    printk("[xHCI] Transfer event timeout waiting for slot=%d ep=%d.\n", slot_id, endpoint_id);
+    return -1;
+}
+
+static void xhci_ring_doorbell(uint32_t mmio, uint32_t dboff, uint32_t slot_id, uint32_t target) {
+    mmio_write32(mmio + dboff, slot_id * 4, target & 0xFF);
+}
+
+static int xhci_ep0_control_in(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t slot_id,
+    const usb_setup_packet_t* setup, void* out_buf, uint32_t len) {
+    uint32_t phys_buf = 0;
+    uint8_t* data = xhci_alloc_aligned(len ? len : 1, 64, &phys_buf);
+    if (!data) {
+        printk("[xHCI] EP0 control buffer allocation failed.\n");
+        return 0;
+    }
+
+    uint32_t setup_d0 = (uint32_t)setup->bmRequestType |
+                        ((uint32_t)setup->bRequest << 8) |
+                        ((uint32_t)setup->wValue << 16);
+    uint32_t setup_d1 = (uint32_t)setup->wIndex |
+                        ((uint32_t)setup->wLength << 16);
+
+    xhci_trb_t setup_trb = {
+        setup_d0,
+        setup_d1,
+        8,
+        (TRB_TYPE_SETUP_STAGE << 10) | XHCI_TRB_IDT |
+            ((len > 0) ? (XHCI_TRB_CHAIN | XHCI_TRB_TRT_IN) : XHCI_TRB_TRT_NONE)
+    };
+    xhci_trb_t data_trb = {
+        phys_buf,
+        0,
+        len,
+        (TRB_TYPE_DATA_STAGE << 10) | XHCI_TRB_CHAIN | XHCI_TRB_DIR_IN
+    };
+    xhci_trb_t status_trb = {
+        0,
+        0,
+        0,
+        (TRB_TYPE_STATUS_STAGE << 10) | XHCI_TRB_IOC
+    };
+
+    if (!xhci_transfer_ring_push(&g_ep0_ring, setup_trb)) {
+        printk("[xHCI] EP0 ring push failed.\n");
+        return 0;
+    }
+
+    if (len > 0 && !xhci_transfer_ring_push(&g_ep0_ring, data_trb)) {
+        printk("[xHCI] EP0 data TRB push failed.\n");
+        return 0;
+    }
+
+    if (!xhci_transfer_ring_push(&g_ep0_ring, status_trb)) {
+        printk("[xHCI] EP0 status TRB push failed.\n");
+        return 0;
+    }
+
+    xhci_ring_doorbell(mmio, dboff, slot_id, 1);
+
+    int completion = xhci_poll_transfer_completion(mmio, rtsoff, slot_id, 0);
+    if (completion <= 0) {
+        printk("[xHCI] EP0 control transfer failed (cc=%d).\n", completion);
+        return 0;
+    }
+
+    if (out_buf && len > 0) {
+        memcpy(out_buf, data, len);
+    }
+
+    return 1;
+}
+
+static void xhci_msc_reset_state(void) {
+    memset(&g_msc, 0, sizeof(g_msc));
+    memset(&g_msc_bulk_in_ring, 0, sizeof(g_msc_bulk_in_ring));
+    memset(&g_msc_bulk_out_ring, 0, sizeof(g_msc_bulk_out_ring));
+}
+
+static void xhci_msc_prepare_bot(void) {
+    if (!g_msc.valid) {
+        return;
+    }
+
+    if (g_msc.bulk_in_ep && !g_msc_bulk_in_ring.trbs) {
+        if (!xhci_transfer_ring_init(&g_msc_bulk_in_ring, 64)) {
+            printk("[xHCI] MSC bulk-in ring allocation failed.\n");
+        }
+    }
+
+    if (g_msc.bulk_out_ep && !g_msc_bulk_out_ring.trbs) {
+        if (!xhci_transfer_ring_init(&g_msc_bulk_out_ring, 64)) {
+            printk("[xHCI] MSC bulk-out ring allocation failed.\n");
+        }
+    }
+
+    printk("[xHCI] MSC BOT scaffold ready: if=%d subclass=%x proto=%x bulk_in=0x%x mps=%d bulk_out=0x%x mps=%d\n",
+        g_msc.interface_number,
+        g_msc.subclass,
+        g_msc.protocol,
+        g_msc.bulk_in_ep,
+        g_msc.bulk_in_mps,
+        g_msc.bulk_out_ep,
+        g_msc.bulk_out_mps);
+    printk("[xHCI] MSC next step: Configure Endpoint + CBW/CSW bulk transfers.\n");
+}
+
+static uint8_t xhci_usb_ep_transfer_type(const usb_endpoint_descriptor_t* ep) {
+    return ep ? (ep->bmAttributes & 0x3) : 0;
+}
+
+static uint8_t xhci_usb_ep_is_in(const usb_endpoint_descriptor_t* ep) {
+    return ep ? ((ep->bEndpointAddress & 0x80) != 0) : 0;
+}
+
+static void xhci_log_classification(const usb_device_descriptor_t* device_desc, const uint8_t* config_buf, uint32_t config_len) {
+    if (!device_desc) {
+        return;
+    }
+
+    xhci_msc_reset_state();
+
+    if (device_desc->bDeviceClass == USB_CLASS_HID) {
+        printk("[xHCI] Device classified as HID (device class).\n");
+        return;
+    }
+
+    if (device_desc->bDeviceClass == USB_CLASS_MASS_STORAGE) {
+        printk("[xHCI] Device classified as Mass Storage (device class).\n");
+        return;
+    }
+
+    uint32_t offset = 0;
+    while (offset + sizeof(usb_descriptor_header_t) <= config_len) {
+        const usb_descriptor_header_t* header = (const usb_descriptor_header_t*)(config_buf + offset);
+        if (header->bLength == 0) {
+            break;
+        }
+
+        if (offset + header->bLength > config_len) {
+            break;
+        }
+
+        if (header->bDescriptorType == USB_DESC_INTERFACE && header->bLength >= sizeof(usb_interface_descriptor_t)) {
+            const usb_interface_descriptor_t* iface = (const usb_interface_descriptor_t*)header;
+
+            if (iface->bInterfaceClass == USB_CLASS_HID) {
+                printk("[xHCI] Device classified as HID (interface %d).\n", iface->bInterfaceNumber);
+                return;
+            }
+
+            if (iface->bInterfaceClass == USB_CLASS_MASS_STORAGE) {
+                printk("[xHCI] Device classified as Mass Storage (interface %d).\n", iface->bInterfaceNumber);
+
+                g_msc.valid = 1;
+                g_msc.interface_number = iface->bInterfaceNumber;
+                g_msc.subclass = iface->bInterfaceSubClass;
+                g_msc.protocol = iface->bInterfaceProtocol;
+
+                uint32_t ep_offset = offset + header->bLength;
+                while (ep_offset + sizeof(usb_descriptor_header_t) <= config_len) {
+                    const usb_descriptor_header_t* next = (const usb_descriptor_header_t*)(config_buf + ep_offset);
+                    if (next->bLength == 0) {
+                        break;
+                    }
+                    if (ep_offset + next->bLength > config_len) {
+                        break;
+                    }
+                    if (next->bDescriptorType == USB_DESC_INTERFACE) {
+                        break;
+                    }
+
+                    if (next->bDescriptorType == USB_DESC_ENDPOINT && next->bLength >= sizeof(usb_endpoint_descriptor_t)) {
+                        const usb_endpoint_descriptor_t* ep = (const usb_endpoint_descriptor_t*)next;
+                        if (xhci_usb_ep_transfer_type(ep) == USB_EP_ATTR_BULK) {
+                            if (xhci_usb_ep_is_in(ep)) {
+                                g_msc.bulk_in_ep = ep->bEndpointAddress;
+                                g_msc.bulk_in_mps = ep->wMaxPacketSize;
+                            } else {
+                                g_msc.bulk_out_ep = ep->bEndpointAddress;
+                                g_msc.bulk_out_mps = ep->wMaxPacketSize;
+                            }
+                        }
+                    }
+
+                    ep_offset += next->bLength;
+                }
+
+                xhci_msc_prepare_bot();
+                return;
+            }
+
+            printk("[xHCI] Interface %d class=%x subclass=%x proto=%x.\n",
+                iface->bInterfaceNumber,
+                iface->bInterfaceClass,
+                iface->bInterfaceSubClass,
+                iface->bInterfaceProtocol);
+        }
+
+        offset += header->bLength;
+    }
+
+    printk("[xHCI] Device class could not be mapped to HID/MSC yet.\n");
+}
+
+static int xhci_ep0_get_device_descriptor(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t slot_id, usb_device_descriptor_t* out_desc) {
+    usb_device_descriptor_t desc;
+    usb_setup_packet_t setup = {
+        .bmRequestType = 0x80,
+        .bRequest = USB_REQ_GET_DESCRIPTOR,
+        .wValue = (uint16_t)(USB_DESC_DEVICE << 8),
+        .wIndex = 0,
+        .wLength = sizeof(desc),
+    };
+
+    if (!xhci_ep0_control_in(mmio, dboff, rtsoff, slot_id, &setup, &desc, sizeof(desc))) {
+        printk("[xHCI] GET_DESCRIPTOR(device) failed.\n");
+        return 0;
+    }
+
+    if (out_desc) {
+        memcpy(out_desc, &desc, sizeof(desc));
+    }
+
+    printk("[xHCI] Device Descriptor: vid=%x pid=%x class=%x subclass=%x proto=%x cfgs=%d\n",
+        desc.idVendor,
+        desc.idProduct,
+        desc.bDeviceClass,
+        desc.bDeviceSubClass,
+        desc.bDeviceProtocol,
+        desc.bNumConfigurations);
+    return 1;
+}
+
+static int xhci_ep0_get_configuration_and_classify(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
+    uint32_t slot_id, const usb_device_descriptor_t* device_desc) {
+    usb_configuration_descriptor_t cfg;
+    usb_setup_packet_t setup = {
+        .bmRequestType = 0x80,
+        .bRequest = USB_REQ_GET_DESCRIPTOR,
+        .wValue = (uint16_t)(USB_DESC_CONFIGURATION << 8),
+        .wIndex = 0,
+        .wLength = sizeof(cfg),
+    };
+
+    if (!xhci_ep0_control_in(mmio, dboff, rtsoff, slot_id, &setup, &cfg, sizeof(cfg))) {
+        printk("[xHCI] GET_DESCRIPTOR(config header) failed.\n");
+        return 0;
+    }
+
+    printk("[xHCI] Config Header: total_len=%d interfaces=%d value=%d\n",
+        cfg.wTotalLength,
+        cfg.bNumInterfaces,
+        cfg.bConfigurationValue);
+
+    if (cfg.wTotalLength < sizeof(cfg) || cfg.wTotalLength > 512) {
+        printk("[xHCI] Config total length looks invalid: %d\n", cfg.wTotalLength);
+        return 0;
+    }
+
+    uint32_t phys_cfg = 0;
+    uint8_t* full_cfg = xhci_alloc_aligned(cfg.wTotalLength, 64, &phys_cfg);
+    if (!full_cfg) {
+        printk("[xHCI] Full config buffer allocation failed.\n");
+        return 0;
+    }
+
+    setup.wLength = cfg.wTotalLength;
+    if (!xhci_ep0_control_in(mmio, dboff, rtsoff, slot_id, &setup, full_cfg, cfg.wTotalLength)) {
+        printk("[xHCI] GET_DESCRIPTOR(full config) failed.\n");
+        return 0;
+    }
+
+    xhci_log_classification(device_desc, full_cfg, cfg.wTotalLength);
+    return 1;
+}
+
+static uint32_t xhci_port_speed(uint32_t portsc) {
+    return (portsc & XHCI_PORTSC_SPEED_MASK) >> XHCI_PORTSC_SPEED_SHIFT;
+}
+
+static uint32_t xhci_ep0_max_packet_size(uint32_t speed) {
+    switch (speed) {
+        case 1: return 8;   // Full-speed fallback
+        case 2: return 8;   // Low-speed
+        case 3: return 64;  // High-speed
+        case 4: return 512; // SuperSpeed
+        default: return 64;
+    }
+}
+
+static int xhci_find_connected_port(void) {
+    for (uint32_t port = 1; port <= g_xhci_max_ports; port++) {
+        uint32_t portsc = xhci_get_portsc(port);
+        if (portsc & XHCI_PORTSC_CCS) {
+            printk("[xHCI] Port %d connected (PED=%d speed=%d).\n",
+                port,
+                (portsc & XHCI_PORTSC_PED) ? 1 : 0,
+                xhci_port_speed(portsc));
+            return (int)port;
+        }
+    }
+
+    return 0;
+}
+
+static int xhci_reset_port(uint32_t port_1based) {
+    if (!g_xhci_mmio_base || port_1based == 0) {
+        return 0;
+    }
+
+    uint32_t op = g_xhci_mmio_base + g_xhci_caplen;
+    uint32_t off = 0x400 + (port_1based - 1) * 0x10;
+    uint32_t portsc = mmio_read32(op, off);
+
+    if (!(portsc & XHCI_PORTSC_CCS)) {
+        printk("[xHCI] Port %d reset skipped: no device connected.\n", port_1based);
+        return 0;
+    }
+
+    printk("[xHCI] Resetting port %d...\n", port_1based);
+    mmio_write32(op, off, (portsc & ~XHCI_PORTSC_CHANGE_BITS) | XHCI_PORTSC_PR);
+
+    for (uint32_t spin = 0; spin < 2000000; spin++) {
+        uint32_t current = mmio_read32(op, off);
+        if (!(current & XHCI_PORTSC_PR)) {
+            printk("[xHCI] Port %d reset complete (PED=%d speed=%d).\n",
+                port_1based,
+                (current & XHCI_PORTSC_PED) ? 1 : 0,
+                xhci_port_speed(current));
+            return 1;
+        }
+        delay(100);
+    }
+
+    printk("[xHCI] Port %d reset timeout.\n", port_1based);
+    return 0;
+}
+
+static int xhci_controller_init(uint32_t mmio, uint32_t* out_dboff, uint32_t* out_rtsoff) {
     uint32_t dboff = mmio_read32(mmio, 0x14);
     uint32_t rtsoff = mmio_read32(mmio, 0x18);
     uint32_t op = mmio + g_xhci_caplen;
+
+    if (out_dboff) *out_dboff = dboff;
+    if (out_rtsoff) *out_rtsoff = rtsoff;
 
     // 1. Controller Reset
     mmio_write32(op, 0, mmio_read32(op, 0) & ~1u); // Stop
@@ -185,7 +672,10 @@ void xhci_minimal_init(uint32_t mmio) {
     }
     printk("[xHCI] Controller is RUNNING.\n");
 
-    // 5. Enable Slot Komutu
+    return 1;
+}
+
+static int xhci_enable_slot(uint32_t mmio, uint32_t dboff, uint32_t rtsoff) {
     g_evt_ring_cycle = 1;
     g_evt_ring_index = 0;
 
@@ -195,52 +685,125 @@ void xhci_minimal_init(uint32_t mmio) {
     
     // Doorbell 0'ı çal
     mmio_write32(mmio + dboff, 0, 0); 
-    
-    int slot = xhci_poll_cmd_completion(mmio, rtsoff);
 
-    if (slot > 0) {
-        printk("[xHCI] SUCCESS! Slot assigned: %d. Addressing device...\n", slot);
-        
-        // 1. Input Context Hazırla (Cihaz özelliklerini bildirmek için)
-        uint32_t phys_in = 0;
-        xhci_input_context_t* input = xhci_alloc_aligned(sizeof(xhci_input_context_t), 64, &phys_in);
-        
-        // Slot ve Endpoint 0'ı konfigüre edeceğimizi belirtiyoruz
-        input->add_flags = 0x03; 
-        
-        // Cihazın hangi portta olduğunu söyle (QEMU'da genelde Port 1)
-        uint32_t port_id = 1; 
-        input->dev.d[0] = (1u << 27); // Route String (opsiyonel)
-        input->dev.d[1] = (port_id << 16); // Root Hub Port Number
-        
-        // Endpoint 0 (Kontrol kanalı) özellikleri: Paket boyutu 64 byte (USB 2.0/3.0 için güvenli)
-        input->dev.ep0[1] = (3 << 1) | (8 << 16); // EP State = Running, Max Packet Size = 8 (2^3*8=64)
+    return xhci_poll_cmd_completion(mmio, rtsoff);
+}
 
-        // 2. Device Context (Donanımın kendi yazacağı alan)
-        uint32_t phys_ctx = 0;
-        xhci_alloc_aligned(sizeof(xhci_device_context_t), 64, &phys_ctx);
-        
-        // DCBAA dizinine bu fiziksel adresi kaydet
-        // g_dcbaa bir uint64_t dizisi olduğu için slot numarasını indeks olarak kullanıyoruz
-        ((uint64_t*)g_dcbaa_phys)[slot] = (uint64_t)phys_ctx;
+static int xhci_address_device(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t port_id, uint32_t slot) {
+    uint32_t portsc = xhci_get_portsc(port_id);
+    uint32_t speed = xhci_port_speed(portsc);
+    uint32_t max_packet = xhci_ep0_max_packet_size(speed);
 
-        // 3. Address Device Komutunu Gönder
-        // d0 = Input Context Fiziksel Adresi
-        // d3 = Slot ID (üst 8 bit) + Command Type (11)
-        xhci_trb_t trb = { phys_in, 0, 0, (slot << 24) | (11u << 10) };
-        xhci_cmd_push(trb);
-        
-        // Zili çal
-        mmio_write32(mmio + dboff, 0, 0); 
-
-        // Cevabı bekle
-        if (xhci_poll_cmd_completion(mmio, rtsoff) >= 0) {
-            printk("[xHCI] ADDRESS SUCCESS! Device is now in ADDRESSED state.\n");
-            // Artık bu noktadan sonra USB descriptor'larını okuyabiliriz!
-        } else {
-            printk("[xHCI] Address Device failed/timeout.\n");
-        }
-    } else {
-        printk("[xHCI] FAILED: Could not enable slot (result: %d)\n", slot);
+    if (slot <= 0) {
+        return 0;
     }
+
+    printk("[xHCI] SUCCESS! Slot assigned: %d. Addressing device...\n", slot);
+
+    // 1. Input Context Hazırla (Cihaz özelliklerini bildirmek için)
+    uint32_t phys_in = 0;
+    xhci_input_context_t* input = xhci_alloc_aligned(sizeof(xhci_input_context_t), 64, &phys_in);
+    if (!input) {
+        printk("[xHCI] Input Context allocation failed.\n");
+        return 0;
+    }
+
+    // Slot ve Endpoint 0'ı konfigüre edeceğimizi belirtiyoruz
+    input->add_flags = 0x03;
+
+    if (!xhci_transfer_ring_init(&g_ep0_ring, 64)) {
+        printk("[xHCI] EP0 transfer ring allocation failed.\n");
+        return 0;
+    }
+
+    // Slot Context: context entries + port speed
+    input->dev.d[0] = (speed << 20) | (1u << 27);
+    input->dev.d[1] = (port_id << 16); // Root Hub Port Number
+
+    // Endpoint 0 Context:
+    //   d0: interval/state alanlari - EP0 icin sifir yeterli
+    //   d1: error count + endpoint type(control) + max packet size
+    //   d2/d3: TR Dequeue Pointer + DCS
+    //   d4: average TRB length
+    input->dev.ep0[0] = 0;
+    input->dev.ep0[1] = (3u << 1) | (4u << 3) | (max_packet << 16);
+    input->dev.ep0[2] = g_ep0_ring.phys | 1u;
+    input->dev.ep0[3] = 0;
+    input->dev.ep0[4] = 8;
+
+    printk("[xHCI] Programming slot %d on port %d speed=%d ep0_mps=%d.\n",
+        slot, port_id, speed, max_packet);
+
+    // 2. Device Context (Donanımın kendi yazacağı alan)
+    uint32_t phys_ctx = 0;
+    if (!xhci_alloc_aligned(sizeof(xhci_device_context_t), 64, &phys_ctx)) {
+        printk("[xHCI] Device Context allocation failed.\n");
+        return 0;
+    }
+
+    // DCBAA dizinine bu fiziksel adresi kaydet
+    // g_dcbaa bir uint64_t dizisi olduğu için slot numarasını indeks olarak kullanıyoruz
+    ((uint64_t*)g_dcbaa_phys)[slot] = (uint64_t)phys_ctx;
+
+    // 3. Address Device Komutunu Gönder
+    // d0 = Input Context Fiziksel Adresi
+    // d3 = Slot ID (üst 8 bit) + Command Type (11)
+    xhci_trb_t trb = { phys_in, 0, 0, (slot << 24) | (11u << 10) };
+    xhci_cmd_push(trb);
+
+    // Zili çal
+    mmio_write32(mmio + dboff, 0, 0);
+
+    // Cevabı bekle
+    if (xhci_poll_cmd_completion(mmio, rtsoff) >= 0) {
+        g_current_slot = slot;
+        g_current_port = port_id;
+        printk("[xHCI] EP0 ring prepared at %x for slot %d port %d.\n",
+            g_ep0_ring.phys, slot, port_id);
+        printk("[xHCI] ADDRESS SUCCESS! Device is now in ADDRESSED state.\n");
+
+        usb_device_descriptor_t device_desc;
+        memset(&device_desc, 0, sizeof(device_desc));
+        if (!xhci_ep0_get_device_descriptor(mmio, dboff, rtsoff, slot, &device_desc)) {
+            printk("[xHCI] Device descriptor read did not complete yet.\n");
+        } else {
+            xhci_ep0_get_configuration_and_classify(mmio, dboff, rtsoff, slot, &device_desc);
+        }
+        return 1;
+    }
+
+    printk("[xHCI] Address Device failed/timeout.\n");
+    return 0;
+}
+
+void xhci_minimal_init(uint32_t mmio) {
+    uint32_t dboff = 0;
+    uint32_t rtsoff = 0;
+    int port_id = 0;
+
+    printk("[xHCI] Starting Minimal Init at %x...\n", mmio);
+    xhci_set_global(mmio);
+
+    if (!xhci_controller_init(mmio, &dboff, &rtsoff)) {
+        printk("[xHCI] Controller init failed.\n");
+        return;
+    }
+
+    port_id = xhci_find_connected_port();
+    if (port_id <= 0) {
+        printk("[xHCI] No connected ports found.\n");
+        return;
+    }
+
+    if (!xhci_reset_port((uint32_t)port_id)) {
+        printk("[xHCI] Port %d reset failed, continuing anyway.\n", port_id);
+    }
+
+    int slot = xhci_enable_slot(mmio, dboff, rtsoff);
+    if (slot <= 0) {
+        printk("[xHCI] FAILED: Could not enable slot (result: %d)\n", slot);
+        return;
+    }
+
+    xhci_address_device(mmio, dboff, rtsoff, (uint32_t)port_id, (uint32_t)slot);
 }
