@@ -939,6 +939,35 @@ static int fat16_write_fat_entry(const fat_info_t* info, uint32_t cluster, uint1
     return 1;
 }
 
+static int fat16_free_chain(const fat_info_t* info, uint32_t start_cluster)
+{
+    if (!info) return 0;
+    if (info->type != FAT_TYPE_16) return 0;
+    if (start_cluster < 2) return 1;
+
+    uint32_t cluster = start_cluster;
+
+    while (cluster >= 2) {
+        uint32_t next = fat16_next_cluster(info, cluster);
+
+        if (!fat16_write_fat_entry(info, cluster, 0x0000)) {
+            return 0;
+        }
+
+        if (next == 0xFFFFFFFF) {
+            break;
+        }
+
+        if (next < 2) {
+            break;
+        }
+
+        cluster = next;
+    }
+
+    return 1;
+}
+
 static int fat_zero_cluster(const fat_info_t* info, uint32_t cluster)
 {
     if (!info) return 0;
@@ -1530,4 +1559,132 @@ int fat_append_file_path(const char* path, const uint8_t* data, uint32_t size)
     oldbuf[oldsz] = 0;
 
     return fat_write_file_path(path, oldbuf, oldsz);
+}
+
+int fat_delete_file_path(const char* path)
+{
+    if (!path) return 0;
+
+    uint8_t boot[512];
+    fat_info_t info;
+    fat_dirent_t de;
+    int is_root = 0;
+
+    if (!block_has_root()) return 0;
+    if (!block_read(0, 1, boot)) return 0;
+    if (!fat_probe_from_sector0(boot, &info)) return 0;
+    if (info.type != FAT_TYPE_16) return 0;
+    if (!fat_resolve_path(&info, path, &de, &is_root)) return 0;
+    if (is_root) return 0;
+    if (de.attr & FAT_ATTR_DIRECTORY) return 0;
+
+    uint32_t first_cluster =
+        ((uint32_t)de.first_cluster_hi << 16) |
+        (uint32_t)de.first_cluster_lo;
+
+    const char* last = strrchr(path, '/');
+    const char* filename = last ? last + 1 : path;
+    uint8_t dirsec[512];
+
+    if (!last || last == path) {
+        uint32_t root_dir_start =
+            info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
+
+        for (uint32_t s = 0; s < info.root_dir_sectors; s++) {
+            uint32_t dlba = root_dir_start + s;
+            if (!block_read(dlba, 1, dirsec)) return 0;
+
+            for (int off = 0; off < 512; off += 32) {
+                fat_dirent_t* e = (fat_dirent_t*)(dirsec + off);
+
+                if (e->name[0] == 0x00) break;
+                if (e->name[0] == 0xE5) continue;
+                if (e->attr == FAT_ATTR_LFN) continue;
+                if (e->attr & FAT_ATTR_VOLUME_ID) continue;
+
+                if (fat_name_equals_83(e, filename)) {
+                    if (!fat16_free_chain(&info, first_cluster)) return 0;
+                    e->name[0] = 0xE5;
+                    return block_write(dlba, 1, dirsec);
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    char parent[256];
+    int len = (int)(last - path);
+    if (len <= 0 || len >= (int)sizeof(parent)) return 0;
+
+    strncpy(parent, path, len);
+    parent[len] = 0;
+
+    fat_dirent_t parent_de;
+    int parent_is_root = 0;
+    if (!fat_resolve_path(&info, parent, &parent_de, &parent_is_root)) return 0;
+
+    if (parent_is_root) {
+        uint32_t root_dir_start =
+            info.reserved_sectors + (info.fat_count * info.sectors_per_fat);
+
+        for (uint32_t s = 0; s < info.root_dir_sectors; s++) {
+            uint32_t dlba = root_dir_start + s;
+            if (!block_read(dlba, 1, dirsec)) return 0;
+
+            for (int off = 0; off < 512; off += 32) {
+                fat_dirent_t* e = (fat_dirent_t*)(dirsec + off);
+
+                if (e->name[0] == 0x00) break;
+                if (e->name[0] == 0xE5) continue;
+                if (e->attr == FAT_ATTR_LFN) continue;
+                if (e->attr & FAT_ATTR_VOLUME_ID) continue;
+
+                if (fat_name_equals_83(e, filename)) {
+                    if (!fat16_free_chain(&info, first_cluster)) return 0;
+                    e->name[0] = 0xE5;
+                    return block_write(dlba, 1, dirsec);
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    uint32_t parent_cluster =
+        ((uint32_t)parent_de.first_cluster_hi << 16) |
+        (uint32_t)parent_de.first_cluster_lo;
+
+    uint32_t cluster = parent_cluster;
+    while (cluster >= 2) {
+        uint32_t plba = fat_cluster_to_lba(&info, cluster);
+        if (plba == 0) return 0;
+
+        for (uint32_t s = 0; s < info.sectors_per_cluster; s++) {
+            uint32_t dlba = plba + s;
+            if (!block_read(dlba, 1, dirsec)) return 0;
+
+            for (int off = 0; off < 512; off += 32) {
+                fat_dirent_t* e = (fat_dirent_t*)(dirsec + off);
+
+                if (e->name[0] == 0x00) break;
+                if (e->name[0] == 0xE5) continue;
+                if (e->attr == FAT_ATTR_LFN) continue;
+                if (e->attr & FAT_ATTR_VOLUME_ID) continue;
+
+                if (fat_name_equals_83(e, filename)) {
+                    if (!fat16_free_chain(&info, first_cluster)) return 0;
+                    e->name[0] = 0xE5;
+                    return block_write(dlba, 1, dirsec);
+                }
+            }
+        }
+
+        uint32_t next = fat16_next_cluster(&info, cluster);
+        if (next == 0xFFFFFFFF) break;
+        if (next < 2) return 0;
+        cluster = next;
+    }
+
+    return 0;
 }
