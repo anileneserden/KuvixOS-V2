@@ -134,6 +134,8 @@ static struct {
     uint8_t rxbuf[4096]; uint16_t rxlen;
 } g_tcp;
 
+static uint16_t g_next_src_port = 40000;
+
 static uint16_t tcp_checksum(uint32_t src_ip, uint32_t dst_ip, uint8_t* tcp_seg, uint16_t tcp_len) {
     uint32_t sum = 0;
 
@@ -234,17 +236,16 @@ static void tcp_handle_ipv4_tcp(const uint8_t* frame, uint16_t len) {
         int calculated_dlen = ip_total_len - ihl - tcp_header_len;
 
         if (calculated_dlen > 0) {
-            // --- BURASI KRİTİK ---
             printk("[TCP DATA] %d byte veri yakalandı!\n", calculated_dlen);
 
-            // Veriyi güvenli bir şekilde kopyala
-            uint16_t n = (calculated_dlen > 4096) ? 4096 : calculated_dlen;
-            memcpy(g_tcp.rxbuf, t + off, n);
-            
-            g_tcp.rxlen = n;
-            g_tcp.rxready = 1; // net_tcp_recv bunu bekliyor!
+            int space = 4096 - (int)g_tcp.rxlen;
+            int n = (calculated_dlen > space) ? space : calculated_dlen;
+            if (n > 0) {
+                memcpy(g_tcp.rxbuf + g_tcp.rxlen, t + off, n);
+                g_tcp.rxlen += (uint16_t)n;
+                g_tcp.rxready = 1;
+            }
 
-            // ACK gönder ki Python diğer paketleri de göndersin
             g_tcp.ack = seq + calculated_dlen;
             tcp_send_seg(mac, g_tcp.dst_ip, g_tcp.src_port, g_tcp.dst_port, g_tcp.seq, g_tcp.ack, TCP_FLAG_ACK, 0, 0);
         }
@@ -312,15 +313,18 @@ static void net_poll_once(void) {
 void net_init(void) { pci_scan_dump_nics(); }
 
 int net_tcp_connect(uint32_t dip, uint16_t dp) {
+    uint16_t sport = g_next_src_port++;
+    if (g_next_src_port > 60000) g_next_src_port = 40000;
+
     memset(&g_tcp, 0, sizeof(g_tcp));
-    g_tcp.dst_ip = dip; g_tcp.dst_port = dp; g_tcp.src_port = 40000; g_tcp.seq = 0x1000; g_tcp.st = TCP_SYN_SENT;
+    g_tcp.dst_ip = dip; g_tcp.dst_port = dp; g_tcp.src_port = sport; g_tcp.seq = 0x1000; g_tcp.st = TCP_SYN_SENT;
     uint8_t mac[6]; uint32_t nh = same_subnet(g_ip, dip) ? dip : g_gw;
     if (!arp_get(nh, mac)) {
         send_arp_who_has(nh); for(int i=0; i<10000000; i++) net_poll_once();
         if(!arp_get(nh, mac)) { printk("[TCP] ARP hata!\n"); return 0; }
     }
-    printk("[TCP] SYN gonderiliyor...\n");
-    tcp_send_seg(mac, dip, 40000, dp, 0x1000, 0, TCP_FLAG_SYN, 0, 0);
+    printk("[TCP] SYN gonderiliyor... (port %d)\n", sport);
+    tcp_send_seg(mac, dip, sport, dp, 0x1000, 0, TCP_FLAG_SYN, 0, 0);
     g_tcp.seq++;
     for (int i=0; i<200000000; i++) { net_poll_once(); if (g_tcp.connected) return 1; }
     return 0;
@@ -332,14 +336,14 @@ int net_tcp_send(const uint8_t* d, uint16_t l) {
     g_tcp.seq+=l; return 1;
 }
 
-int net_tcp_recv(uint8_t* o, uint16_t m, uint32_t t) {
+int net_tcp_recv(uint8_t* o, int m, uint32_t t) {
     for (uint32_t i = 0; i < t; i++) {
         // Kartı dırla
         net_poll_once(); 
 
         // Veri geldiyse (ya da zaten gelmişse)
         if (g_tcp.rxready) {
-            uint16_t n = (g_tcp.rxlen > m) ? m : g_tcp.rxlen;
+            uint16_t n = (g_tcp.rxlen > (uint16_t)m) ? (uint16_t)m : g_tcp.rxlen;
             memcpy(o, g_tcp.rxbuf, n);
             
             // KRİTİK: Bayrakları ve uzunluğu temizle ki sistem kilitlenmesin
@@ -365,18 +369,21 @@ int net_http_get_to_buf(uint32_t ip, uint16_t p, const char* path, char* out, in
     net_tcp_send((uint8_t*)req, req_len);
 
     int total_received = 0;
-    
-    // Bağlantı kapanana veya buffer dolana kadar DÖNGÜDE KAL
-    while (!g_tcp.closed && total_received < cap) {
-        int n = net_tcp_recv((uint8_t*)(out + total_received), cap - total_received, 5000000);
-        if (n > 0) {
-            total_received += n;
-            // printk("[HTTP] Parca alindi: %d byte (Toplam: %d)\n", n, total_received);
-        } else {
-            // Veri gelmiyorsa ve bağlantı hala açıksa dırla (poll)
-            net_poll_once();
-            // Eğer çok uzun süre veri gelmezse döngüden çıkmak için bir timeout eklenebilir
+
+    for (int spin = 0; spin < 50000000 && total_received < cap; spin++) {
+        net_poll_once();
+
+        if (g_tcp.rxready) {
+            int take = (int)g_tcp.rxlen;
+            if (take > cap - total_received) take = cap - total_received;
+            memcpy(out + total_received, g_tcp.rxbuf, take);
+            total_received += take;
+            g_tcp.rxready = 0;
+            g_tcp.rxlen = 0;
+            spin = 0;
         }
+
+        if (g_tcp.closed && !g_tcp.rxready) break;
     }
 
     if (olen) *olen = total_received;
