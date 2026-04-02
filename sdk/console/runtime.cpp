@@ -11,6 +11,16 @@ extern "C" void print(const char* text) {
     g_kvx_api->print(text);
 }
 
+extern "C" int kvx_argc(void) {
+    if (!g_kvx_api || !g_kvx_api->arg_count) return 0;
+    return g_kvx_api->arg_count();
+}
+
+extern "C" const char* kvx_argv(int index) {
+    if (!g_kvx_api || !g_kvx_api->arg_at) return "";
+    return g_kvx_api->arg_at(index);
+}
+
 extern "C" int main(void);
 
 extern "C" int kvx_entry(const kvx_api_t* api, kvx_kef_app_t* out_app) {

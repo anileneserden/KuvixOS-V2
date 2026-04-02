@@ -14,6 +14,8 @@ typedef struct kvx_api {
     void (*fill_rect)(int x, int y, int w, int h, uint32_t color);
     void (*text)(int x, int y, uint32_t color, const char* s);
     void (*print)(const char* s);
+    int (*arg_count)(void);
+    const char* (*arg_at)(int index);
 } kvx_api_t;
 
 typedef struct kvx_kef_app {

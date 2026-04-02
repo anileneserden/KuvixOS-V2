@@ -8,6 +8,7 @@ void appmgr_init(void);
 app_t* appmgr_start_app(int id);
 app_t* appmgr_start_path(const char* path);
 app_t* appmgr_open_path(const char* path);
+app_t* appmgr_open_path_with_args(const char* path, int argc, char** argv);
 
 // WM event dispatch için:
 app_t* appmgr_get_app_by_window_id(int win_id);

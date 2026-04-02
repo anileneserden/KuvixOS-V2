@@ -220,21 +220,26 @@ static void build_open_path(const char* input, char* out, size_t out_sz) {
     strncat(out, input, out_sz - strlen(out) - 1);
 }
 
-static int try_open_path(const char* token) {
+static int try_open_path(int argc, char** argv) {
     char resolved[256];
+    const char* token;
     vfs_stat_t st;
+
+    if (argc <= 0 || !argv || !argv[0]) return 0;
+
+    token = argv[0];
 
     if (!looks_like_openable_path(token)) return 0;
 
     build_open_path(token, resolved, sizeof(resolved));
 
     if (vfs_stat(resolved, &st) == 1) {
-        appmgr_open_path(resolved);
+        appmgr_open_path_with_args(resolved, argc, argv);
         return 1;
     }
 
     if (strcmp(resolved, token) != 0 && vfs_stat(token, &st) == 1) {
-        appmgr_open_path(token);
+        appmgr_open_path_with_args(token, argc, argv);
         return 1;
     }
 
@@ -276,7 +281,7 @@ void commands_execute(char* line) {
         }
     }
 
-    if (try_open_path(argv[0])) {
+    if (try_open_path(argc, argv)) {
         return;
     }
 

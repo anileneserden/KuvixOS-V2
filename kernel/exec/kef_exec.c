@@ -16,6 +16,9 @@
 
 #include <ui/wm.h>
 
+#define KEF_ARG_MAX_COUNT 16
+#define KEF_ARG_MAX_LEN 128
+
 /* --------------------------------------------------
  * Minimal ELF32 loader for KEF v1
  * -------------------------------------------------- */
@@ -75,10 +78,41 @@ static void kef_api_print(const char* s) {
     commands_puts(s);
 }
 
+static int g_kef_argc = 0;
+static char g_kef_arg_storage[KEF_ARG_MAX_COUNT][KEF_ARG_MAX_LEN];
+
+static void kef_args_set(int argc, char** argv) {
+    int i;
+
+    g_kef_argc = 0;
+
+    if (!argv || argc <= 0) return;
+
+    if (argc > KEF_ARG_MAX_COUNT) argc = KEF_ARG_MAX_COUNT;
+
+    for (i = 0; i < argc; i++) {
+        const char* src = argv[i] ? argv[i] : "";
+        strncpy(g_kef_arg_storage[i], src, KEF_ARG_MAX_LEN - 1);
+        g_kef_arg_storage[i][KEF_ARG_MAX_LEN - 1] = 0;
+        g_kef_argc++;
+    }
+}
+
+static int kef_api_arg_count(void) {
+    return g_kef_argc;
+}
+
+static const char* kef_api_arg_at(int index) {
+    if (index < 0 || index >= g_kef_argc) return "";
+    return g_kef_arg_storage[index];
+}
+
 static kvx_api_t g_kef_api = {
     .fill_rect = kef_api_fill_rect,
     .text = kef_api_text,
     .print = kef_api_print,
+    .arg_count = kef_api_arg_count,
+    .arg_at = kef_api_arg_at,
 };
 
 /* -------------------------------------------------- */
@@ -105,7 +139,7 @@ static kvx_app_kind_t kvx_get_app_kind(const kvx_kef_app_t* app) {
     return KVX_APP_KIND_WINDOW;
 }
 
-kef_exec_result_t kef_exec_file(const char* path, kef_minimal_state_t* st) {
+kef_exec_result_t kef_exec_file(const char* path, kef_minimal_state_t* st, int argc, char** argv) {
     uint8_t* file_data = 0;
     uint32_t file_size = 0;
     kvx_app_kind_t app_kind;
@@ -165,6 +199,8 @@ kef_exec_result_t kef_exec_file(const char* path, kef_minimal_state_t* st) {
     memset(&app, 0, sizeof(app));
 
     printk("[KEF] calling entry...\n");
+
+    kef_args_set(argc, argv);
 
     int rc = entry(&g_kef_api, &app);
 

@@ -244,7 +244,7 @@ static bool ends_with(const char* s, const char* suf) {
     return strcmp(s + (sl - pl), suf) == 0;
 }
 
-app_t* appmgr_open_path(const char* path) {
+app_t* appmgr_open_path_with_args(const char* path, int argc, char** argv) {
     char resolved[VFS_PATH_MAX];
     const char* open_path = path;
 
@@ -330,7 +330,7 @@ app_t* appmgr_open_path(const char* path) {
 
         kef_minimal_state_t* st = (kef_minimal_state_t*)a->user;
 
-        exec_result = kef_exec_file(open_path, st);
+        exec_result = kef_exec_file(open_path, st, argc, argv);
 
         if (exec_result == KEF_EXEC_FAILED) {
             printk("[AppMgr] KEF exec failed\n");
@@ -349,6 +349,10 @@ app_t* appmgr_open_path(const char* path) {
 
     printk("AppManager: bilinmeyen path: %s\n", open_path);
     return NULL;
+}
+
+app_t* appmgr_open_path(const char* path) {
+    return appmgr_open_path_with_args(path, 0, 0);
 }
 
 bool appmgr_any_continuous_redraw(void) {
