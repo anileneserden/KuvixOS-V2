@@ -1292,11 +1292,7 @@ int fat_path_exists(const char* path)
 
     if (is_root) return 1;
 
-    if (de.attr & FAT_ATTR_DIRECTORY) {
-        return 1;
-    }
-
-    return 0;
+    return 1;
 }
 
 int fat_create_file_in_dir_cluster(
