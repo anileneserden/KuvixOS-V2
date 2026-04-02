@@ -59,6 +59,7 @@ SRC_C = \
     kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
+    kernel/fs/fat.c \
     kernel/fs/fs_init.c \
     kernel/fs/kvxfs.c \
     kernel/fs/ramfs.c \
@@ -198,6 +199,7 @@ run: iso
 		-drive file=disk.img,format=raw,index=0,media=disk \
 		-drive file=disk2.img,format=raw,index=1,media=disk \
         -device e1000,netdev=n0 -netdev user,id=n0 \
+        -boot d \
 		-m 256M -serial stdio
 
 clean:

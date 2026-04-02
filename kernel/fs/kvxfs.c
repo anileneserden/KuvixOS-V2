@@ -139,7 +139,7 @@ int kvxfs_force_format(void) {
 
 int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     if (!path || !data || !is_persist_path(path)) return 0;
-    kvxfs_init();
+    if (!kvxfs_init()) return 0;
     
     int idx = find_ent(path);
     if (idx < 0) {
@@ -177,7 +177,7 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
 
 int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size) {
     if (!path || !out || !is_persist_path(path)) return 0;
-    kvxfs_init();
+    if (!kvxfs_init()) return 0;
     int idx = find_ent(path);
     if (idx < 0) return 0;
     uint32_t sz = (g_meta.ent[idx].size > cap) ? cap : g_meta.ent[idx].size;
@@ -194,7 +194,7 @@ int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_s
 
 int kvxfs_mkdir(const char* path) {
     if (!is_persist_path(path)) return -1;
-    kvxfs_init();
+    if (!kvxfs_init()) return -5;
     
     if (find_ent(path) >= 0) return -2;
 
@@ -224,7 +224,10 @@ int kvxfs_mkdir(const char* path) {
 }
 
 void kvxfs_list_all(const char* filter_path) {
-    kvxfs_init();
+    if (!kvxfs_init()) {
+        printk("(KVXFS bagli degil veya formatli degil)\n");
+        return;
+    }
     printk("--- %s Icerigi ---\n", filter_path);
     
     int filter_len = strlen(filter_path);

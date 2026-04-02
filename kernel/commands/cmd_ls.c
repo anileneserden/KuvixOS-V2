@@ -1,5 +1,6 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/kvxfs.h>
+#include <kernel/fs/fat.h>
 #include <kernel/printk.h>
 #include <lib/commands.h>
 #include <lib/string.h>
@@ -9,8 +10,12 @@ void cmd_ls(int argc, char** argv) {
 
     if (strncmp(path, "/persist", 8) == 0) {
         kvxfs_list_all(path);
+    } else if (strncmp(path, "/fat", 4) == 0) {
+        const char* fat_sub = (path[4] == 0) ? "/" : (path + 4);
+        if (!fat_list_path_cmd(fat_sub)) {
+            commands_puts("Hata: FAT dizini listelenemedi.\n");
+        }
     } else {
-        // Standart VFS listeleme (Ramfs için)
         vfs_list(path, (void*)0, (void*)0);
     }
 }
