@@ -3,6 +3,7 @@
 
 #include <kernel/fs/vfs.h>
 #include <kernel/printk.h>
+#include <kernel/user.h>
 #include <lib/string.h>
 #include <stdint.h>
 
@@ -116,6 +117,12 @@ void seed_files_run(void) {
     /* SDK-V2'den gelen .kef dosyası */
     write_binary_if_missing(
         "/apps/hello.kef",
+        (const uint8_t*)build_hello_kef,
+        (uint32_t)build_hello_kef_len
+    );
+
+    write_binary_if_missing(
+        USER_DESKTOP_PATH "/hello.kef",
         (const uint8_t*)build_hello_kef,
         (uint32_t)build_hello_kef_len
     );

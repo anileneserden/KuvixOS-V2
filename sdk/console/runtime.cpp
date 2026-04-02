@@ -1,0 +1,27 @@
+#include <kuvixos.h>
+
+static const kvx_api_t* g_kvx_api = 0;
+
+extern "C" void kvx_sdk_init(const kvx_api_t* api) {
+    g_kvx_api = api;
+}
+
+extern "C" void print(const char* text) {
+    if (!g_kvx_api || !g_kvx_api->print || !text) return;
+    g_kvx_api->print(text);
+}
+
+extern "C" int main(void);
+
+extern "C" int kvx_entry(const kvx_api_t* api, kvx_kef_app_t* out_app) {
+    kvx_sdk_init(api);
+
+    if (out_app) {
+        out_app->kind = KVX_APP_KIND_CONSOLE;
+        out_app->on_draw = 0;
+        out_app->ui_json = 0;
+        out_app->ui_json_size = 0;
+    }
+
+    return main();
+}

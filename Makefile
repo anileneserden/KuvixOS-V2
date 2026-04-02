@@ -13,8 +13,11 @@ BUILD  = build
 ISO    = iso
 KERNEL = $(BUILD)/kernel.elf
 IMAGE  = KuvixOS.iso
-SDK_BUILD = $(HOME)/KuvixOS-SDK-V2/build
-SDK_KEF   = $(SDK_BUILD)/hello.kef
+SDK_KEF   = apps_kef/hello/hello.kef
+SDK_APP_LD = sdk/console/app.ld
+SDK_APP_OBJS = \
+    $(BUILD)/sdk/console/runtime.o \
+    $(BUILD)/sdk/console/hello.o
 SEED_OUT  = kernel/system/generated_kef.c
 
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
@@ -36,6 +39,9 @@ NASMFLAGS = -f elf32
 LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments \
           -Wl,--no-gc-sections
+
+SDK_APP_LDFLAGS = -m32 -T $(SDK_APP_LD) -nostdlib -ffreestanding -fno-pie \
+		  -Wl,-z,noexecstack -Wl,--build-id=none
 
 # --- Kaynak Dosyalar ---
 SRC_S = boot/boot.S
@@ -172,6 +178,10 @@ OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
 
 all: $(SEED_OUT) $(KERNEL)
 
+$(SDK_KEF): $(SDK_APP_OBJS) $(SDK_APP_LD) include/kuvixos.h include/kuvixos.hpp include/kvx_c/kuvixos.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(SDK_APP_LDFLAGS) -o $@ $(SDK_APP_OBJS) $(LIBGCC)
+
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -244,4 +254,4 @@ run: iso
 		-m 256M -serial stdio
 
 clean:
-	rm -rf $(BUILD) $(ISO) $(IMAGE)
+	rm -rf $(BUILD) $(ISO) $(IMAGE) $(SDK_KEF)

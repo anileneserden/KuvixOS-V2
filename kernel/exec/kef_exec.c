@@ -4,6 +4,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/memory/kmalloc.h>
 #include <kernel/printk.h>
+#include <lib/commands.h>
 #include <lib/string.h>
 #include <stdint.h>
 
@@ -69,9 +70,15 @@ static void kef_api_text(int x, int y, uint32_t color, const char* s) {
     /* şimdilik boş */
 }
 
+static void kef_api_print(const char* s) {
+    if (!s) return;
+    commands_puts(s);
+}
+
 static kvx_api_t g_kef_api = {
     .fill_rect = kef_api_fill_rect,
     .text = kef_api_text,
+    .print = kef_api_print,
 };
 
 /* -------------------------------------------------- */
@@ -92,27 +99,34 @@ static int elf32_is_valid(const elf32_ehdr_t* eh, uint32_t size) {
     return 1;
 }
 
-int kef_exec_file(const char* path, kef_minimal_state_t* st) {
+static kvx_app_kind_t kvx_get_app_kind(const kvx_kef_app_t* app) {
+    if (!app) return KVX_APP_KIND_WINDOW;
+    if (app->kind == KVX_APP_KIND_CONSOLE) return KVX_APP_KIND_CONSOLE;
+    return KVX_APP_KIND_WINDOW;
+}
+
+kef_exec_result_t kef_exec_file(const char* path, kef_minimal_state_t* st) {
     uint8_t* file_data = 0;
     uint32_t file_size = 0;
+    kvx_app_kind_t app_kind;
 
-    if (!path || !st) {
+    if (!path) {
         printk("[KEF] invalid args\n");
-        return 0;
+        return KEF_EXEC_FAILED;
     }
 
     printk("[KEF] exec: %s\n", path);
 
     if (!vfs_read_all_alloc(path, &file_data, &file_size)) {
         printk("[KEF] read failed: %s\n", path);
-        return 0;
+        return KEF_EXEC_FAILED;
     }
 
     elf32_ehdr_t* eh = (elf32_ehdr_t*)file_data;
     if (!elf32_is_valid(eh, file_size)) {
         printk("[KEF] invalid ELF: %s\n", path);
         kfree(file_data);
-        return 0;
+        return KEF_EXEC_FAILED;
     }
 
     printk("[KEF] ELF ok entry=0x%X phoff=%u phnum=%u\n",
@@ -128,7 +142,7 @@ int kef_exec_file(const char* path, kef_minimal_state_t* st) {
         if (p->p_offset + p->p_filesz > file_size) {
             printk("[KEF] bad segment bounds\n");
             kfree(file_data);
-            return 0;
+            return KEF_EXEC_FAILED;
         }
 
         void* dst = (void*)(uintptr_t)p->p_vaddr;
@@ -155,6 +169,8 @@ int kef_exec_file(const char* path, kef_minimal_state_t* st) {
     int rc = entry(&g_kef_api, &app);
 
     printk("[KEF] entry returned rc=%d\n", rc);
+    app_kind = kvx_get_app_kind(&app);
+    printk("[KEF] app kind=%u\n", (unsigned)app_kind);
     printk("[KEF] ui_json ptr=%u size=%u\n",
         (uint32_t)(uintptr_t)app.ui_json,
         (uint32_t)app.ui_json_size);
@@ -165,10 +181,22 @@ int kef_exec_file(const char* path, kef_minimal_state_t* st) {
             (unsigned)p[0], (unsigned)p[1], (unsigned)p[2], (unsigned)p[3]);
     }
 
-    if (!app.ui_json || app.ui_json_size == 0) {
-        printk("[KEF] ui_json missing\n");
+    if (app_kind == KVX_APP_KIND_CONSOLE) {
+        printk("[KEF] console app completed\n");
         kfree(file_data);
-        return 0;
+        return KEF_EXEC_CONSOLE_APP;
+    }
+
+    if (!app.ui_json || app.ui_json_size == 0) {
+        printk("[KEF] window app has no ui_json\n");
+        kfree(file_data);
+        return KEF_EXEC_FAILED;
+    }
+
+    if (!st) {
+        printk("[KEF] ui_json present but runtime state missing\n");
+        kfree(file_data);
+        return KEF_EXEC_FAILED;
     }
 
     /* Embedded JSON'u geçici dosyaya döküp mevcut parser ile yükle */
@@ -177,7 +205,7 @@ int kef_exec_file(const char* path, kef_minimal_state_t* st) {
     if (!vfs_write_all(tmp_path, (const uint8_t*)app.ui_json, app.ui_json_size)) {
         printk("[KEF] failed to write temp ui json\n");
         kfree(file_data);
-        return 0;
+        return KEF_EXEC_FAILED;
     }
 
     printk("[KEF] ui json dumped to %s (%u bytes)\n",
@@ -193,7 +221,7 @@ int kef_exec_file(const char* path, kef_minimal_state_t* st) {
     if (!kef_json_load_file(tmp_path, st)) {
         printk("[KEF] json load from temp failed\n");
         kfree(file_data);
-        return 0;
+        return KEF_EXEC_FAILED;
     }
 
     st->loaded = 1;
@@ -203,5 +231,5 @@ int kef_exec_file(const char* path, kef_minimal_state_t* st) {
     wm_invalidate_window(st->window_id);
 
     kfree(file_data);
-    return 1;
+    return KEF_EXEC_WINDOW_APP;
 }

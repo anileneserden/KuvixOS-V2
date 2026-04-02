@@ -1,5 +1,7 @@
 #include <lib/commands.h>
+#include <app/app_manager.h>
 #include <kernel/printk.h>
+#include <kernel/fs/vfs.h>
 #include <lib/string.h>
 #include <stddef.h>
 #include <stdarg.h>
@@ -157,6 +159,88 @@ static int k_streq(const char* a, const char* b) {
     return a[i] == 0 && b[i] == 0;
 }
 
+static int ends_with(const char* s, const char* suffix) {
+    size_t s_len;
+    size_t suffix_len;
+
+    if (!s || !suffix) return 0;
+
+    s_len = strlen(s);
+    suffix_len = strlen(suffix);
+
+    if (suffix_len > s_len) return 0;
+
+    return strncmp(s + s_len - suffix_len, suffix, suffix_len) == 0;
+}
+
+static int looks_like_openable_path(const char* s) {
+    if (!s || !s[0]) return 0;
+
+    if (s[0] == '/' || (s[0] == '.' && s[1] == '/')) return 1;
+    if (strchr(s, '/')) return 1;
+
+    return ends_with(s, ".kef") ||
+           ends_with(s, ".ksf") ||
+           ends_with(s, ".txt") ||
+           ends_with(s, ".kth") ||
+           ends_with(s, ".html") ||
+           ends_with(s, ".htm");
+}
+
+static void build_open_path(const char* input, char* out, size_t out_sz) {
+    const char* cwd;
+
+    if (!out || out_sz == 0) return;
+
+    out[0] = '\0';
+
+    if (!input || !input[0]) return;
+
+    if (input[0] == '/') {
+        strncpy(out, input, out_sz - 1);
+        out[out_sz - 1] = '\0';
+        return;
+    }
+
+    cwd = commands_get_cwd();
+    if (!cwd || !cwd[0]) cwd = "/";
+
+    strncpy(out, cwd, out_sz - 1);
+    out[out_sz - 1] = '\0';
+
+    if (strcmp(out, "/") != 0 && out[strlen(out) - 1] != '/') {
+        strncat(out, "/", out_sz - strlen(out) - 1);
+    }
+
+    if (input[0] == '.' && input[1] == '/') {
+        strncat(out, input + 2, out_sz - strlen(out) - 1);
+        return;
+    }
+
+    strncat(out, input, out_sz - strlen(out) - 1);
+}
+
+static int try_open_path(const char* token) {
+    char resolved[256];
+    vfs_stat_t st;
+
+    if (!looks_like_openable_path(token)) return 0;
+
+    build_open_path(token, resolved, sizeof(resolved));
+
+    if (vfs_stat(resolved, &st) == 1) {
+        appmgr_open_path(resolved);
+        return 1;
+    }
+
+    if (strcmp(resolved, token) != 0 && vfs_stat(token, &st) == 1) {
+        appmgr_open_path(token);
+        return 1;
+    }
+
+    return 0;
+}
+
 // Satırı boşluklara göre argv'ye böler
 static int split_line(char* line, char** argv, int max_args) {
     int argc = 0;
@@ -190,6 +274,10 @@ void commands_execute(char* line) {
             cmd->fn(argc, argv);
             return;
         }
+    }
+
+    if (try_open_path(argv[0])) {
+        return;
     }
 
     commands_puts("Bilinmeyen komut: '");

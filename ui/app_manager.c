@@ -245,12 +245,20 @@ static bool ends_with(const char* s, const char* suf) {
 }
 
 app_t* appmgr_open_path(const char* path) {
+    char resolved[VFS_PATH_MAX];
+    const char* open_path = path;
+
     if (!path || !path[0]) return NULL;
 
-    printk("[AppMgr] open_path: '%s'\n", path);
+    resolved[0] = 0;
+    if (vfs_resolve_path(path, resolved, sizeof(resolved)) == 1 && resolved[0]) {
+        open_path = resolved;
+    }
+
+    printk("[AppMgr] open_path: '%s'\n", open_path);
 
     vfs_stat_t st;
-    if (vfs_stat(path, &st) == 1) {
+    if (vfs_stat(open_path, &st) == 1) {
         // Klasör -> File Manager
         if (st.type == VFS_T_DIR) {
             return appmgr_start_app(2);
@@ -258,18 +266,18 @@ app_t* appmgr_open_path(const char* path) {
     }
 
     // .txt -> Notepad (DOSYAYI AÇ)
-    if (ends_with(path, ".txt") || ends_with(path, ".kth")) {
+    if (ends_with(open_path, ".txt") || ends_with(open_path, ".kth")) {
         app_t* a = appmgr_start_app(3);
-        notepad_open_file(path);
+        notepad_open_file(open_path);
         return a;
     }
 
     // .ksf -> shortcut parse
-    if (ends_with(path, ".ksf")) {
+    if (ends_with(open_path, ".ksf")) {
         uint8_t buf[256];
         uint32_t sz = 0;
 
-        if (vfs_read_all(path, buf, sizeof(buf) - 1, &sz) == 1) {
+        if (vfs_read_all(open_path, buf, sizeof(buf) - 1, &sz) == 1) {
             buf[sz] = 0;
 
             printk("[AppMgr] ksf read ok: %u bytes\n", sz);
@@ -287,17 +295,17 @@ app_t* appmgr_open_path(const char* path) {
                 if (id > 0) return appmgr_start_app(id);
             }
         } else {
-            printk("[AppMgr] ksf read FAILED: %s\n", path);
+            printk("[AppMgr] ksf read FAILED: %s\n", open_path);
         }
     }
 
     // ✅ HTML -> Browser
-    if (ends_with(path, ".html") || ends_with(path, ".htm")) {
+    if (ends_with(open_path, ".html") || ends_with(open_path, ".htm")) {
         char url[VFS_PATH_MAX + 8];
         url[0] = 0;
         strncpy(url, "file:", sizeof(url) - 1);
         url[sizeof(url) - 1] = 0;
-        strncat(url, path, sizeof(url) - strlen(url) - 1);
+        strncat(url, open_path, sizeof(url) - strlen(url) - 1);
 
         // Browser app id sende kaçsa onu koy (15 demiştik)
         app_t* bapp = appmgr_start_app(15);
@@ -310,7 +318,9 @@ app_t* appmgr_open_path(const char* path) {
         return NULL;              // ✅ fail
     }
 
-    if (ends_with(path, ".kef")) {
+    if (ends_with(open_path, ".kef")) {
+        kef_exec_result_t exec_result;
+
         // KEF Minimal app başlat
         app_t* a = appmgr_start_app(19);
         if (!a || !a->user) {
@@ -320,15 +330,24 @@ app_t* appmgr_open_path(const char* path) {
 
         kef_minimal_state_t* st = (kef_minimal_state_t*)a->user;
 
-        if (!kef_exec_file(path, st)) {
+        exec_result = kef_exec_file(open_path, st);
+
+        if (exec_result == KEF_EXEC_FAILED) {
             printk("[AppMgr] KEF exec failed\n");
+            wm_close_window(a->win_id);
+            return NULL;
+        }
+
+        if (exec_result == KEF_EXEC_CONSOLE_APP) {
+            printk("[AppMgr] console KEF, host window closed\n");
+            wm_close_window(a->win_id);
             return NULL;
         }
 
         return a;
     }
 
-    printk("AppManager: bilinmeyen path: %s\n", path);
+    printk("AppManager: bilinmeyen path: %s\n", open_path);
     return NULL;
 }
 
