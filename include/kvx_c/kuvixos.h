@@ -16,6 +16,7 @@ typedef struct kvx_api {
     void (*print)(const char* s);
     int (*arg_count)(void);
     const char* (*arg_at)(int index);
+    int (*file_read_all)(const char* path, char* out, uint32_t cap, uint32_t* out_len);
 } kvx_api_t;
 
 typedef struct kvx_kef_app {

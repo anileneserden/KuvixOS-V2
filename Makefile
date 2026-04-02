@@ -17,6 +17,7 @@ SDK_KEF   = apps_kef/hello/hello.kef
 SDK_APP_LD = sdk/console/app.ld
 SDK_APP_OBJS = \
     $(BUILD)/sdk/console/runtime.o \
+    $(BUILD)/sdk/cpp/File.o \
     $(BUILD)/sdk/console/hello.o
 SEED_OUT  = kernel/system/generated_kef.c
 

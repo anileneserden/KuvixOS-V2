@@ -107,12 +107,18 @@ static const char* kef_api_arg_at(int index) {
     return g_kef_arg_storage[index];
 }
 
+static int kef_api_file_read_all(const char* path, char* out, uint32_t cap, uint32_t* out_len) {
+    if (!path || !out || cap == 0) return 0;
+    return vfs_read_all(path, (uint8_t*)out, cap, out_len);
+}
+
 static kvx_api_t g_kef_api = {
     .fill_rect = kef_api_fill_rect,
     .text = kef_api_text,
     .print = kef_api_print,
     .arg_count = kef_api_arg_count,
     .arg_at = kef_api_arg_at,
+    .file_read_all = kef_api_file_read_all,
 };
 
 /* -------------------------------------------------- */

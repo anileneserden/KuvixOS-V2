@@ -21,6 +21,11 @@ extern "C" const char* kvx_argv(int index) {
     return g_kvx_api->arg_at(index);
 }
 
+extern "C" int kvx_file_read_all(const char* path, char* out, uint32_t cap, uint32_t* out_len) {
+    if (!g_kvx_api || !g_kvx_api->file_read_all) return 0;
+    return g_kvx_api->file_read_all(path, out, cap, out_len);
+}
+
 extern "C" int main(void);
 
 extern "C" int kvx_entry(const kvx_api_t* api, kvx_kef_app_t* out_app) {
