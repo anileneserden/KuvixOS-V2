@@ -80,6 +80,8 @@ static void run_execute(const char* s) {
     if (!strcmp(s, "files"))    { appmgr_start_app(2); return; }
     if (!strcmp(s, "notepad"))  { appmgr_start_app(3); return; }
     if (!strcmp(s, "calc"))     { appmgr_start_app(6); return; }
+    if (!strcmp(s, "engine"))   { appmgr_start_app(18); return; }
+    if (!strcmp(s, "game"))     { appmgr_start_app(18); return; }
 
     // sayı girerse direkt id
     int id = 0;

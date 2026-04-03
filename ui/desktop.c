@@ -1198,6 +1198,8 @@ void ui_desktop_tick(void) {
         if (pressed & 1 || pressed & 2 || released & 1) g_need_redraw = true;
     }
 
+    appmgr_update_all();
+
     // --- RENDER VE SUNUM KARARI ---
     if (topbar_is_dirty || g_force_full_present) g_need_redraw = true; 
     

@@ -23,6 +23,7 @@
 #include <ui/apps/kuvix_store.h>
 #include <ui/apps/settings.h>
 #include <ui/apps/designer.h>
+#include <ui/apps/game_engine_window.h>
 #include <ui/apps/kbi_viewer.h>
 #include <ui/apps/controls_test.h>
 
@@ -41,6 +42,7 @@ extern const app_vtbl_t scroll_demo_vtbl;
 extern const app_vtbl_t kuvix_store_vtbl;
 extern const app_vtbl_t settings_vtbl;
 extern const app_vtbl_t designer_vtbl;
+extern const app_vtbl_t game_engine_window_vtbl;
 extern const app_vtbl_t kuvix_browser_vtbl;
 extern const app_vtbl_t kbi_viewer_vtbl;
 extern const app_vtbl_t controls_test_vtbl;
@@ -72,6 +74,7 @@ static app_definition_t app_registry[] = {
     { 12, "KuvixStore",    &kuvix_store_vtbl,     160, 120, 720, 420, sizeof(kuvix_store_t)     },
     { 13, "Settings",      &settings_vtbl,        170, 120, 640, 420, sizeof(settings_t)        },
     { 14, "Designer",      &designer_vtbl,        170, 120, 640, 420, sizeof(designer_t)        },
+    { 18, "Game Engine",   &game_engine_window_vtbl, 150, 100, 720, 480, sizeof(game_engine_window_t) },
     { 15, "Kuvix Browser", &kuvix_browser_vtbl,   160, 120, 820, 520, sizeof(kuvix_browser_t)   },
     { 16, "KBI Viewer",    &kbi_viewer_vtbl,      160, 120, 820, 520, sizeof(kbi_viewer_t)      },
     { 17, "Controls test", &controls_test_vtbl,   160, 120, 820, 520, sizeof(controls_test_t)   },
@@ -410,6 +413,30 @@ app_t* appmgr_open_path(const char* path) {
 }
 
 // ------------------------------------------------------------
+
+void appmgr_update_all(void) {
+    for (int i = 0; i < APP_MAX; i++) {
+        app_t* a = g_apps[i];
+        const ui_window_t* w;
+
+        if (!a) continue;
+        if (!a->visible) continue;
+        if (!wm_is_window_alive(a->win_id)) continue;
+        if (a->v && a->v->on_update) a->v->on_update(a);
+
+        if (!a->wants_continuous_redraw) continue;
+
+        w = wm_get_window_ptr(a->win_id);
+        if (!w) {
+            desktop_request_redraw();
+            continue;
+        }
+
+        if (w->state == WIN_MINIMIZED) continue;
+
+        desktop_damage_rect(w->x, w->y, w->w, w->h);
+    }
+}
 
 bool appmgr_any_continuous_redraw(void) {
     for (int i = 0; i < APP_MAX; i++) {

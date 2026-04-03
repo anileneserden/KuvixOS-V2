@@ -75,6 +75,7 @@ SRC_C = \
     ui/apps/demo_font.c \
     ui/apps/file_manager.c \
     ui/apps/grid_demo.c \
+    ui/apps/game_engine_window.c \
     ui/apps/kbi_viewer.c \
     ui/apps/kuvix_browser.c \
     ui/apps/kuvix_store.c \
