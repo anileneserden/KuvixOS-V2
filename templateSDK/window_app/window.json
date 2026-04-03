@@ -1,0 +1,23 @@
+{
+  "title": "Template Window",
+  "width": 800,
+  "height": 480,
+  "controls": [
+    {
+      "type": "label",
+      "id": "titleLabel",
+      "x": 24,
+      "y": 24,
+      "text": "Template Window"
+    },
+    {
+      "type": "button",
+      "id": "button1",
+      "x": 24,
+      "y": 72,
+      "w": 140,
+      "h": 32,
+      "text": "Click Me"
+    }
+  ]
+}
