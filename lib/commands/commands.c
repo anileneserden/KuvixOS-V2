@@ -1,4 +1,5 @@
 #include <lib/commands.h>
+#include <kernel/kef.h>
 #include <kernel/printk.h>
 #include <lib/string.h>
 #include <stddef.h>
@@ -200,6 +201,10 @@ void commands_execute(char* line) {
             cmd->fn(argc, argv);
             return;
         }
+    }
+
+    if (kef_try_run_command(argc, argv)) {
+        return;
     }
 
     commands_puts("Bilinmeyen komut: '");

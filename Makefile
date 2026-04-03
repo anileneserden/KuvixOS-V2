@@ -65,6 +65,7 @@ SRC_C = \
     kernel/fs/toyfs_image.c \
     kernel/fs/toyfs.c \
     kernel/fs/vfs.c \
+    kernel/kef/kef.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
     kernel/system/seed_files.c \
