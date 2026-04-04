@@ -123,6 +123,7 @@ static const sc_t k_defaults[] = {
   { "Settings.ksf",  "Settings",      13, "/system/icons/settings.kbi"  },
   { "Browser.ksf",   "Kuvix Browser", 15, "/system/icons/browser.kbi"   },
   { "Controls.ksf",  "Controls",      17, "/system/icons/controls.kbi"  },
+  { "Cube.ksf",      "3D Cube",       18, "/system/icons/controls.kbi"  },
 };
 
 static int exists_file(const char* path) {

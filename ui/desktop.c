@@ -1023,6 +1023,7 @@ void ui_desktop_handle_scancode(uint16_t sc)
 void ui_desktop_tick(void) {
     // 1. Durum Kontrolleri
     topbar_tick(); 
+    appmgr_tick();
     bool topbar_is_dirty = topbar_consume_dirty();
 
     int dx, dy, wheel = 0; 
@@ -1201,7 +1202,7 @@ void ui_desktop_tick(void) {
     // --- RENDER VE SUNUM KARARI ---
     if (topbar_is_dirty || g_force_full_present) g_need_redraw = true; 
     
-    if (!g_need_redraw && !appmgr_any_continuous_redraw() && !g_dbg_overlay) {
+    if (!g_need_redraw && !g_dbg_overlay) {
         if (had_mouse_event) cursor_overlay_step(mouse_x, mouse_y, false);
         return;
     }

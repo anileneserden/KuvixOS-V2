@@ -16,4 +16,5 @@ app_t* appmgr_get_app_by_id(int app_id);
 void   appmgr_on_window_closed(int win_id);
 
 int    appmgr_find_window_by_app_id(int app_id);
+void   appmgr_tick(void);
 bool   appmgr_any_continuous_redraw(void);

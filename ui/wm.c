@@ -711,6 +711,18 @@ uint32_t wm_get_ticks(void) {
     return g_ticks_ms;
 }
 
+void wm_invalidate_window(int win_id) {
+    if (!is_alive_id(win_id)) return;
+
+    ui_window_t* w = &g_wins[win_id].win;
+    int pad = WM_SHADOW_PADDING;
+
+    desktop_damage_rect(w->x - pad,
+                        w->y - pad,
+                        w->w + (pad * 2),
+                        w->h + (pad * 2));
+}
+
 // Aktif pencereyi kapatmak için yardımcı fonksiyon
 void wm_close_active_window(void) {
     if (g_active != -1) {

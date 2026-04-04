@@ -70,6 +70,7 @@ SRC_C = \
     kernel/system/seed_files.c \
     ui/apps/calculator.c \
     ui/apps/controls_test.c \
+    ui/apps/cube_app.c \
     ui/apps/demo.c \
     ui/apps/designer.c \
     ui/apps/demo_font.c \
@@ -139,6 +140,7 @@ SRC_C = \
     ui/wm.c \
     ui/theme_builtin.c \
     lib/commands/commands.c \
+    lib/math.c \
     lib/service/service_registry.c \
     lib/service/service.c \
     lib/shell/shell.c \

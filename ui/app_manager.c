@@ -25,6 +25,7 @@
 #include <ui/apps/designer.h>
 #include <ui/apps/kbi_viewer.h>
 #include <ui/apps/controls_test.h>
+#include <ui/apps/cube_app.h>
 
 // --- DIŞARIDAN GELEN VTABLE'LER ---
 extern const app_vtbl_t terminal_vtbl;
@@ -44,6 +45,7 @@ extern const app_vtbl_t designer_vtbl;
 extern const app_vtbl_t kuvix_browser_vtbl;
 extern const app_vtbl_t kbi_viewer_vtbl;
 extern const app_vtbl_t controls_test_vtbl;
+extern const app_vtbl_t cube_app_vtbl;
 
 // ------------------------------------------------------------
 // APP REGISTRY (Engine katmanı)
@@ -75,6 +77,7 @@ static app_definition_t app_registry[] = {
     { 15, "Kuvix Browser", &kuvix_browser_vtbl,   160, 120, 820, 520, sizeof(kuvix_browser_t)   },
     { 16, "KBI Viewer",    &kbi_viewer_vtbl,      160, 120, 820, 520, sizeof(kbi_viewer_t)      },
     { 17, "Controls test", &controls_test_vtbl,   160, 120, 820, 520, sizeof(controls_test_t)   },
+    { 18, "3D Cube",       &cube_app_vtbl,        180, 110, 520, 420, sizeof(cube_app_t)        },
     {  0, NULL,            NULL,                    0,   0,   0,   0, 0                         }
 };
 
@@ -407,6 +410,23 @@ app_t* appmgr_open_path(const char* path) {
 
     printk("AppManager: bilinmeyen path (default app yok): %s\n", path);
     return NULL;
+}
+
+// ------------------------------------------------------------
+
+void appmgr_tick(void) {
+    for (int i = 0; i < APP_MAX; i++) {
+        app_t* a = g_apps[i];
+        if (!a) continue;
+        if (!a->visible) continue;
+        if (!wm_is_window_alive(a->win_id)) continue;
+        if (a->v && a->v->on_update) {
+            a->v->on_update(a);
+        }
+        if (a->wants_continuous_redraw) {
+            wm_invalidate_window(a->win_id);
+        }
+    }
 }
 
 // ------------------------------------------------------------
