@@ -2,9 +2,11 @@
 #include <kernel/fs/kvxfs.h>
 #include <kernel/fs/toyfs.h>
 #include <kernel/drivers/ata_pio.h>
+#include <kernel/drivers/usb/xhci.h>
 #include <kernel/block/block.h>
 #include <kernel/printk.h>
 #include <kernel/serial.h>
+#include <kernel/system/removable.h>
 
 #include <kernel/user.h>   // ✅ eklendi
 
@@ -44,6 +46,17 @@ int fs_init_once(void) {
         printk("KVXFS: Disk sistemi basariyla baglandi.\n");
     } else {
         printk("KVXFS: Kalici disk bulunamadi veya formatli degil.\n");
+    }
+
+    g_removable_plugged = false;
+    if (xhci_usb_msc_ready()) {
+        blockdev_t* usb_dev = xhci_usb_msc_get_dev();
+        if (usb_dev && toyfs_mount(usb_dev)) {
+            g_removable_plugged = true;
+            printk("[FS] USB removable mounted at /removable (ToyFS).\n");
+        } else {
+            printk("[FS] USB MSC hazır ama medya ToyFS degil veya mount basarisiz.\n");
+        }
     }
 
     // ✅ 5. Kullanıcı dizinlerini hazırla (desktop değil kernel yapacak)

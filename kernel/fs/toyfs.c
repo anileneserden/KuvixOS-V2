@@ -181,16 +181,24 @@ void toyfs_close(int fd)
 */
 int toyfs_iter(const char* prefix, toyfs_iter_cb cb, void* u)
 {
-    if (!cb) return 0;
-
     const char* pfx = prefix ? prefix : "";
     if (pfx[0] == '/') pfx++;
+
+    if (!pfx[0]) {
+        if (!cb) {
+            return (g_file_count > 0) ? 1 : 0;
+        }
+    }
 
     char full[64];
 
     for (int i = 0; i < g_file_count; i++) {
         const char* name = g_files[i].name; // "assets/.."
         if (!starts_with(name, pfx)) continue;
+
+        if (!cb) {
+            return 1;
+        }
 
         full[0] = '/';
         int w = 1;

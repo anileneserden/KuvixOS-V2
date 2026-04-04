@@ -43,6 +43,7 @@ enum {
     TRB_TYPE_LINK = 6, 
     TRB_TYPE_ENABLE_SLOT_CMD = 9,
     TRB_TYPE_ADDRESS_DEVICE = 11, 
+    TRB_TYPE_CONFIGURE_ENDPOINT_CMD = 12,
     TRB_TYPE_TRANSFER_EVT = 32,
     TRB_TYPE_CMD_COMPLETION_EVT = 33,
 
@@ -92,6 +93,10 @@ typedef struct {
     uint8_t bulk_out_ep;
     uint16_t bulk_in_mps;
     uint16_t bulk_out_mps;
+    uint8_t bulk_in_dci;
+    uint8_t bulk_out_dci;
+    uint32_t block_size;
+    uint32_t block_count;
 } xhci_msc_state_t;
 
 // ---- Global Durum Değişkenleri ----
@@ -111,12 +116,56 @@ static uint32_t g_dcbaa_phys = 0;
 static uint32_t g_xhci_mmio_base = 0;
 static uint8_t  g_xhci_caplen = 0;
 static uint32_t g_xhci_max_ports = 0;
+static uint32_t g_xhci_dboff = 0;
+static uint32_t g_xhci_rtsoff = 0;
 static xhci_transfer_ring_t g_ep0_ring = {0};
 static xhci_transfer_ring_t g_msc_bulk_in_ring = {0};
 static xhci_transfer_ring_t g_msc_bulk_out_ring = {0};
 static xhci_msc_state_t g_msc = {0};
 static uint32_t g_current_slot = 0;
 static uint32_t g_current_port = 0;
+static uint32_t g_msc_tag_seed = 0x58484D53;
+static blockdev_t g_usb_msc_dev = {0};
+
+static uint32_t xhci_port_speed(uint32_t portsc);
+static int xhci_msc_bot_command(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
+    const uint8_t* cdb, uint32_t cdb_len, void* data_buf, uint32_t data_len,
+    int dir_in, uint32_t tag, usb_msc_csw_t* out_csw);
+static int xhci_msc_read10(uint32_t lba, uint16_t count, void* out);
+static int xhci_usb_msc_block_read(blockdev_t* dev, uint64_t lba, uint32_t count, void* out);
+
+static uint32_t xhci_msc_next_tag(void) {
+    g_msc_tag_seed++;
+    if (g_msc_tag_seed == 0) {
+        g_msc_tag_seed = 1;
+    }
+    return g_msc_tag_seed;
+}
+
+static uint32_t xhci_be32_to_cpu(const uint8_t* data) {
+    if (!data) {
+        return 0;
+    }
+
+    return ((uint32_t)data[0] << 24) |
+           ((uint32_t)data[1] << 16) |
+           ((uint32_t)data[2] << 8) |
+           (uint32_t)data[3];
+}
+
+static uint32_t xhci_dci_from_ep_addr(uint8_t ep_addr) {
+    uint32_t ep_num = ep_addr & 0x0F;
+    uint32_t is_in = (ep_addr & 0x80) ? 1u : 0u;
+    return ep_num ? (ep_num * 2u) + is_in : 1u;
+}
+
+static uint32_t* xhci_endpoint_context(xhci_input_context_t* input, uint32_t dci) {
+    if (!input || dci == 0 || dci > 31) {
+        return 0;
+    }
+
+    return &input->dev.ep0[0] + ((dci - 1u) * 8u);
+}
 
 // ---- Desktop.c ve Linker İçin Gerekli Fonksiyonlar ----
 
@@ -138,6 +187,14 @@ uint32_t xhci_get_portsc(uint32_t port_1based) {
 }
 
 int xhci_poll_hotplug(void) { return 0; }
+
+int xhci_usb_msc_ready(void) {
+    return g_msc.valid && g_msc.block_size != 0 && g_usb_msc_dev.read != 0;
+}
+
+blockdev_t* xhci_usb_msc_get_dev(void) {
+    return xhci_usb_msc_ready() ? &g_usb_msc_dev : 0;
+}
 
 void xhci_debug_dump(uint32_t mmio) {
     xhci_minimal_init(mmio); 
@@ -211,6 +268,21 @@ static int __attribute__((unused)) xhci_transfer_ring_push(xhci_transfer_ring_t*
     return 1;
 }
 
+static int xhci_transfer_ring_reset(xhci_transfer_ring_t* ring) {
+    if (!ring || !ring->trbs || ring->size < 2) {
+        return 0;
+    }
+
+    memset(ring->trbs, 0, sizeof(xhci_trb_t) * ring->size);
+    ring->cycle = 1;
+    ring->index = 0;
+    ring->trbs[ring->size - 1].d0 = ring->phys;
+    ring->trbs[ring->size - 1].d1 = 0;
+    ring->trbs[ring->size - 1].d2 = 0;
+    ring->trbs[ring->size - 1].d3 = (TRB_TYPE_LINK << 10) | (1u << 1) | 1u;
+    return 1;
+}
+
 static int xhci_poll_event(uint32_t mmio, uint32_t rtsoff, uint32_t spins, xhci_event_info_t* out) {
     uint32_t intr0 = mmio + (rtsoff & ~0x1F) + 0x20;
 
@@ -257,6 +329,33 @@ static int xhci_poll_cmd_completion(uint32_t mmio, uint32_t rtsoff) {
     }
 
     return -1;
+}
+
+static int xhci_poll_cmd_success(uint32_t mmio, uint32_t rtsoff, uint32_t expected_slot) {
+    xhci_event_info_t evt;
+
+    while (xhci_poll_event(mmio, rtsoff, 5000000, &evt)) {
+        if (evt.type != TRB_TYPE_CMD_COMPLETION_EVT) {
+            continue;
+        }
+
+        printk("[xHCI] Cmd Event: cc=%d slot=%d raw=%x:%x:%x:%x\n",
+            evt.completion_code,
+            evt.slot_id,
+            evt.d0,
+            evt.d1,
+            evt.d2,
+            evt.d3);
+
+        if (expected_slot && evt.slot_id != expected_slot) {
+            continue;
+        }
+
+        return (evt.completion_code == 1) ? 1 : 0;
+    }
+
+    printk("[xHCI] Command completion timeout waiting for slot=%d.\n", expected_slot);
+    return 0;
 }
 
 static int xhci_poll_transfer_completion(uint32_t mmio, uint32_t rtsoff, uint32_t slot_id, uint32_t endpoint_id) {
@@ -361,10 +460,320 @@ static int xhci_ep0_control_in(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, u
     return 1;
 }
 
+static int xhci_bulk_transfer(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t slot_id,
+    uint8_t ep_addr, xhci_transfer_ring_t* ring, void* buf, uint32_t len, int dir_in) {
+    uint32_t dci = xhci_dci_from_ep_addr(ep_addr);
+    uint32_t phys = 0;
+    void* xfer_buf = xhci_alloc_aligned(len ? len : 1, 64, &phys);
+    if (!xfer_buf) {
+        printk("[xHCI] Bulk transfer buffer allocation failed.\n");
+        return 0;
+    }
+
+    if (!dir_in && buf && len > 0) {
+        memcpy(xfer_buf, buf, len);
+    }
+
+    xhci_trb_t trb = {
+        phys,
+        0,
+        len,
+        (TRB_TYPE_NORMAL << 10) | XHCI_TRB_IOC | (dir_in ? XHCI_TRB_DIR_IN : 0)
+    };
+
+    if (!xhci_transfer_ring_push(ring, trb)) {
+        printk("[xHCI] Bulk ring push failed for dci=%d.\n", dci);
+        return 0;
+    }
+
+    xhci_ring_doorbell(mmio, dboff, slot_id, dci);
+
+    int completion = xhci_poll_transfer_completion(mmio, rtsoff, slot_id, dci);
+    if (completion != 1) {
+        printk("[xHCI] Bulk transfer failed on dci=%d cc=%d.\n", dci, completion);
+        return 0;
+    }
+
+    if (dir_in && buf && len > 0) {
+        memcpy(buf, xfer_buf, len);
+    }
+
+    return 1;
+}
+
+static int xhci_configure_msc_endpoints(uint32_t mmio, uint32_t dboff, uint32_t rtsoff) {
+    uint32_t portsc = xhci_get_portsc(g_current_port);
+    uint32_t speed = xhci_port_speed(portsc);
+    uint32_t phys_in = 0;
+    xhci_input_context_t* input = 0;
+    uint32_t* bulk_out_ctx = 0;
+    uint32_t* bulk_in_ctx = 0;
+
+    if (!g_msc.valid || !g_current_slot || !g_current_port) {
+        return 0;
+    }
+
+    g_msc.bulk_out_dci = (uint8_t)xhci_dci_from_ep_addr(g_msc.bulk_out_ep);
+    g_msc.bulk_in_dci = (uint8_t)xhci_dci_from_ep_addr(g_msc.bulk_in_ep);
+
+    if (!g_msc_bulk_out_ring.trbs || !g_msc_bulk_in_ring.trbs) {
+        printk("[xHCI] MSC bulk rings are not ready.\n");
+        return 0;
+    }
+
+    input = xhci_alloc_aligned(sizeof(xhci_input_context_t), 64, &phys_in);
+    if (!input) {
+        printk("[xHCI] Configure Endpoint input context allocation failed.\n");
+        return 0;
+    }
+
+    input->add_flags = (1u << 0) | (1u << g_msc.bulk_out_dci) | (1u << g_msc.bulk_in_dci);
+    input->dev.d[0] = (speed << 20) | (g_msc.bulk_in_dci << 27);
+    input->dev.d[1] = (g_current_port << 16);
+
+    bulk_out_ctx = xhci_endpoint_context(input, g_msc.bulk_out_dci);
+    bulk_in_ctx = xhci_endpoint_context(input, g_msc.bulk_in_dci);
+    if (!bulk_out_ctx || !bulk_in_ctx) {
+        printk("[xHCI] Failed to compute MSC endpoint contexts.\n");
+        return 0;
+    }
+
+    bulk_out_ctx[0] = 0;
+    bulk_out_ctx[1] = (3u << 1) | (2u << 3) | ((uint32_t)g_msc.bulk_out_mps << 16);
+    bulk_out_ctx[2] = g_msc_bulk_out_ring.phys | 1u;
+    bulk_out_ctx[3] = 0;
+    bulk_out_ctx[4] = g_msc.bulk_out_mps;
+
+    bulk_in_ctx[0] = 0;
+    bulk_in_ctx[1] = (3u << 1) | (6u << 3) | ((uint32_t)g_msc.bulk_in_mps << 16);
+    bulk_in_ctx[2] = g_msc_bulk_in_ring.phys | 1u;
+    bulk_in_ctx[3] = 0;
+    bulk_in_ctx[4] = g_msc.bulk_in_mps;
+
+    xhci_trb_t trb = { phys_in, 0, 0, (g_current_slot << 24) | (TRB_TYPE_CONFIGURE_ENDPOINT_CMD << 10) };
+    xhci_cmd_push(trb);
+    mmio_write32(mmio + dboff, 0, 0);
+
+    if (!xhci_poll_cmd_success(mmio, rtsoff, g_current_slot)) {
+        printk("[xHCI] Configure Endpoint failed for slot %d.\n", g_current_slot);
+        return 0;
+    }
+
+    printk("[xHCI] Configure Endpoint success: bulk_out_dci=%d bulk_in_dci=%d\n",
+        g_msc.bulk_out_dci,
+        g_msc.bulk_in_dci);
+    return 1;
+}
+
+static int xhci_msc_bot_inquiry(uint32_t mmio, uint32_t dboff, uint32_t rtsoff) {
+    uint8_t inquiry[36];
+    char vendor[9];
+    char product[17];
+    char revision[5];
+
+    memset(vendor, 0, sizeof(vendor));
+    memset(product, 0, sizeof(product));
+    memset(revision, 0, sizeof(revision));
+
+    if (!g_msc.valid || !g_msc.bulk_in_ep || !g_msc.bulk_out_ep) {
+        return 0;
+    }
+
+    memset(inquiry, 0, sizeof(inquiry));
+
+    if (!xhci_transfer_ring_reset(&g_msc_bulk_out_ring) || !xhci_transfer_ring_reset(&g_msc_bulk_in_ring)) {
+        printk("[xHCI] MSC BOT ring reset failed before INQUIRY.\n");
+        return 0;
+    }
+
+    uint8_t inquiry_cdb[6] = { 0x12, 0, 0, 0, sizeof(inquiry), 0 };
+    usb_msc_csw_t csw;
+    memset(&csw, 0, sizeof(csw));
+
+    if (!xhci_msc_bot_command(mmio, dboff, rtsoff, inquiry_cdb, sizeof(inquiry_cdb),
+            inquiry, sizeof(inquiry), 1, xhci_msc_next_tag(), &csw)) {
+        printk("[xHCI] MSC INQUIRY command failed.\n");
+        return 0;
+    }
+
+    memcpy(vendor, &inquiry[8], 8);
+    memcpy(product, &inquiry[16], 16);
+    memcpy(revision, &inquiry[32], 4);
+
+    printk("[xHCI] MSC INQUIRY ok: peripheral=%x removable=%d vendor='%s' product='%s' rev='%s' csw_status=%d residue=%x\n",
+        inquiry[0] & 0x1F,
+        (inquiry[1] & 0x80) ? 1 : 0,
+        vendor,
+        product,
+        revision,
+        csw.bCSWStatus,
+        csw.dCSWDataResidue);
+    return 1;
+}
+
+static int xhci_msc_bot_command(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
+    const uint8_t* cdb, uint32_t cdb_len, void* data_buf, uint32_t data_len,
+    int dir_in, uint32_t tag, usb_msc_csw_t* out_csw) {
+    usb_msc_cbw_t cbw;
+    usb_msc_csw_t csw;
+
+    if (!g_msc.valid || !g_msc.bulk_in_ep || !g_msc.bulk_out_ep || !cdb || cdb_len == 0 || cdb_len > 16) {
+        return 0;
+    }
+
+    memset(&cbw, 0, sizeof(cbw));
+    memset(&csw, 0, sizeof(csw));
+
+    cbw.dCBWSignature = 0x43425355;
+    cbw.dCBWTag = tag;
+    cbw.dCBWDataTransferLength = data_len;
+    cbw.bmCBWFlags = dir_in ? 0x80 : 0x00;
+    cbw.bCBWLUN = 0;
+    cbw.bCBWCBLength = (uint8_t)cdb_len;
+    memcpy(cbw.CBWCB, cdb, cdb_len);
+
+    if (!xhci_bulk_transfer(mmio, dboff, rtsoff, g_current_slot, g_msc.bulk_out_ep,
+            &g_msc_bulk_out_ring, &cbw, sizeof(cbw), 0)) {
+        printk("[xHCI] MSC CBW OUT failed for opcode=%x.\n", cdb[0]);
+        return 0;
+    }
+
+    if (data_len > 0) {
+        if (dir_in) {
+            if (!xhci_bulk_transfer(mmio, dboff, rtsoff, g_current_slot, g_msc.bulk_in_ep,
+                    &g_msc_bulk_in_ring, data_buf, data_len, 1)) {
+                printk("[xHCI] MSC data IN failed for opcode=%x.\n", cdb[0]);
+                return 0;
+            }
+        } else {
+            if (!xhci_bulk_transfer(mmio, dboff, rtsoff, g_current_slot, g_msc.bulk_out_ep,
+                    &g_msc_bulk_out_ring, data_buf, data_len, 0)) {
+                printk("[xHCI] MSC data OUT failed for opcode=%x.\n", cdb[0]);
+                return 0;
+            }
+        }
+    }
+
+    if (!xhci_bulk_transfer(mmio, dboff, rtsoff, g_current_slot, g_msc.bulk_in_ep,
+            &g_msc_bulk_in_ring, &csw, sizeof(csw), 1)) {
+        printk("[xHCI] MSC CSW IN failed for opcode=%x.\n", cdb[0]);
+        return 0;
+    }
+
+    if (csw.dCSWSignature != 0x53425355) {
+        printk("[xHCI] MSC CSW signature mismatch for opcode=%x: %x\n", cdb[0], csw.dCSWSignature);
+        return 0;
+    }
+
+    if (csw.dCSWTag != tag) {
+        printk("[xHCI] MSC CSW tag mismatch for opcode=%x: got=%x expected=%x\n", cdb[0], csw.dCSWTag, tag);
+        return 0;
+    }
+
+    if (out_csw) {
+        memcpy(out_csw, &csw, sizeof(csw));
+    }
+
+    if (csw.bCSWStatus != 0) {
+        printk("[xHCI] MSC CSW reports failure for opcode=%x status=%d residue=%x\n",
+            cdb[0],
+            csw.bCSWStatus,
+            csw.dCSWDataResidue);
+        return 0;
+    }
+
+    return 1;
+}
+
+static int xhci_msc_read_capacity10(uint32_t mmio, uint32_t dboff, uint32_t rtsoff) {
+    uint8_t capacity[8];
+    uint8_t cdb[10];
+    usb_msc_csw_t csw;
+    uint32_t last_lba = 0;
+    uint32_t block_size = 0;
+
+    if (!g_msc.valid || !g_msc.bulk_in_ep || !g_msc.bulk_out_ep) {
+        return 0;
+    }
+
+    memset(capacity, 0, sizeof(capacity));
+    memset(cdb, 0, sizeof(cdb));
+    memset(&csw, 0, sizeof(csw));
+
+    cdb[0] = 0x25;
+
+    if (!xhci_msc_bot_command(mmio, dboff, rtsoff, cdb, sizeof(cdb), capacity, sizeof(capacity), 1, xhci_msc_next_tag(), &csw)) {
+        printk("[xHCI] MSC READ CAPACITY(10) failed.\n");
+        return 0;
+    }
+
+    last_lba = xhci_be32_to_cpu(&capacity[0]);
+    block_size = xhci_be32_to_cpu(&capacity[4]);
+    g_msc.block_size = block_size;
+    g_msc.block_count = last_lba + 1u;
+
+    printk("[xHCI] MSC READ CAPACITY ok: blocks=%u block_size=%u last_lba=%u\n",
+        g_msc.block_count,
+        g_msc.block_size,
+        last_lba);
+
+    g_usb_msc_dev.sector_size = g_msc.block_size;
+    g_usb_msc_dev.user = 0;
+    g_usb_msc_dev.read = xhci_usb_msc_block_read;
+    g_usb_msc_dev.write = 0;
+
+    printk("[xHCI] USB MSC block device is ready for sector reads.\n");
+    return 1;
+}
+
+static int xhci_msc_read10(uint32_t lba, uint16_t count, void* out) {
+    uint8_t cdb[10];
+    uint32_t total_len = 0;
+
+    if (!out || !g_msc.block_size || count == 0) {
+        return 0;
+    }
+
+    if (!g_xhci_mmio_base || !g_xhci_dboff || !g_xhci_rtsoff) {
+        return 0;
+    }
+
+    memset(cdb, 0, sizeof(cdb));
+    cdb[0] = 0x28;
+    cdb[2] = (uint8_t)((lba >> 24) & 0xFF);
+    cdb[3] = (uint8_t)((lba >> 16) & 0xFF);
+    cdb[4] = (uint8_t)((lba >> 8) & 0xFF);
+    cdb[5] = (uint8_t)(lba & 0xFF);
+    cdb[7] = (uint8_t)((count >> 8) & 0xFF);
+    cdb[8] = (uint8_t)(count & 0xFF);
+
+    total_len = count * g_msc.block_size;
+    return xhci_msc_bot_command(g_xhci_mmio_base, g_xhci_dboff, g_xhci_rtsoff,
+        cdb, sizeof(cdb), out, total_len, 1, xhci_msc_next_tag(), 0);
+}
+
+static int xhci_usb_msc_block_read(blockdev_t* dev, uint64_t lba, uint32_t count, void* out) {
+    uint8_t* dst = (uint8_t*)out;
+
+    if (!dev || dev != &g_usb_msc_dev || !out || count == 0) {
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < count; i++) {
+        if (!xhci_msc_read10((uint32_t)(lba + i), 1, dst + (i * g_msc.block_size))) {
+            printk("[xHCI] USB MSC sector read failed at lba=%u.\n", (uint32_t)(lba + i));
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 static void xhci_msc_reset_state(void) {
     memset(&g_msc, 0, sizeof(g_msc));
     memset(&g_msc_bulk_in_ring, 0, sizeof(g_msc_bulk_in_ring));
     memset(&g_msc_bulk_out_ring, 0, sizeof(g_msc_bulk_out_ring));
+    memset(&g_usb_msc_dev, 0, sizeof(g_usb_msc_dev));
 }
 
 static void xhci_msc_prepare_bot(void) {
@@ -392,7 +801,6 @@ static void xhci_msc_prepare_bot(void) {
         g_msc.bulk_in_mps,
         g_msc.bulk_out_ep,
         g_msc.bulk_out_mps);
-    printk("[xHCI] MSC next step: Configure Endpoint + CBW/CSW bulk transfers.\n");
 }
 
 static uint8_t xhci_usb_ep_transfer_type(const usb_endpoint_descriptor_t* ep) {
@@ -634,6 +1042,8 @@ static int xhci_controller_init(uint32_t mmio, uint32_t* out_dboff, uint32_t* ou
 
     if (out_dboff) *out_dboff = dboff;
     if (out_rtsoff) *out_rtsoff = rtsoff;
+    g_xhci_dboff = dboff;
+    g_xhci_rtsoff = rtsoff;
 
     // 1. Controller Reset
     mmio_write32(op, 0, mmio_read32(op, 0) & ~1u); // Stop
@@ -767,7 +1177,13 @@ static int xhci_address_device(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, u
         if (!xhci_ep0_get_device_descriptor(mmio, dboff, rtsoff, slot, &device_desc)) {
             printk("[xHCI] Device descriptor read did not complete yet.\n");
         } else {
-            xhci_ep0_get_configuration_and_classify(mmio, dboff, rtsoff, slot, &device_desc);
+            if (xhci_ep0_get_configuration_and_classify(mmio, dboff, rtsoff, slot, &device_desc) && g_msc.valid) {
+                if (xhci_configure_msc_endpoints(mmio, dboff, rtsoff)) {
+                    if (xhci_msc_bot_inquiry(mmio, dboff, rtsoff)) {
+                        xhci_msc_read_capacity10(mmio, dboff, rtsoff);
+                    }
+                }
+            }
         }
         return 1;
     }

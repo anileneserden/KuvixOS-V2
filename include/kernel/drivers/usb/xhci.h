@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <kernel/block/blockdev.h>
 
 void xhci_debug_dump(uint32_t mmio);
 void xhci_minimal_init(uint32_t mmio);
@@ -14,3 +15,6 @@ int xhci_poll_hotplug(void);
 void xhci_set_global(uint32_t mmio);
 uint32_t xhci_get_portsc(uint32_t port);
 uint32_t xhci_get_max_ports(void);
+
+int xhci_usb_msc_ready(void);
+blockdev_t* xhci_usb_msc_get_dev(void);
