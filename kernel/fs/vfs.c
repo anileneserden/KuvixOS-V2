@@ -2,6 +2,8 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/ramfs.h>
 #include <kernel/fs/kvxfs.h>
+#include <kernel/fs/fat.h>
+#include <kernel/drivers/usb/xhci.h>
 #include <lib/string.h>
 
 // toyfs header:
@@ -10,7 +12,7 @@
 static void path_pop(char *path);
 
 // ----------------------------------------------------------
-// Removable mount view: /removable -> ToyFS root
+// Removable mount view: /removable -> ToyFS root or FAT root
 // ----------------------------------------------------------
 #define REMOUNT_PREFIX "/removable"
 #define REMOUNT_PREFIX_LEN 10
@@ -50,6 +52,12 @@ typedef struct {
     void* u;
 } rem_wrap_t;
 
+typedef struct {
+    const char* base;
+    int (*cb)(const char* path, uint32_t size, void* u);
+    void* u;
+} rem_fat_wrap_t;
+
 // ToyFS path -> /removable + toy_path
 static int rem_cb_prefix(const char* toy_path, uint32_t size, void* u2) {
     rem_wrap_t* w = (rem_wrap_t*)u2;
@@ -68,6 +76,41 @@ static int rem_cb_prefix(const char* toy_path, uint32_t size, void* u2) {
         strncat(outp, toy_path, sizeof(outp) - strlen(outp) - 1);
     }
 
+    return w->cb(outp, size, w->u);
+}
+
+static int removable_has_toyfs(const char* real_path) {
+    if (!real_path) return 0;
+    return toyfs_iter(real_path, 0, 0) ? 1 : 0;
+}
+
+static blockdev_t* removable_get_fat_dev(void) {
+    blockdev_t* dev = xhci_usb_msc_get_dev();
+    fat_info_t info;
+
+    if (!dev) return 0;
+    if (!fat_probe_dev(dev, &info)) return 0;
+    return dev;
+}
+
+static int rem_fat_cb_prefix(const char* name, uint32_t size, int is_dir, void* u2) {
+    rem_fat_wrap_t* w = (rem_fat_wrap_t*)u2;
+    char outp[VFS_PATH_MAX];
+
+    (void)is_dir;
+
+    if (!w || !w->cb || !w->base || !name) return 0;
+
+    outp[0] = 0;
+    copy_str(outp, w->base, sizeof(outp));
+
+    if (strcmp(outp, REMOUNT_PREFIX) != 0) {
+        strncat(outp, "/", sizeof(outp) - strlen(outp) - 1);
+    } else {
+        strncat(outp, "/", sizeof(outp) - strlen(outp) - 1);
+    }
+
+    strncat(outp, name, sizeof(outp) - strlen(outp) - 1);
     return w->cb(outp, size, w->u);
 }
 
@@ -106,7 +149,8 @@ static void path_pop(char* path)
 
 typedef enum {
     BACK_RAM = 1,
-    BACK_TOY = 2
+    BACK_TOY = 2,
+    BACK_FAT = 3
 } vfs_backend_t;
 
 struct vfs_file {
@@ -182,27 +226,38 @@ int vfs_open(const char* path, int flags, vfs_file_t** out) {
     if (!path || !out) return 0;
 
     // ------------------------------------------------------
-    // /removable -> ToyFS only (read-only mount view)
+    // /removable -> read-only removable mount view
     // ------------------------------------------------------
     if (is_removable_path(path)) {
         int want_write2 = (flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR);
+        char real[VFS_PATH_MAX];
+
         if (want_write2) return 0;
 
-        char real[VFS_PATH_MAX];
         removable_to_toy(path, real, sizeof(real));
 
-        int th;
-        if (!toy_open_ro(real, &th)) return 0;
+        if (removable_has_toyfs(real)) {
+            int th;
 
-        struct vfs_file* f = alloc_slot();
-        if (!f) { toy_close(th); return 0; }
+            if (!toy_open_ro(real, &th)) return 0;
 
-        f->back  = BACK_TOY;
-        f->flags = flags;
-        f->rfd   = -1;
-        f->th    = th;
-        *out = f;
-        return 1;
+            struct vfs_file* f = alloc_slot();
+            if (!f) { toy_close(th); return 0; }
+
+            f->back  = BACK_TOY;
+            f->flags = flags;
+            f->rfd   = -1;
+            f->th    = th;
+            *out = f;
+            return 1;
+        }
+
+        if (removable_get_fat_dev()) {
+            // FAT browse exists, but file open/read adapter is not wired yet.
+            return 0;
+        }
+
+        return 0;
     }
 
     // write -> always RAM
@@ -282,24 +337,41 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
     if (!st) return 0;
     st->type = 0; st->size = 0; st->backend = 0;
 
-    // /removable -> toyfs view
+    // /removable -> removable view
     if (is_removable_path(path)) {
         char real[VFS_PATH_MAX];
+        blockdev_t* fat_dev = 0;
+        uint32_t fat_size = 0;
+        int fat_is_dir = 0;
+
         removable_to_toy(path, real, sizeof(real));
 
-        if (toyfs_iter(real, 0, 0)) {
-            st->type = VFS_T_DIR;
-            st->backend = 2;
+        if (removable_has_toyfs(real)) {
+            if (toyfs_iter(real, 0, 0)) {
+                st->type = VFS_T_DIR;
+                st->backend = 2;
+                return 1;
+            }
+
+            {
+                int h = toyfs_open(real);
+                if (h >= 0) {
+                    toyfs_close(h);
+                    st->type = VFS_T_FILE;
+                    st->backend = 2;
+                    return 1;
+                }
+            }
+        }
+
+        fat_dev = removable_get_fat_dev();
+        if (fat_dev && fat_stat_path(fat_dev, real, &fat_size, &fat_is_dir)) {
+            st->type = fat_is_dir ? VFS_T_DIR : VFS_T_FILE;
+            st->size = fat_size;
+            st->backend = 4;
             return 1;
         }
 
-        int h = toyfs_open(real);
-        if (h >= 0) {
-            toyfs_close(h);
-            st->type = VFS_T_FILE;
-            st->backend = 2;
-            return 1;
-        }
         return 0;
     }
 
@@ -357,8 +429,27 @@ int vfs_set_cwd(const char* path)
         return 0;
 
     // dizin mi kontrol et
-    if (!ramfs_is_dir(new_cwd) && !toyfs_iter(new_cwd, 0, 0))
-        return 0;
+    if (!ramfs_is_dir(new_cwd)) {
+        if (is_removable_path(new_cwd)) {
+            char real[VFS_PATH_MAX];
+            blockdev_t* fat_dev = 0;
+            uint32_t fat_size = 0;
+            int fat_is_dir = 0;
+
+            removable_to_toy(new_cwd, real, sizeof(real));
+
+            if (!removable_has_toyfs(real)) {
+                fat_dev = removable_get_fat_dev();
+                if (!fat_dev || !fat_stat_path(fat_dev, real, &fat_size, &fat_is_dir) || !fat_is_dir) {
+                    return 0;
+                }
+            } else if (!toyfs_iter(real, 0, 0)) {
+                return 0;
+            }
+        } else if (!toyfs_iter(new_cwd, 0, 0)) {
+            return 0;
+        }
+    }
 
     strcpy(vfs_cwd, new_cwd);
     return 1;
@@ -443,17 +534,36 @@ int vfs_list(const char* dir_prefix,
     // /removable view
     if (is_removable_path(resolved)) {
         char real[VFS_PATH_MAX];
+        blockdev_t* fat_dev = 0;
+
         removable_to_toy(resolved, real, sizeof(real));
 
-        // sadece kontrol (var mı)
-        if (!cb) {
-            if (toyfs_iter(real, 0, 0)) return 1;
-            return 0;
+        if (removable_has_toyfs(real)) {
+            if (!cb) {
+                if (toyfs_iter(real, 0, 0)) return 1;
+                return 0;
+            }
+
+            {
+                rem_wrap_t rw = { cb, u };
+                toyfs_iter(real, rem_cb_prefix, &rw);
+                return 1;
+            }
         }
 
-        rem_wrap_t rw = { cb, u };
-        toyfs_iter(real, rem_cb_prefix, &rw);
-        return 1;
+        fat_dev = removable_get_fat_dev();
+        if (!fat_dev) return 0;
+
+        if (!cb) {
+            uint32_t fat_size = 0;
+            int fat_is_dir = 0;
+            return fat_stat_path(fat_dev, real, &fat_size, &fat_is_dir) && fat_is_dir;
+        }
+
+        {
+            rem_fat_wrap_t fw = { resolved, cb, u };
+            return fat_iter_path(fat_dev, real, rem_fat_cb_prefix, &fw);
+        }
     }
 
     // sadece kontrol (cd için)

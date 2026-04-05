@@ -10,7 +10,7 @@
 typedef struct {
     int      type;     // VFS_T_FILE veya VFS_T_DIR
     uint32_t size;
-    int      backend;  // 1: RAM, 2: TOY, 3: KVX
+    int      backend;  // 1: RAM, 2: TOY, 3: KVX, 4: FAT
 } vfs_stat_t;
 
 // --- Mevcut yapın ---

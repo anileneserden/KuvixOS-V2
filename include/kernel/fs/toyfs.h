@@ -5,6 +5,7 @@
 typedef int (*toyfs_iter_cb)(const char* path, uint32_t size, void* u);
 
 int toyfs_mount(blockdev_t* dev);
+void toyfs_unmount(void);
 int toyfs_open(const char* path);
 int toyfs_read(int fd, void* buf, uint32_t n);
 void toyfs_close(int fd);

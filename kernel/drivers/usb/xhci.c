@@ -124,6 +124,7 @@ static uint32_t g_dcbaa_phys = 0;
 static uint32_t g_xhci_mmio_base = 0;
 static uint8_t  g_xhci_caplen = 0;
 static uint32_t g_xhci_max_ports = 0;
+static uint8_t  g_xhci_port_connected[256] = {0};
 static uint32_t g_xhci_dboff = 0;
 static uint32_t g_xhci_rtsoff = 0;
 static xhci_transfer_ring_t g_ep0_ring = {0};
@@ -137,6 +138,12 @@ static uint8_t g_msc_recovery_active = 0;
 static blockdev_t g_usb_msc_dev = {0};
 
 static uint32_t xhci_port_speed(uint32_t portsc);
+static void xhci_snapshot_port_states(void);
+static int xhci_hotplug_enumerate_port(uint32_t port_id);
+static void xhci_hotplug_handle_disconnect(uint32_t port_id);
+static int xhci_reset_port(uint32_t port_1based);
+static int xhci_enable_slot(uint32_t mmio, uint32_t dboff, uint32_t rtsoff);
+static int xhci_address_device(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t port_id, uint32_t slot);
 static int xhci_msc_request_sense(uint32_t mmio, uint32_t dboff, uint32_t rtsoff);
 static int xhci_msc_bot_command(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
     const uint8_t* cdb, uint32_t cdb_len, void* data_buf, uint32_t data_len,
@@ -225,7 +232,50 @@ uint32_t xhci_get_portsc(uint32_t port_1based) {
     return mmio_read32(op, 0x400 + (port_1based - 1) * 0x10);
 }
 
-int xhci_poll_hotplug(void) { return 0; }
+int xhci_poll_hotplug(void) {
+    if (!g_xhci_mmio_base || g_xhci_max_ports == 0) {
+        return 0;
+    }
+
+    uint32_t op = g_xhci_mmio_base + g_xhci_caplen;
+
+    for (uint32_t port = 1; port <= g_xhci_max_ports && port < 256; port++) {
+        uint32_t off = 0x400 + (port - 1) * 0x10;
+        uint32_t portsc = mmio_read32(op, off);
+        uint8_t connected = (portsc & XHCI_PORTSC_CCS) ? 1u : 0u;
+        uint8_t previous = g_xhci_port_connected[port];
+        uint32_t changed = portsc & XHCI_PORTSC_CHANGE_BITS;
+
+        if (!changed && connected == previous) {
+            continue;
+        }
+
+        if (changed) {
+            mmio_write32(op, off, portsc | changed);
+        }
+
+        if (connected == previous) {
+            continue;
+        }
+
+        g_xhci_port_connected[port] = connected;
+
+        if (connected) {
+            xhci_hotplug_enumerate_port(port);
+            printk("[xHCI] Hotplug connect detected on port %d (PED=%d speed=%d).\n",
+                port,
+                (portsc & XHCI_PORTSC_PED) ? 1 : 0,
+                xhci_port_speed(portsc));
+            return (int)port;
+        }
+
+        xhci_hotplug_handle_disconnect(port);
+        printk("[xHCI] Hotplug disconnect detected on port %d.\n", port);
+        return -(int)port;
+    }
+
+    return 0;
+}
 
 int xhci_usb_msc_ready(void) {
     return g_msc.valid && g_msc.block_size != 0 && g_usb_msc_dev.read != 0;
@@ -1231,6 +1281,18 @@ static uint32_t xhci_port_speed(uint32_t portsc) {
     return (portsc & XHCI_PORTSC_SPEED_MASK) >> XHCI_PORTSC_SPEED_SHIFT;
 }
 
+static void xhci_snapshot_port_states(void) {
+    memset(g_xhci_port_connected, 0, sizeof(g_xhci_port_connected));
+
+    if (!g_xhci_mmio_base || g_xhci_max_ports == 0) {
+        return;
+    }
+
+    for (uint32_t port = 1; port <= g_xhci_max_ports && port < 256; port++) {
+        g_xhci_port_connected[port] = (xhci_get_portsc(port) & XHCI_PORTSC_CCS) ? 1u : 0u;
+    }
+}
+
 static uint32_t xhci_ep0_max_packet_size(uint32_t speed) {
     switch (speed) {
         case 1: return 8;   // Full-speed fallback
@@ -1254,6 +1316,40 @@ static int xhci_find_connected_port(void) {
     }
 
     return 0;
+}
+
+static int xhci_hotplug_enumerate_port(uint32_t port_id) {
+    int slot = 0;
+
+    if (!g_xhci_mmio_base || !g_xhci_dboff || !g_xhci_rtsoff || port_id == 0) {
+        return 0;
+    }
+
+    if (!xhci_reset_port(port_id)) {
+        printk("[xHCI] Hotplug port %d reset failed.\n", port_id);
+        return 0;
+    }
+
+    slot = xhci_enable_slot(g_xhci_mmio_base, g_xhci_dboff, g_xhci_rtsoff);
+    if (slot <= 0) {
+        printk("[xHCI] Hotplug enable slot failed on port %d (result=%d).\n", port_id, slot);
+        return 0;
+    }
+
+    if (!xhci_address_device(g_xhci_mmio_base, g_xhci_dboff, g_xhci_rtsoff, port_id, (uint32_t)slot)) {
+        printk("[xHCI] Hotplug address device failed on port %d.\n", port_id);
+        return 0;
+    }
+
+    return 1;
+}
+
+static void xhci_hotplug_handle_disconnect(uint32_t port_id) {
+    if (g_current_port == port_id) {
+        xhci_msc_reset_state();
+        g_current_slot = 0;
+        g_current_port = 0;
+    }
 }
 
 static int xhci_reset_port(uint32_t port_1based) {
@@ -1460,11 +1556,14 @@ void xhci_minimal_init(uint32_t mmio) {
 
     printk("[xHCI] Starting Minimal Init at %x...\n", mmio);
     xhci_set_global(mmio);
+    xhci_snapshot_port_states();
 
     if (!xhci_controller_init(mmio, &dboff, &rtsoff)) {
         printk("[xHCI] Controller init failed.\n");
         return;
     }
+
+    xhci_snapshot_port_states();
 
     port_id = xhci_find_connected_port();
     if (port_id <= 0) {

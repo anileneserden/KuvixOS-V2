@@ -16,6 +16,7 @@
 #include <ui/topbar.h>
 #include <ui/context_menu.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/fs/fs_init.h>
 #include <ui/apps/notepad.h>
 #include <ui/apps/kuvix_browser.h>
 
@@ -1151,11 +1152,14 @@ void ui_desktop_tick(void) {
             int port = (ev > 0) ? ev : -ev;
 
             if (ev > 0) {
-                g_removable_plugged = true; // şimdilik tek flag
-                notification_show("USB baglandi", 180);
+                if (fs_try_mount_removable_now()) {
+                    notification_show("USB baglandi", 180);
+                } else {
+                    notification_show("USB algilandi", 180);
+                }
                 printk("[USB] connected on port %d\n", port);
             } else {
-                g_removable_plugged = false;
+                fs_detach_removable_now();
                 notification_show("USB cikarildi", 180);
                 printk("[USB] disconnected on port %d\n", port);
             }

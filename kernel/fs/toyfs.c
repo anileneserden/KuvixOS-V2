@@ -107,6 +107,13 @@ int toyfs_mount(blockdev_t* dev)
     return 1;
 }
 
+void toyfs_unmount(void)
+{
+    g_dev = 0;
+    g_file_count = 0;
+    for (int i = 0; i < MAX_FD; i++) g_fd[i].used = 0;
+}
+
 int toyfs_open(const char* path)
 {
     if (!g_dev || !path) return -1;
