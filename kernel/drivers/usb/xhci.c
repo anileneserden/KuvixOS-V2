@@ -63,6 +63,13 @@ enum {
     XHCI_TRB_TRT_NONE = 0u << 16,
     XHCI_TRB_TRT_OUT  = 2u << 16,
     XHCI_TRB_TRT_IN   = 3u << 16,
+
+    XHCI_CC_SUCCESS = 1,
+    XHCI_CC_BABBLE_DETECTED = 3,
+    XHCI_CC_USB_TRANSACTION_ERROR = 4,
+    XHCI_CC_TRB_ERROR = 5,
+    XHCI_CC_STALL_ERROR = 6,
+    XHCI_CC_SHORT_PACKET = 13,
 };
 
 typedef struct {
@@ -86,6 +93,7 @@ typedef struct {
 
 typedef struct {
     uint8_t valid;
+    uint8_t configuration_value;
     uint8_t interface_number;
     uint8_t subclass;
     uint8_t protocol;
@@ -125,9 +133,11 @@ static xhci_msc_state_t g_msc = {0};
 static uint32_t g_current_slot = 0;
 static uint32_t g_current_port = 0;
 static uint32_t g_msc_tag_seed = 0x58484D53;
+static uint8_t g_msc_recovery_active = 0;
 static blockdev_t g_usb_msc_dev = {0};
 
 static uint32_t xhci_port_speed(uint32_t portsc);
+static int xhci_msc_request_sense(uint32_t mmio, uint32_t dboff, uint32_t rtsoff);
 static int xhci_msc_bot_command(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
     const uint8_t* cdb, uint32_t cdb_len, void* data_buf, uint32_t data_len,
     int dir_in, uint32_t tag, usb_msc_csw_t* out_csw);
@@ -151,6 +161,35 @@ static uint32_t xhci_be32_to_cpu(const uint8_t* data) {
            ((uint32_t)data[1] << 16) |
            ((uint32_t)data[2] << 8) |
            (uint32_t)data[3];
+}
+
+static int xhci_usb_ep_is_msc_bulk(uint8_t ep_addr) {
+    return ep_addr == g_msc.bulk_in_ep || ep_addr == g_msc.bulk_out_ep;
+}
+
+static const char* xhci_completion_code_name(int completion_code) {
+    switch (completion_code) {
+        case -1: return "timeout";
+        case XHCI_CC_SUCCESS: return "success";
+        case XHCI_CC_BABBLE_DETECTED: return "babble";
+        case XHCI_CC_USB_TRANSACTION_ERROR: return "usb-transaction";
+        case XHCI_CC_TRB_ERROR: return "trb-error";
+        case XHCI_CC_STALL_ERROR: return "stall";
+        case XHCI_CC_SHORT_PACKET: return "short-packet";
+        default: return "other";
+    }
+}
+
+static int xhci_msc_should_recover_completion(int completion_code) {
+    switch (completion_code) {
+        case -1:
+        case XHCI_CC_BABBLE_DETECTED:
+        case XHCI_CC_USB_TRANSACTION_ERROR:
+        case XHCI_CC_STALL_ERROR:
+            return 1;
+        default:
+            return 0;
+    }
 }
 
 static uint32_t xhci_dci_from_ep_addr(uint8_t ep_addr) {
@@ -395,13 +434,17 @@ static void xhci_ring_doorbell(uint32_t mmio, uint32_t dboff, uint32_t slot_id, 
     mmio_write32(mmio + dboff, slot_id * 4, target & 0xFF);
 }
 
-static int xhci_ep0_control_in(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t slot_id,
-    const usb_setup_packet_t* setup, void* out_buf, uint32_t len) {
+static int xhci_ep0_control_transfer(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t slot_id,
+    const usb_setup_packet_t* setup, void* data_buf, uint32_t len, int dir_in) {
     uint32_t phys_buf = 0;
     uint8_t* data = xhci_alloc_aligned(len ? len : 1, 64, &phys_buf);
     if (!data) {
         printk("[xHCI] EP0 control buffer allocation failed.\n");
         return 0;
+    }
+
+    if (!dir_in && data_buf && len > 0) {
+        memcpy(data, data_buf, len);
     }
 
     uint32_t setup_d0 = (uint32_t)setup->bmRequestType |
@@ -415,19 +458,19 @@ static int xhci_ep0_control_in(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, u
         setup_d1,
         8,
         (TRB_TYPE_SETUP_STAGE << 10) | XHCI_TRB_IDT |
-            ((len > 0) ? (XHCI_TRB_CHAIN | XHCI_TRB_TRT_IN) : XHCI_TRB_TRT_NONE)
+            ((len > 0) ? (XHCI_TRB_CHAIN | (dir_in ? XHCI_TRB_TRT_IN : XHCI_TRB_TRT_OUT)) : XHCI_TRB_TRT_NONE)
     };
     xhci_trb_t data_trb = {
         phys_buf,
         0,
         len,
-        (TRB_TYPE_DATA_STAGE << 10) | XHCI_TRB_CHAIN | XHCI_TRB_DIR_IN
+        (TRB_TYPE_DATA_STAGE << 10) | XHCI_TRB_CHAIN | (dir_in ? XHCI_TRB_DIR_IN : 0)
     };
     xhci_trb_t status_trb = {
         0,
         0,
         0,
-        (TRB_TYPE_STATUS_STAGE << 10) | XHCI_TRB_IOC
+        (TRB_TYPE_STATUS_STAGE << 10) | XHCI_TRB_IOC | ((len == 0 || !dir_in) ? XHCI_TRB_DIR_IN : 0)
     };
 
     if (!xhci_transfer_ring_push(&g_ep0_ring, setup_trb)) {
@@ -453,10 +496,107 @@ static int xhci_ep0_control_in(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, u
         return 0;
     }
 
-    if (out_buf && len > 0) {
-        memcpy(out_buf, data, len);
+    if (dir_in && data_buf && len > 0) {
+        memcpy(data_buf, data, len);
     }
 
+    return 1;
+}
+
+static int xhci_ep0_control_in(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t slot_id,
+    const usb_setup_packet_t* setup, void* out_buf, uint32_t len) {
+    return xhci_ep0_control_transfer(mmio, dboff, rtsoff, slot_id, setup, out_buf, len, 1);
+}
+
+static int xhci_ep0_control_out(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t slot_id,
+    const usb_setup_packet_t* setup, const void* data_buf, uint32_t len) {
+    return xhci_ep0_control_transfer(mmio, dboff, rtsoff, slot_id, setup, (void*)data_buf, len, 0);
+}
+
+static int xhci_ep0_clear_endpoint_halt(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
+    uint32_t slot_id, uint8_t ep_addr) {
+    usb_setup_packet_t setup = {
+        .bmRequestType = 0x02,
+        .bRequest = USB_REQ_CLEAR_FEATURE,
+        .wValue = USB_FEAT_ENDPOINT_HALT,
+        .wIndex = ep_addr,
+        .wLength = 0,
+    };
+
+    if (!ep_addr) {
+        return 0;
+    }
+
+    if (!xhci_ep0_control_out(mmio, dboff, rtsoff, slot_id, &setup, 0, 0)) {
+        printk("[xHCI] CLEAR_FEATURE(ENDPOINT_HALT) failed for ep=0x%x.\n", ep_addr);
+        return 0;
+    }
+
+    printk("[xHCI] CLEAR_FEATURE(ENDPOINT_HALT) ok for ep=0x%x.\n", ep_addr);
+    return 1;
+}
+
+static int xhci_msc_bulk_only_reset(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint32_t slot_id) {
+    usb_setup_packet_t setup = {
+        .bmRequestType = 0x21,
+        .bRequest = USB_MSC_REQ_BULK_ONLY_RESET,
+        .wValue = 0,
+        .wIndex = g_msc.interface_number,
+        .wLength = 0,
+    };
+
+    if (!g_msc.valid) {
+        return 0;
+    }
+
+    if (!xhci_ep0_control_out(mmio, dboff, rtsoff, slot_id, &setup, 0, 0)) {
+        printk("[xHCI] MSC Bulk-Only Reset failed for if=%d.\n", g_msc.interface_number);
+        return 0;
+    }
+
+    printk("[xHCI] MSC Bulk-Only Reset ok for if=%d.\n", g_msc.interface_number);
+    return 1;
+}
+
+static int xhci_msc_recover_bulk_error(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
+    uint32_t slot_id, uint8_t failed_ep_addr, int completion_code) {
+    if (!g_msc.valid || !slot_id || !xhci_usb_ep_is_msc_bulk(failed_ep_addr) || g_msc_recovery_active) {
+        return 0;
+    }
+
+    if (!xhci_msc_should_recover_completion(completion_code)) {
+        printk("[xHCI] Skipping MSC BOT recovery for ep=0x%x cc=%d (%s).\n",
+            failed_ep_addr,
+            completion_code,
+            xhci_completion_code_name(completion_code));
+        return 0;
+    }
+
+    printk("[xHCI] Starting MSC BOT recovery for ep=0x%x cc=%d (%s).\n",
+        failed_ep_addr,
+        completion_code,
+        xhci_completion_code_name(completion_code));
+
+    g_msc_recovery_active = 1;
+
+    if (!xhci_msc_bulk_only_reset(mmio, dboff, rtsoff, slot_id)) {
+        printk("[xHCI] MSC BOT recovery aborted: bulk-only reset failed.\n");
+        g_msc_recovery_active = 0;
+        return 0;
+    }
+
+    xhci_ep0_clear_endpoint_halt(mmio, dboff, rtsoff, slot_id, g_msc.bulk_in_ep);
+    xhci_ep0_clear_endpoint_halt(mmio, dboff, rtsoff, slot_id, g_msc.bulk_out_ep);
+
+    xhci_transfer_ring_reset(&g_msc_bulk_in_ring);
+    xhci_transfer_ring_reset(&g_msc_bulk_out_ring);
+
+    if (!xhci_msc_request_sense(mmio, dboff, rtsoff)) {
+        printk("[xHCI] REQUEST SENSE after MSC BOT recovery did not complete.\n");
+    }
+
+    printk("[xHCI] MSC BOT recovery complete. Rings reset for bulk endpoints.\n");
+    g_msc_recovery_active = 0;
     return 1;
 }
 
@@ -465,6 +605,7 @@ static int xhci_bulk_transfer(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, ui
     uint32_t dci = xhci_dci_from_ep_addr(ep_addr);
     uint32_t phys = 0;
     void* xfer_buf = xhci_alloc_aligned(len ? len : 1, 64, &phys);
+    int retried = 0;
     if (!xfer_buf) {
         printk("[xHCI] Bulk transfer buffer allocation failed.\n");
         return 0;
@@ -474,24 +615,36 @@ static int xhci_bulk_transfer(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, ui
         memcpy(xfer_buf, buf, len);
     }
 
-    xhci_trb_t trb = {
-        phys,
-        0,
-        len,
-        (TRB_TYPE_NORMAL << 10) | XHCI_TRB_IOC | (dir_in ? XHCI_TRB_DIR_IN : 0)
-    };
+    while (1) {
+        xhci_trb_t trb = {
+            phys,
+            0,
+            len,
+            (TRB_TYPE_NORMAL << 10) | XHCI_TRB_IOC | (dir_in ? XHCI_TRB_DIR_IN : 0)
+        };
 
-    if (!xhci_transfer_ring_push(ring, trb)) {
-        printk("[xHCI] Bulk ring push failed for dci=%d.\n", dci);
-        return 0;
-    }
+        if (!xhci_transfer_ring_push(ring, trb)) {
+            printk("[xHCI] Bulk ring push failed for dci=%d.\n", dci);
+            return 0;
+        }
 
-    xhci_ring_doorbell(mmio, dboff, slot_id, dci);
+        xhci_ring_doorbell(mmio, dboff, slot_id, dci);
 
-    int completion = xhci_poll_transfer_completion(mmio, rtsoff, slot_id, dci);
-    if (completion != 1) {
-        printk("[xHCI] Bulk transfer failed on dci=%d cc=%d.\n", dci, completion);
-        return 0;
+        int completion = xhci_poll_transfer_completion(mmio, rtsoff, slot_id, dci);
+        if (completion == XHCI_CC_SUCCESS) {
+            break;
+        }
+
+        printk("[xHCI] Bulk transfer failed on dci=%d cc=%d (%s).\n",
+            dci,
+            completion,
+            xhci_completion_code_name(completion));
+        if (retried || !xhci_msc_recover_bulk_error(mmio, dboff, rtsoff, slot_id, ep_addr, completion)) {
+            return 0;
+        }
+
+        retried = 1;
+        printk("[xHCI] Retrying bulk transfer once after MSC BOT recovery on ep=0x%x.\n", ep_addr);
     }
 
     if (dir_in && buf && len > 0) {
@@ -611,6 +764,81 @@ static int xhci_msc_bot_inquiry(uint32_t mmio, uint32_t dboff, uint32_t rtsoff) 
     return 1;
 }
 
+static int xhci_msc_test_unit_ready(uint32_t mmio, uint32_t dboff, uint32_t rtsoff) {
+    uint8_t cdb[6];
+    usb_msc_csw_t csw;
+
+    if (!g_msc.valid || !g_msc.bulk_in_ep || !g_msc.bulk_out_ep) {
+        return 0;
+    }
+
+    memset(cdb, 0, sizeof(cdb));
+    memset(&csw, 0, sizeof(csw));
+
+    cdb[0] = 0x00;
+
+    if (!xhci_msc_bot_command(mmio, dboff, rtsoff, cdb, sizeof(cdb), 0, 0, 0, xhci_msc_next_tag(), &csw)) {
+        printk("[xHCI] MSC TEST UNIT READY failed.\n");
+        return 0;
+    }
+
+    printk("[xHCI] MSC TEST UNIT READY ok: csw_status=%d residue=%x\n",
+        csw.bCSWStatus,
+        csw.dCSWDataResidue);
+    return 1;
+}
+
+static int xhci_msc_request_sense(uint32_t mmio, uint32_t dboff, uint32_t rtsoff) {
+    uint8_t sense[18];
+    uint8_t cdb[6];
+    usb_msc_csw_t csw;
+    uint8_t response_code = 0;
+    uint8_t sense_key = 0;
+    uint8_t asc = 0;
+    uint8_t ascq = 0;
+
+    if (!g_msc.valid || !g_msc.bulk_in_ep || !g_msc.bulk_out_ep) {
+        return 0;
+    }
+
+    memset(sense, 0, sizeof(sense));
+    memset(cdb, 0, sizeof(cdb));
+    memset(&csw, 0, sizeof(csw));
+
+    cdb[0] = 0x03;
+    cdb[4] = sizeof(sense);
+
+    if (!xhci_msc_bot_command(mmio, dboff, rtsoff, cdb, sizeof(cdb), sense, sizeof(sense), 1, xhci_msc_next_tag(), &csw)) {
+        printk("[xHCI] MSC REQUEST SENSE failed.\n");
+        return 0;
+    }
+
+    response_code = sense[0] & 0x7F;
+    sense_key = sense[2] & 0x0F;
+    asc = sense[12];
+    ascq = sense[13];
+
+    printk("[xHCI] MSC REQUEST SENSE ok: response=%x sense_key=%x asc=%x ascq=%x csw_status=%d residue=%x\n",
+        response_code,
+        sense_key,
+        asc,
+        ascq,
+        csw.bCSWStatus,
+        csw.dCSWDataResidue);
+    return 1;
+}
+
+static void xhci_msc_log_auto_sense(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, uint8_t failed_opcode) {
+    if (failed_opcode == 0x03) {
+        return;
+    }
+
+    printk("[xHCI] Attempting REQUEST SENSE after opcode=%x failure.\n", failed_opcode);
+    if (!xhci_msc_request_sense(mmio, dboff, rtsoff)) {
+        printk("[xHCI] REQUEST SENSE follow-up failed after opcode=%x.\n", failed_opcode);
+    }
+}
+
 static int xhci_msc_bot_command(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
     const uint8_t* cdb, uint32_t cdb_len, void* data_buf, uint32_t data_len,
     int dir_in, uint32_t tag, usb_msc_csw_t* out_csw) {
@@ -679,6 +907,7 @@ static int xhci_msc_bot_command(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
             cdb[0],
             csw.bCSWStatus,
             csw.dCSWDataResidue);
+        xhci_msc_log_auto_sense(mmio, dboff, rtsoff, cdb[0]);
         return 0;
     }
 
@@ -970,6 +1199,31 @@ static int xhci_ep0_get_configuration_and_classify(uint32_t mmio, uint32_t dboff
     }
 
     xhci_log_classification(device_desc, full_cfg, cfg.wTotalLength);
+    g_msc.configuration_value = cfg.bConfigurationValue;
+    return 1;
+}
+
+static int xhci_ep0_set_configuration(uint32_t mmio, uint32_t dboff, uint32_t rtsoff,
+    uint32_t slot_id, uint8_t configuration_value) {
+    usb_setup_packet_t setup = {
+        .bmRequestType = 0x00,
+        .bRequest = USB_REQ_SET_CONFIGURATION,
+        .wValue = configuration_value,
+        .wIndex = 0,
+        .wLength = 0,
+    };
+
+    if (!configuration_value) {
+        printk("[xHCI] Refusing SET_CONFIGURATION with value 0.\n");
+        return 0;
+    }
+
+    if (!xhci_ep0_control_out(mmio, dboff, rtsoff, slot_id, &setup, 0, 0)) {
+        printk("[xHCI] SET_CONFIGURATION(%d) failed.\n", configuration_value);
+        return 0;
+    }
+
+    printk("[xHCI] SET_CONFIGURATION ok: value=%d\n", configuration_value);
     return 1;
 }
 
@@ -1178,9 +1432,16 @@ static int xhci_address_device(uint32_t mmio, uint32_t dboff, uint32_t rtsoff, u
             printk("[xHCI] Device descriptor read did not complete yet.\n");
         } else {
             if (xhci_ep0_get_configuration_and_classify(mmio, dboff, rtsoff, slot, &device_desc) && g_msc.valid) {
-                if (xhci_configure_msc_endpoints(mmio, dboff, rtsoff)) {
-                    if (xhci_msc_bot_inquiry(mmio, dboff, rtsoff)) {
-                        xhci_msc_read_capacity10(mmio, dboff, rtsoff);
+                if (xhci_ep0_set_configuration(mmio, dboff, rtsoff, slot, g_msc.configuration_value)) {
+                    if (xhci_configure_msc_endpoints(mmio, dboff, rtsoff)) {
+                        if (xhci_msc_bot_inquiry(mmio, dboff, rtsoff)) {
+                            if (xhci_msc_test_unit_ready(mmio, dboff, rtsoff)) {
+                                if (!xhci_msc_request_sense(mmio, dboff, rtsoff)) {
+                                    printk("[xHCI] REQUEST SENSE probe did not complete; continuing with READ CAPACITY.\n");
+                                }
+                                xhci_msc_read_capacity10(mmio, dboff, rtsoff);
+                            }
+                        }
                     }
                 }
             }

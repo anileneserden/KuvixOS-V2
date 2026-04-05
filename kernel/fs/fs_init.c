@@ -10,6 +10,38 @@
 
 #include <kernel/user.h>   // ✅ eklendi
 
+typedef int (*removable_mount_fn_t)(blockdev_t* dev);
+
+typedef struct {
+    const char* name;
+    removable_mount_fn_t mount;
+} removable_fs_probe_t;
+
+static int fs_try_mount_removable(blockdev_t* dev, const char** out_fs_name) {
+    static const removable_fs_probe_t probes[] = {
+        { "ToyFS", toyfs_mount },
+    };
+
+    if (out_fs_name) {
+        *out_fs_name = 0;
+    }
+
+    if (!dev) {
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < (sizeof(probes) / sizeof(probes[0])); i++) {
+        if (probes[i].mount(dev)) {
+            if (out_fs_name) {
+                *out_fs_name = probes[i].name;
+            }
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static void ensure_dir(const char* p) {
     if (!p || !p[0]) return;
     // vfs_mkdir "zaten varsa" hata dönse bile önemli değil.
@@ -51,11 +83,13 @@ int fs_init_once(void) {
     g_removable_plugged = false;
     if (xhci_usb_msc_ready()) {
         blockdev_t* usb_dev = xhci_usb_msc_get_dev();
-        if (usb_dev && toyfs_mount(usb_dev)) {
+        const char* removable_fs_name = 0;
+        if (fs_try_mount_removable(usb_dev, &removable_fs_name)) {
             g_removable_plugged = true;
-            printk("[FS] USB removable mounted at /removable (ToyFS).\n");
+            printk("[FS] USB removable mounted at /removable (%s).\n",
+                removable_fs_name ? removable_fs_name : "unknown");
         } else {
-            printk("[FS] USB MSC hazır ama medya ToyFS degil veya mount basarisiz.\n");
+            printk("[FS] USB MSC hazır ama desteklenen removable filesystem bulunamadi.\n");
         }
     }
 

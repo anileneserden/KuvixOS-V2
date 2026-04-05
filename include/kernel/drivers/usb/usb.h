@@ -16,6 +16,10 @@ enum {
 };
 
 enum {
+    USB_FEAT_ENDPOINT_HALT = 0,
+};
+
+enum {
     USB_DESC_DEVICE        = 1,
     USB_DESC_CONFIGURATION = 2,
     USB_DESC_STRING        = 3,
@@ -40,6 +44,7 @@ enum {
 enum {
     USB_MSC_SUBCLASS_SCSI_TRANSPARENT = 6,
     USB_MSC_PROTOCOL_BULK_ONLY        = 0x50,
+    USB_MSC_REQ_BULK_ONLY_RESET       = 0xFF,
 };
 
 typedef struct __attribute__((packed)) {
