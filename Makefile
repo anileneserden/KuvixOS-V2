@@ -1,10 +1,12 @@
 # ==========================
-#  KuvixOS-V2 Makefile
+#  KuvixOS-V2 Makefile (C++ Core Support)
 # ==========================
 
-CC = gcc
-LD = gcc
-AS = nasm
+CC  = gcc
+GPP = g++
+LD  = gcc
+AS  = nasm
+
 # 64-bit matematik işlemleri için gerekli yardımcı kütüphane
 LIBGCC := $(shell $(CC) $(CFLAGS) -m32 -print-libgcc-file-name)
 
@@ -13,13 +15,17 @@ ISO    = iso
 KERNEL = $(BUILD)/kernel.elf
 IMAGE  = KuvixOS.iso
 
-CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
-          -fno-pie -fno-stack-protector \
-          -nostdlib -nostartfiles \
-          -Iinclude -DTIMEZONE_OFFSET=3
-#          -DKBD_SERIAL_DEBUG
+# --- Derleme Bayrakları ---
+COMMON_FLAGS = -m32 -ffreestanding -O2 -Wall -Wextra \
+               -fno-pie -fno-stack-protector \
+               -nostdlib -nostartfiles \
+               -Iinclude -DTIMEZONE_OFFSET=3
 
-ASFLAGS = -m32
+CFLAGS   = $(COMMON_FLAGS)
+# C++ için Exception ve RTTI kernel seviyesinde desteklenmez, o yüzden kapalı:
+GPPFLAGS = $(COMMON_FLAGS) -fno-exceptions -fno-rtti
+
+ASFLAGS  = -m32
 NASMFLAGS = -f elf32
 
 LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
@@ -27,8 +33,10 @@ LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,--no-gc-sections
 
 # --- Kaynak Dosyalar ---
-SRC_S = boot/boot.S
+SRC_S   = boot/boot.S
 SRC_ASM = kernel/arch/x86/interrupt_entry.asm
+
+# C Kaynak Dosyaları
 SRC_C = \
     kernel/kmain.c \
     kernel/panic.c \
@@ -144,29 +152,45 @@ SRC_C = \
     lib/shell/shell.c \
     lib/string/string.c \
 
+# C++ Kaynak Dosyaları (Otomatik tarama)
+SRC_CPP = $(shell find cpp -name '*.cpp' 2>/dev/null)
+# Gelecekte Pineapple DE için kullanmak istersen:
+# SRC_CPP += $(shell find ui/de/pineapple -name '*.cpp' 2>/dev/null)
+
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 
+# Objeleri birleştir
 OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
        $(SRC_ASM:%.asm=$(BUILD)/%.o) \
-       $(SRC_C:%.c=$(BUILD)/%.o)
+       $(SRC_C:%.c=$(BUILD)/%.o) \
+       $(SRC_CPP:%.cpp=$(BUILD)/%.o)
 
 # --- Kurallar ---
 
 all: $(KERNEL)
 
+# C Derleme
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# C++ Derleme
+$(BUILD)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(GPP) $(GPPFLAGS) -c $< -o $@
+
+# Assembly (S) Derleme
 $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
+# Assembly (nasm) Derleme
 $(BUILD)/%.o: %.asm
 	@mkdir -p $(dir $@)
 	$(AS) $(NASMFLAGS) $< -o $@
 
+# Linkleme (Tüm objeleri birleştirir)
 $(KERNEL): $(OBJS)
 	@mkdir -p $(BUILD)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
@@ -197,7 +221,7 @@ run: iso
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=disk.img,format=raw,index=0,media=disk \
 		-drive file=disk2.img,format=raw,index=1,media=disk \
-        -device e1000,netdev=n0 -netdev user,id=n0 \
+		-device e1000,netdev=n0 -netdev user,id=n0 \
 		-m 256M -serial stdio
 
 clean:
