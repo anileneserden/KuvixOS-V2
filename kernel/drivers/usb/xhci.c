@@ -3,6 +3,7 @@
 #include <kernel/printk.h>
 #include <kernel/memory/kmalloc.h>
 #include <lib/string.h>
+#include <kernel/drivers/usb/hid.h>
 
 // ---- MMIO Yardımcı Fonksiyonları ----
 static inline uint8_t  mmio_read8 (uint32_t base, uint32_t off) { return *(volatile uint8_t *)(base + off); }
@@ -1123,6 +1124,8 @@ static void xhci_log_classification(const usb_device_descriptor_t* device_desc, 
 
             if (iface->bInterfaceClass == USB_CLASS_HID) {
                 printk("[xHCI] Device classified as HID (interface %d).\n", iface->bInterfaceNumber);
+                // HID aygıtı için probe fonksiyonunu çağır
+                usb_hid_probe((struct usb_device*)device_desc, iface->bInterfaceNumber, iface->bInterfaceProtocol, iface->bInterfaceSubClass);
                 return;
             }
 

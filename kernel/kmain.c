@@ -16,6 +16,7 @@
 #include <kernel/drivers/input/mouse_ps2.h>
 
 #include <kernel/drivers/pci.h>
+#include <kernel/drivers/usb/hid.h>
 
 #include <kernel/time.h>
 
@@ -123,6 +124,12 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
         // frame tick
         ui_session_tick();
+
+        // --- USB HID DEBUG ---
+        static uint8_t dummy_buf[8] = {0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        static struct usb_hid dummy_hid = {0};
+        usb_hid_read_report(&dummy_hid, dummy_buf, sizeof(dummy_buf));
+        // --- END USB HID DEBUG ---
 
         asm volatile("hlt");
     }

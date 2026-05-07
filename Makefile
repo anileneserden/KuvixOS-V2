@@ -49,6 +49,7 @@ SRC_C = \
     kernel/drivers/input/mouse_ps2.c \
     kernel/drivers/rtc/rtc.c \
     kernel/drivers/usb/xhci.c \
+    kernel/drivers/usb/hid.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/gfx.c \

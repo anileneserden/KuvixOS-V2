@@ -819,7 +819,7 @@ void ui_desktop_handle_scancode(uint16_t sc)
     }
     */
 
-    printk("[DESKTOP] sc=0x%02x\n", sc8);
+    //printk("[DESKTOP] sc=0x%02x\n", sc8);
 
     // Modal'lar önce yesin
     if (save_dialog_is_active()) { save_dialog_handle_key(sc, c); desktop_invalidate_full(); return; }
@@ -833,10 +833,10 @@ void ui_desktop_handle_scancode(uint16_t sc)
     }
 
     int active_id = wm_get_active_id();
-    printk("[DESKTOP] active_win=%d\n", active_id);
+    //printk("[DESKTOP] active_win=%d\n", active_id);
 
     app_t* active_app = appmgr_get_app_by_window_id(active_id);
-    printk("[DESKTOP] active_app=%p\n", (void*)active_app);
+    //printk("[DESKTOP] active_app=%p\n", (void*)active_app);
 
     if (active_app && active_app->v && active_app->v->on_key) {
         active_app->v->on_key(active_app, sc);
