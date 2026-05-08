@@ -3,6 +3,7 @@
 # ==========================
 
 CC = gcc
+CXX = g++
 LD = gcc
 AS = nasm
 # 64-bit matematik işlemleri için gerekli yardımcı kütüphane
@@ -13,10 +14,14 @@ ISO    = iso
 KERNEL = $(BUILD)/kernel.elf
 IMAGE  = KuvixOS.iso
 
+CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti -std=c++17
+
+
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
-          -Iinclude -DTIMEZONE_OFFSET=3
+          -Iinclude -DTIMEZONE_OFFSET=3 \
+          -Iinclude/cpp
 #          -DKBD_SERIAL_DEBUG
 
 ASFLAGS = -m32
@@ -146,10 +151,12 @@ SRC_C = \
 
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
+SRC_CPP = $(wildcard cpp/drivers/usb/hid/*.cpp)
 
 OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
        $(SRC_ASM:%.asm=$(BUILD)/%.o) \
-       $(SRC_C:%.c=$(BUILD)/%.o)
+       $(SRC_C:%.c=$(BUILD)/%.o) \
+       $(SRC_CPP:%.cpp=$(BUILD)/%.o)
 
 # --- Kurallar ---
 
@@ -158,6 +165,10 @@ all: $(KERNEL)
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)
