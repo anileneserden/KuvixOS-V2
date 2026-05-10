@@ -1,7 +1,7 @@
 // kernel/drivers/net/net.c
 #include <kernel/drivers/net/net.h>
 #include <kernel/drivers/net/e1000.h>
-#include <kernel/drivers/net/pci.h>
+#include <kernel/drivers/pci.h>
 #include <kernel/printk.h>
 #include <lib/string.h>
 #include <stdint.h>
@@ -614,7 +614,7 @@ static void net_poll_once(void) {
 // ---------------- Public API ----------------
 void net_init(void) {
     printk("[NET] net_init()\n");
-    pci_scan_dump_nics(); // e1000_probe tetikler
+    pci_init();
 }
 
 int net_ping_ipv4(uint32_t dst_ip_be) {
