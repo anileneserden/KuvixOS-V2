@@ -1,6 +1,6 @@
 #include <ui/controls/button2.h>
 #include <kernel/drivers/video/gfx.h>
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 
 static void button2_draw(ui_control_t* c) {
     ui_button2_t* b = (ui_button2_t*)c;

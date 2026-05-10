@@ -1,5 +1,5 @@
 // src/themes/theme_parser.c
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 #include <stdint.h>
 #include <kernel/drivers/video/fb.h>
 

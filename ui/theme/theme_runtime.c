@@ -1,4 +1,4 @@
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/memory/kmalloc.h>
 #include <kernel/printk.h>

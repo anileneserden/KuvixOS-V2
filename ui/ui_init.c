@@ -2,7 +2,7 @@
 #include <kernel/printk.h>
 
 #include <ui/icons.h>
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 
 static int g_ui_inited = 0;
 

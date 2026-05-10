@@ -122,11 +122,11 @@ SRC_C = \
     ui/power_screen.c \
     ui/select.c \
     ui/session.c \
-    ui/theme_bootstrap.c \
-    ui/theme_builtin_data.c \
-    ui/theme_parser.c \
-    ui/theme_runtime.c \
-    ui/theme_session.c \
+    ui/theme/theme_bootstrap.c \
+    ui/theme/theme_builtin_data.c \
+    ui/theme/theme_parser.c \
+    ui/theme/theme_runtime.c \
+    ui/theme/theme_session.c \
     ui/topbar.c \
     ui/ui_button.c \
     ui/ui_init.c \
@@ -137,7 +137,7 @@ SRC_C = \
     ui/window.c \
     ui/widgets/textbox.c \
     ui/wm.c \
-    ui/theme_builtin.c \
+    ui/theme/theme_builtin.c \
     lib/commands/commands.c \
     lib/service/service_registry.c \
     lib/service/service.c \

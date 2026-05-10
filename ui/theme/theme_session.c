@@ -1,6 +1,6 @@
 #include <ui/session.h>
-#include <ui/theme.h>
-#include <ui/theme_runtime.h>
+#include <ui/theme/theme.h>
+#include <ui/theme/theme_runtime.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/printk.h>

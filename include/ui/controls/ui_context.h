@@ -1,6 +1,6 @@
 #pragma once
 #include <ui/controls/control.h>
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 #include <stdbool.h>
 
 #define UI_MAX_ROOTS 256

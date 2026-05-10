@@ -27,7 +27,7 @@
 
 #include <kernel/system/seed_files.h>
 
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 
 extern void gdt_init(void);
 extern void idt_init(void);

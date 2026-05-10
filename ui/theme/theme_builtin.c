@@ -1,4 +1,4 @@
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 #include <kernel/drivers/video/fb.h>
 
 // built-in default theme (boot'ta bunu aktif edeceğiz)

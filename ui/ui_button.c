@@ -3,7 +3,7 @@
 #include <ui/mouse.h>
 #include <kernel/drivers/video/fb.h>
 #include <font/font8x8_basic.h>
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 
 // Basit nokta-dikdörtgen testi
 static int point_in_rect(int x, int y, int w, int h, int px, int py) {

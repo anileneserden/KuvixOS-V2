@@ -2,7 +2,7 @@
 
 #include <ui/window/window.h>
 #include <ui/window_chrome.h>
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
 #include <stdint.h>

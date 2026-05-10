@@ -1,6 +1,6 @@
 // ui/window_chrome.c
 #include <ui/window_chrome.h>
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 
 static int clampi(int v, int lo, int hi){
     if(v<lo) return lo;

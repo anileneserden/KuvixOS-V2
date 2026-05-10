@@ -5,7 +5,7 @@
 #include <ui/icons.h>
 #include <ui/ui_init.h>
 #include <ui/inputtest.h>
-#include <ui/theme.h>
+#include <ui/theme/theme.h>
 
 static ui_session_t g_current = UI_SESSION_NONE;
 
