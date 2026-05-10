@@ -41,7 +41,17 @@ int fs_init_once(void) {
     if (kvxfs_init()) {
         printk("KVXFS: Disk sistemi basariyla baglandi.\n");
     } else {
-        printk("KVXFS: Kalici disk bulunamadi veya formatli degil.\n");
+        printk("KVXFS: Kalici disk bulunamadi veya formatli degil. Format atiliyor...\n");
+        if (kvxfs_force_format()) {
+            printk("KVXFS: Format tamam.\n");
+            if (kvxfs_init()) {
+                printk("KVXFS: Disk sistemi basariyla baglandi.\n");
+            } else {
+                printk("KVXFS: format sonrasi init basarisiz.\n");
+            }
+        } else {
+            printk("KVXFS: format basarisiz.\n");
+        }
     }
 
     fs_prepare_user_layout();

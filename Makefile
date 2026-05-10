@@ -5,8 +5,6 @@
 CC = gcc
 LD = gcc
 AS = nasm
-# 64-bit matematik işlemleri için gerekli yardımcı kütüphane
-LIBGCC := $(shell $(CC) $(CFLAGS) -m32 -print-libgcc-file-name)
 
 BUILD  = build
 ISO    = iso
@@ -17,18 +15,20 @@ CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
           -fno-pie -fno-stack-protector \
           -nostdlib -nostartfiles \
           -Iinclude -DTIMEZONE_OFFSET=3
-#          -DKBD_SERIAL_DEBUG
 
-ASFLAGS = -m32
+ASFLAGS   = -m32
 NASMFLAGS = -f elf32
 
 LDFLAGS = -m32 -T linker.ld -nostdlib -ffreestanding -fno-pie \
           -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments \
           -Wl,--no-gc-sections
 
+LIBGCC := $(shell $(CC) $(CFLAGS) -m32 -print-libgcc-file-name)
+
 # --- Kaynak Dosyalar ---
 SRC_S = boot/boot.S
 SRC_ASM = kernel/arch/x86/interrupt_entry.asm
+
 SRC_C = \
     kernel/kmain.c \
     kernel/panic.c \
@@ -142,7 +142,7 @@ SRC_C = \
     lib/service/service_registry.c \
     lib/service/service.c \
     lib/shell/shell.c \
-    lib/string/string.c \
+    lib/string/string.c
 
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
@@ -151,10 +151,10 @@ OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
        $(SRC_ASM:%.asm=$(BUILD)/%.o) \
        $(SRC_C:%.c=$(BUILD)/%.o)
 
-# --- Kurallar ---
+# --- Varsayılan hedef ---
+all: iso
 
-all: $(KERNEL)
-
+# --- Derleme kuralları ---
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -171,6 +171,7 @@ $(KERNEL): $(OBJS)
 	@mkdir -p $(BUILD)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
+# --- ISO üret ---
 iso: $(KERNEL)
 	rm -rf $(ISO)
 	mkdir -p $(ISO)/boot/grub
@@ -190,15 +191,16 @@ iso: $(KERNEL)
 	@echo '}' >> $(ISO)/boot/grub/grub.cfg
 	grub2-mkrescue -o $(IMAGE) $(ISO)
 
+# --- Çalıştır ---
 run: iso
-	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=10
-	@test -f disk2.img || dd if=/dev/zero of=disk2.img bs=1M count=5
-	@chmod 666 disk.img disk2.img
+	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=128
+	@chmod 666 disk.img
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=disk.img,format=raw,index=0,media=disk \
-		-drive file=disk2.img,format=raw,index=1,media=disk \
-        -device e1000,netdev=n0 -netdev user,id=n0 \
+		-device e1000,netdev=n0 -netdev user,id=n0 \
 		-m 256M -serial stdio
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)
+
+.PHONY: all iso run clean

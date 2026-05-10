@@ -77,31 +77,37 @@ static void path_pop(char* path)
 {
     uint32_t len = strlen(path);
 
-    // root ise çıkma
+    if (len == 0) {
+        path[0] = '/';
+        path[1] = 0;
+        return;
+    }
+
+    /* root ise cikma */
+    if (strcmp(path, "/") == 0) {
+        return;
+    }
+
+    /* sondaki slash'lari temizle (root haric) */
+    while (len > 1 && path[len - 1] == '/') {
+        path[len - 1] = 0;
+        len--;
+    }
+
+    /* son slash'i bul */
+    while (len > 0 && path[len - 1] != '/') {
+        len--;
+    }
+
+    /* root'a don */
     if (len <= 1) {
         path[0] = '/';
         path[1] = 0;
         return;
     }
 
-    // sondaki '/' varsa sil
-    if (path[len - 1] == '/') {
-        path[len - 1] = 0;
-        len--;
-    }
-
-    // son '/' bul
-    while (len > 0 && path[len - 1] != '/') {
-        len--;
-    }
-
-    // root'a kadar geldiysek
-    if (len == 0) {
-        path[0] = '/';
-        path[1] = 0;
-    } else {
-        path[len] = 0;
-    }
+    /* slash'i de sil */
+    path[len - 1] = 0;
 }
 
 typedef enum {
@@ -275,7 +281,16 @@ int vfs_write(vfs_file_t* f, const void* in, uint32_t n, uint32_t* out_nwritten)
 }
 
 int vfs_mkdir(const char* path) {
-    return ramfs_mkdir(path);
+    if (!path) return 0;
+
+    char resolved[VFS_PATH_MAX];
+    if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
+
+    if (strncmp(resolved, "/persist", 8) == 0) {
+        return kvxfs_mkdir(resolved) == 0;
+    }
+
+    return ramfs_mkdir(resolved);
 }
 
 int vfs_stat(const char* path, vfs_stat_t* st) {
@@ -356,8 +371,9 @@ int vfs_set_cwd(const char* path)
     if (!vfs_resolve_path(path, new_cwd, sizeof(new_cwd)))
         return 0;
 
-    // dizin mi kontrol et
-    if (!ramfs_is_dir(new_cwd) && !toyfs_iter(new_cwd, 0, 0))
+    if (!ramfs_is_dir(new_cwd) &&
+        !toyfs_iter(new_cwd, 0, 0) &&
+        !kvxfs_is_dir(new_cwd))
         return 0;
 
     strcpy(vfs_cwd, new_cwd);
@@ -373,13 +389,17 @@ void vfs_close(vfs_file_t* f) {
 
 int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size) {
     if (out_size) *out_size = 0;
+    if (!path || !out) return 0;
 
-    if (path && path[0] == '/' && path[1] == 'p') {
-        if (kvxfs_read_all(path, out, cap, out_size)) return 1;
+    char resolved[VFS_PATH_MAX];
+    if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
+
+    if (strncmp(resolved, "/persist", 8) == 0) {
+        if (kvxfs_read_all(resolved, out, cap, out_size)) return 1;
     }
 
     vfs_file_t* f = 0;
-    if (!vfs_open(path, VFS_O_RDONLY, &f)) return 0;
+    if (!vfs_open(resolved, VFS_O_RDONLY, &f)) return 0;
 
     uint32_t total = 0;
     while (total < cap) {
@@ -396,12 +416,15 @@ int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_siz
 int vfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     if (!path || !data) return 0;
 
-    if (path[0] == '/' && path[1] == 'p') {
-        if (kvxfs_write_all(path, data, size)) return 1;
+    char resolved[VFS_PATH_MAX];
+    if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
+
+    if (strncmp(resolved, "/persist", 8) == 0) {
+        if (kvxfs_write_all(resolved, data, size)) return 1;
         return 0;
     }
 
-    return ramfs_write_all(path, data, size);
+    return ramfs_write_all(resolved, data, size);
 }
 
 // vfs_list içinde kullanacağımız küçük wrapper
@@ -467,7 +490,7 @@ int vfs_list(const char* dir_prefix,
 
     ramfs_list(resolved, cb, u);
 
-    vfs_list_wrap_t w = { dir_prefix, cb, u };
+    vfs_list_wrap_t w = { resolved, cb, u };
     toyfs_iter(resolved, vfs_toyfs_iter_cb, &w);
 
     return 1;
@@ -523,11 +546,10 @@ int vfs_remove(const char* path) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    if (ramfs_exists(resolved) || ramfs_is_dir(resolved)) {
-        return ramfs_remove(resolved);
+    if (strncmp(resolved, "/persist", 8) == 0) {
+        return kvxfs_remove(resolved);
     }
 
-    // ToyFS read-only
     return 0;
 }
 
