@@ -67,7 +67,6 @@ SRC_C = \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
-    kernel/system/seed_files.c \
     ui/apps/calculator.c \
     ui/apps/controls_test.c \
     ui/apps/demo.c \

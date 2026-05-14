@@ -118,7 +118,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     asm volatile("sti");
 
     fs_init_once();
-    seed_files_run();
+    // seed_files_run();
 
     vfs_set_cwd("/home/anil");
 

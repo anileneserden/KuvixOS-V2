@@ -381,7 +381,7 @@ int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_siz
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    if (strncmp(resolved, "/persist", 8) == 0) {
+    if (strncmp(resolved, "/persist", 8) == 0 || strncmp(resolved, "/home", 5) == 0) {
         if (kvxfs_read_all(resolved, out, cap, out_size)) return 1;
     }
 
@@ -570,7 +570,8 @@ int vfs_remove(const char* path) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    if (strncmp(resolved, "/persist", 8) == 0) {
+    // Sadece /persist değil, /home altındaki dosyalar da KVXFS (diskte) bulunuyor
+    if (strncmp(resolved, "/persist", 8) == 0 || strncmp(resolved, "/home", 5) == 0) {
         return kvxfs_remove(resolved);
     }
 
