@@ -29,6 +29,11 @@
 
 #include <ui/theme.h>
 
+#include <kernel/fs/vfs.h>
+
+#include <kernel/user.h>
+#include <lib/shell.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -114,6 +119,12 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     fs_init_once();
     seed_files_run();
+
+    vfs_set_cwd("/home/anil");
+
+    shell_set_username("anil");
+    shell_set_hostname("kuvix");
+    
 
     ui_theme_bootstrap_default();
 

@@ -3,6 +3,7 @@
 #include <lib/string.h>
 #include <kernel/drivers/video/fb_console.h>
 #include <kernel/fs/kvxfs.h>
+#include <kernel/printk.h>
 
 static int ls_cb(const char* path, uint32_t size, void* u) {
     vfs_stat_t st;
@@ -23,22 +24,21 @@ static int ls_cb(const char* path, uint32_t size, void* u) {
 }
 
 void cmd_ls(int argc, char** argv) {
-    const char* input = (argc > 1) ? argv[1] : "";
     char resolved[VFS_PATH_MAX];
-
-    if (!input[0]) {
-        strncpy(resolved, vfs_get_cwd(), sizeof(resolved) - 1);
-        resolved[sizeof(resolved) - 1] = 0;
-    } else {
-        if (!vfs_resolve_path(input, resolved, sizeof(resolved))) {
-            commands_puts("Hata: yol cozumlenemedi.\n");
-            return;
-        }
+    // 1. Yolu çöz (CWD veya parametre)
+    const char* input = (argc > 1) ? argv[1] : vfs_get_cwd();
+    if (!vfs_resolve_path(input, resolved, sizeof(resolved))) {
+        commands_puts("Hata: yol cozumlenemedi.\n");
+        return;
     }
 
-    if (strncmp(resolved, "/persist", 8) == 0) {
-        // Burada kvxfs_list_all kendi çıktısını üretiyor.
-        // Eğer renkli yapmak istiyorsan kvxfs_list_all içine benzer mantık eklemen lazım.
+    // 2. DEBUG: Nereye bakıyoruz görelim
+    // printk("Listing: %s\n", resolved);
+
+    // 3. AYRIMI KALDIR: Her şeyi vfs_list üzerinden yapmaya çalış.
+    // Eğer vfs_list henüz KVXFS ile tam bağlı değilse, 
+    // geçici olarak alttaki 'if'i kullanabilirsin:
+    if (strncmp(resolved, "/persist", 8) == 0 || strncmp(resolved, "/home", 5) == 0) {
         kvxfs_list_all(resolved);
     } else {
         vfs_list(resolved, ls_cb, NULL);
