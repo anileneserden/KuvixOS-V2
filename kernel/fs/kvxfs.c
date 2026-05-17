@@ -6,6 +6,7 @@
 #include <arch/x86/io.h>
 #include <stdint.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/drivers/video/fb_console.h>
 
 #define KVX_MAGIC     "KVXFS1"
 #define KVX_MAX_FILES 256         // Sınırı 32'den 256'ya çıkardık!
@@ -278,20 +279,44 @@ int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_s
 
 void kvxfs_list_all(const char* filter_path) {
     if (!filter_path || !kvxfs_init()) return;
+    
     char norm[64];
     kvxfs_trim_path(filter_path, norm, 64);
+    
+    // 🔹 Arka planı saf siyah (0x00000000) yapıyoruz
+    fb_console_set_color(0x00FFFFFF, 0x00000000); 
     printk("--- %s Icerigi ---\n", norm);
+    
     int found = 0;
     for (int i = 0; i < KVX_MAX_FILES; i++) {
         if (!g_meta.ent[i].used) continue;
         if (strcmp(g_meta.ent[i].path, norm) == 0) continue;
         if (!kvxfs_path_is_direct_child(norm, g_meta.ent[i].path)) continue;
+        
         const char* name = kvxfs_basename_ptr(g_meta.ent[i].path);
-        if (g_meta.ent[i].size == KVX_DIR_SIZE) printk("[DIR]  %s\n", name);
-        else printk("%d byte  %s\n", g_meta.ent[i].size, name);
+        
+        if (g_meta.ent[i].size == KVX_DIR_SIZE) {
+            // 🔹 Klasör: Mavi yazı, Saf Siyah arka plan
+            fb_console_set_color(0x000055FF, 0x00000000); 
+            printk("%s\n", name);
+        } else {
+            // 🔹 Düz Dosya: Yeşil boyut bilgisi, Saf Siyah arka plan
+            fb_console_set_color(0x0000FF00, 0x00000000); 
+            printk("%d byte  ", g_meta.ent[i].size);
+            
+            // Dosya adı: Beyaz yazı, Saf Siyah arka plan
+            fb_console_set_color(0x00FFFFFF, 0x00000000); 
+            printk("%s\n", name);
+        }
         found++;
     }
-    if (!found) printk("(Bos)\n");
+    
+    // Konsol rengini tamamen varsayılan siyah-beyaza döndürüyoruz
+    fb_console_set_color(0x00FFFFFF, 0x00000000);
+    
+    if (!found) {
+        printk("(Bos)\n");
+    }
 }
 
 int kvxfs_tree(const char* root_path) {
