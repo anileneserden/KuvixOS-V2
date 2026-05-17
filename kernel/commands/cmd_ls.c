@@ -3,45 +3,53 @@
 #include <lib/string.h>
 #include <kernel/drivers/video/fb_console.h>
 #include <kernel/fs/kvxfs.h>
+#include <kernel/printk.h>
 
-static int ls_cb(const char* path, uint32_t size, void* u) {
+// vfs_list fonksiyonundan dönecek olan her bir dosya/klasör için çağrılan callback
+static int ls_cb(const char* name, uint32_t size, void* u) {
+    // GCC'nin 'unused parameter' uyarısını susturmak için
+    (void)u;
+    (void)size;
+
     vfs_stat_t st;
-    if (vfs_stat(path, &st) == 0) {
+    
+    // Gelen ismin tipini (klasör mü dosya mı) dinamik olarak sorgula
+    if (vfs_stat(name, &st) == 0) {
         if (st.type == VFS_T_DIR) {
-            fb_console_set_color(0x000000FF, 0x00000000); // mavi (dizin)
+            fb_console_set_color(0x000000FF, 0x00000000); // Mavi (Dizin)
         } else {
-            fb_console_set_color(0x00FFFFFF, 0x00000000); // beyaz (dosya)
+            fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz (Dosya)
         }
     }
 
-    commands_puts(path);
+    // Dosya/Klasör ismini ekrana bas
+    commands_puts(name);
     commands_puts("\n");
 
-    // Varsayılan renge dön
+    // Konsol rengini varsayılana (beyaz) geri döndür
     fb_console_set_color(0x00FFFFFF, 0x00000000);
     return 0;
 }
 
 void cmd_ls(int argc, char** argv) {
-    const char* input = (argc > 1) ? argv[1] : "";
     char resolved[VFS_PATH_MAX];
-
-    if (!input[0]) {
-        strncpy(resolved, vfs_get_cwd(), sizeof(resolved) - 1);
-        resolved[sizeof(resolved) - 1] = 0;
-    } else {
-        if (!vfs_resolve_path(input, resolved, sizeof(resolved))) {
-            commands_puts("Hata: yol cozumlenemedi.\n");
-            return;
-        }
+    
+    // 1. Yolu çöz (CWD veya dışarıdan gelen parametre)
+    const char* input = (argc > 1) ? argv[1] : vfs_get_cwd();
+    if (!vfs_resolve_path(input, resolved, sizeof(resolved))) {
+        commands_puts("Hata: yol cozumlenemedi.\n");
+        return;
     }
 
-    if (strncmp(resolved, "/persist", 8) == 0) {
-        // Burada kvxfs_list_all kendi çıktısını üretiyor.
-        // Eğer renkli yapmak istiyorsan kvxfs_list_all içine benzer mantık eklemen lazım.
+    // 2. Önce resmi ve dinamik yol olan VFS katmanını dene
+    int ret = vfs_list(resolved, ls_cb, NULL);
+    
+    // 3. KÖPRÜ KOPUKSA FALLBACK (YEDEK PLAN) DEVREYE GİRER:
+    // Eğer VFS katmanı hata dönerse (ret != 0), statik yol kontrolü yapmadan 
+    // doğrudan disk okuma fonksiyonunu tetikle!
+    if (ret != 0) {
+        // Doğrudan disk üzerindeki KVXFS tablolarını dinamik olarak tarar
         kvxfs_list_all(resolved);
-    } else {
-        vfs_list(resolved, ls_cb, NULL);
     }
 }
 

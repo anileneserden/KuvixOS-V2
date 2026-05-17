@@ -16,6 +16,9 @@ static void path_pop(char *path);
 #define REMOUNT_PREFIX_LEN 10
 
 static void copy_str(char* dst, const char* src, uint32_t cap);
+// vfs.c dosyasının üst kısımları
+extern int kvxfs_is_dir(const char* path);
+extern int vfs_is_dir(const char* path);
 
 static int is_removable_path(const char* path) {
     if (!path) return 0;
@@ -73,41 +76,32 @@ static int rem_cb_prefix(const char* toy_path, uint32_t size, void* u2) {
 
 // ----------------------------------------------------------
 
-static void path_pop(char* path)
-{
+static void path_pop(char* path) {
     uint32_t len = strlen(path);
-
-    if (len == 0) {
+    if (len <= 1) { // Zaten root "/" ise bir şey yapma
         path[0] = '/';
         path[1] = 0;
         return;
     }
 
-    /* root ise cikma */
-    if (strcmp(path, "/") == 0) {
-        return;
-    }
-
-    /* sondaki slash'lari temizle (root haric) */
-    while (len > 1 && path[len - 1] == '/') {
+    // Sondaki slash'ı temizle: "/persist/" -> "/persist"
+    if (path[len - 1] == '/') {
         path[len - 1] = 0;
         len--;
     }
 
-    /* son slash'i bul */
+    // Sondan başa doğru ilk slash'ı bul
     while (len > 0 && path[len - 1] != '/') {
         len--;
     }
 
-    /* root'a don */
+    // Eğer "/" bulduysak oradan kes
     if (len <= 1) {
         path[0] = '/';
         path[1] = 0;
-        return;
+    } else {
+        path[len - 1] = 0; // "/persist/apps" -> "/persist"
     }
-
-    /* slash'i de sil */
-    path[len - 1] = 0;
 }
 
 typedef enum {
@@ -286,8 +280,9 @@ int vfs_mkdir(const char* path) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    if (strncmp(resolved, "/persist", 8) == 0) {
-        return kvxfs_mkdir(resolved) == 0;
+    // Eğer /dev veya /removable değilse KVXFS'de oluşturmayı dene
+    if (strncmp(resolved, "/dev", 4) != 0 && strncmp(resolved, "/removable", 10) != 0) {
+        if (kvxfs_mkdir(resolved) == 0) return 1;
     }
 
     return ramfs_mkdir(resolved);
@@ -352,31 +347,23 @@ static void copy_str(char* dst, const char* src, uint32_t cap) {
     dst[i] = 0;
 }
 
-int vfs_set_cwd(const char* path)
-{
+int vfs_set_cwd(const char* path) {
     char new_cwd[VFS_PATH_MAX];
 
-    if (!path || !path[0])
-        return 0;
+    if (!path) return 0;
 
-    // cd ..
-    if (strcmp(path, "..") == 0) {
-        strcpy(new_cwd, vfs_get_cwd());
-        path_pop(new_cwd);
-        strcpy(vfs_cwd, new_cwd);
-        return 1;
+    // 1. Yolu tam olarak çöz (/persist/.. -> / gibi)
+    if (!vfs_resolve_path(path, new_cwd, sizeof(new_cwd))) {
+        return 0;
     }
 
-    // path çöz
-    if (!vfs_resolve_path(path, new_cwd, sizeof(new_cwd)))
+    // 2. Bu yol bir dizin mi? (vfs_is_dir artık hem ramfs hem kvxfs biliyor)
+    if (!vfs_is_dir(new_cwd)) {
         return 0;
+    }
 
-    if (!ramfs_is_dir(new_cwd) &&
-        !toyfs_iter(new_cwd, 0, 0) &&
-        !kvxfs_is_dir(new_cwd))
-        return 0;
-
-    strcpy(vfs_cwd, new_cwd);
+    // 3. Geçerliyse kopyala
+    strncpy(vfs_cwd, new_cwd, VFS_PATH_MAX - 1);
     return 1;
 }
 
@@ -394,7 +381,7 @@ int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_siz
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    if (strncmp(resolved, "/persist", 8) == 0) {
+    if (strncmp(resolved, "/persist", 8) == 0 || strncmp(resolved, "/home", 5) == 0) {
         if (kvxfs_read_all(resolved, out, cap, out_size)) return 1;
     }
 
@@ -512,31 +499,68 @@ void vfs_cd_parent(void)
 
 int vfs_resolve_path(const char* in, char* out, uint32_t cap)
 {
-    if (!in || !out || cap == 0)
-        return 0;
+    if (!in || !out || cap == 0) return 0;
 
-    out[0] = 0;
-
-    // absolute
+    char temp[VFS_PATH_MAX];
+    
+    // 1. Mutlak veya Göreceli birleştirme
     if (in[0] == '/') {
-        copy_str(out, in, cap);
-        return 1;
+        strncpy(temp, in, VFS_PATH_MAX - 1);
+    } else {
+        const char* cwd = vfs_get_cwd();
+        strncpy(temp, cwd, VFS_PATH_MAX - 1);
+        if (strcmp(cwd, "/") != 0) {
+            strncat(temp, "/", VFS_PATH_MAX - strlen(temp) - 1);
+        }
+        strncat(temp, in, VFS_PATH_MAX - strlen(temp) - 1);
     }
 
-    // relative = cwd + "/" + in
-    copy_str(out, vfs_get_cwd(), cap);
+    // 2. Normalleştirme (.. ve . temizliği)
+    char normalized[VFS_PATH_MAX];
+    char* parts[32]; 
+    int level = 0;
 
-    if (strcmp(out, "/") != 0) {
-        uint32_t len = strlen(out);
-        if (len + 1 < cap) {
-            out[len] = '/';
-            out[len + 1] = 0;
+    char work_copy[VFS_PATH_MAX];
+    strncpy(work_copy, temp, VFS_PATH_MAX - 1);
+    
+    // Manuel tokenizing (strtok yerine)
+    char* start = work_copy;
+    while (*start == '/') start++; // Başlangıç slash'larını geç
+
+    char* curr = start;
+    while (1) {
+        if (*curr == '/' || *curr == '\0') {
+            char end_char = *curr;
+            *curr = '\0'; // Parçayı sonlandır
+            
+            if (strlen(start) > 0) {
+                if (strcmp(start, "..") == 0) {
+                    if (level > 0) level--;
+                } else if (strcmp(start, ".") == 0) {
+                    // Pas geç
+                } else {
+                    if (level < 32) parts[level++] = start;
+                }
+            }
+
+            if (end_char == '\0') break;
+            start = curr + 1;
+        }
+        curr++;
+    }
+
+    // 3. Yeniden Oluştur
+    normalized[0] = '/';
+    normalized[1] = 0;
+    for (int i = 0; i < level; i++) {
+        strncat(normalized, parts[i], VFS_PATH_MAX - strlen(normalized) - 1);
+        if (i < level - 1) {
+            strncat(normalized, "/", VFS_PATH_MAX - strlen(normalized) - 1);
         }
     }
 
-    uint32_t len = strlen(out);
-    copy_str(out + len, in, cap - len);
-
+    strncpy(out, normalized, cap - 1);
+    out[cap - 1] = 0;
     return 1;
 }
 
@@ -546,7 +570,8 @@ int vfs_remove(const char* path) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    if (strncmp(resolved, "/persist", 8) == 0) {
+    // Sadece /persist değil, /home altındaki dosyalar da KVXFS (diskte) bulunuyor
+    if (strncmp(resolved, "/persist", 8) == 0 || strncmp(resolved, "/home", 5) == 0) {
         return kvxfs_remove(resolved);
     }
 
@@ -611,4 +636,29 @@ int vfs_read_all_alloc(const char* path, uint8_t** out_buf, uint32_t* out_size) 
 
 void vfs_free_alloc(void* p) {
     if (p) kfree(p);
+}
+
+// Bir dosya veya dizin var mı?
+int vfs_exists(const char* path) {
+    if (!path) return 0;
+    vfs_stat_t st;
+    return vfs_stat(path, &st);
+}
+
+// vfs_is_dir fonksiyonunu güncelle (eski halini silip bunu yapıştır)
+int vfs_is_dir(const char* path) {
+    if (!path) return 0;
+
+    // Eğer /dev veya /removable gibi özel bir yer değilse diske sor
+    // (kvxfs_is_dir içindeki logic'e güveniyoruz)
+    if (strncmp(path, "/dev", 4) == 0) return 0;
+    if (strncmp(path, "/removable", 10) == 0) return 1; // ToyFS root
+
+    // KVXFS'e sor
+    if (kvxfs_is_dir(path)) return 1;
+
+    // RamFS kontrolü
+    if (strcmp(path, "/") == 0) return 1;
+    
+    return 0;
 }

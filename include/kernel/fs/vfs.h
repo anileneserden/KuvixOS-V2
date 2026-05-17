@@ -35,6 +35,8 @@ int  vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_si
 int  vfs_write_all(const char* path, const uint8_t* data, uint32_t size);
 int  vfs_resolve_path(const char* in, char* out, uint32_t cap);
 int  vfs_stat(const char* path, vfs_stat_t* st);
+int  vfs_exists(const char* path);
+int  vfs_is_dir(const char* path);
 int  vfs_mkdir(const char* path);
 int  vfs_remove(const char* path);
 int vfs_rename(const char* old_path, const char* new_path);

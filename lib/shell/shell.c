@@ -46,14 +46,34 @@ static void shell_cmd_clear(void* u) {
 // Prompt
 // ------------------------------------------------------------
 static void shell_print_prompt(void) {
-
+    // 1. Kullanıcı ve Hostname (Yeşil kısım)
     fb_console_set_color(0x0000FF00, 0x00000000);
     printk("%s", g_username);
     printk("@%s", g_hostname);
-    printk(":%s", vfs_get_cwd());
 
+    // 2. Ayırıcı (Beyaz)
     fb_console_set_color(0x00FFFFFF, 0x00000000);
+    printk(":");
+
+    // 3. Yol Hesaplama (Mavi veya Beyaz tercih edebilirsin)
+    const char* cwd = vfs_get_cwd();
+    
+    // Eğer CWD tam olarak "/home/anil" ise sadece "~" bas
+    if (strcmp(cwd, "/home/anil") == 0) {
+        printk("~");
+    } 
+    // Eğer "/home/anil/" ile başlıyorsa (alt klasördeyse), yolu kısaltabiliriz
+    else if (strncmp(cwd, "/home/anil/", 11) == 0) {
+        printk("~/%s", cwd + 11);
+    }
+    // Değilse (root veya başka dizindeyse) tam yolu bas
+    else {
+        printk("%s", cwd);
+    }
+
+    // 4. Prompt karakteri
     printk("$ ");
+    
     g_dirty = 1;
 }
 
@@ -100,9 +120,11 @@ void shell_set_cwd(const char* p) {
 // Lifecycle
 // ------------------------------------------------------------
 void shell_init(void) {
-
     commands_set_output(shell_cmd_out, NULL);
     commands_set_clear(shell_cmd_clear, NULL);
+
+    // ✅ Kullanıcı adını USER_NAME makrosundan veya kernel_main'den gelen veriden alabiliriz
+    // Ama şimdilik kernel_main'de shell_set_username çağıracağız.
 
     printk("KuvixOS Shell V2 Hazir!\n");
     printk("Komutlar icin 'help' yazabilirsiniz.\n\n");
@@ -110,7 +132,9 @@ void shell_init(void) {
     g_len = 0;
     g_line[0] = 0;
 
-    // ✅ PROMPT HEMEN BAS
+    // ✅ Shell açıldığında VFS'in mevcut konumunu güncelle (anil klasörü için)
+    // Eğer kernel_main'de vfs_set_cwd yaptıysan bu prompt doğru gelecektir.
+    
     shell_print_prompt();
     fb_console_flush();
     g_dirty = 0;

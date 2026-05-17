@@ -14,16 +14,18 @@ static void ensure_dir(const char* p) {
 }
 
 int fs_prepare_user_layout(void) {
+    // ensure_dir uyarısını gidermek için diskte olması gereken yerleri kontrol edelim
+    // Eğer yoklarsa (disk yeniyse) oluşturur
     ensure_dir("/home");
-    ensure_dir(USER_HOME_PATH);
-    ensure_dir(USER_DESKTOP_PATH);
-    ensure_dir(USER_APPS_PATH);
-    ensure_dir(USER_DOWNLOAD_PATH);
-    ensure_dir(USER_TRASH_PATH);
-    ensure_dir(USER_HTML_PATH);
-    ensure_dir(USER_HTML_TEST_PATH);
+    ensure_dir("/home/anil");
+    ensure_dir("/sys");
+    ensure_dir("/sys/themes");
 
-    printk("[FS] user layout ok: %s\n", USER_HOME_PATH);
+    if (vfs_exists("/home/anil")) {
+        printk("[FS] Kullanici dizini hazir: /home/anil\n");
+    } else {
+        printk("[FS] HATA: Kullanici dizini olusturulamadi!\n");
+    }
     return 1;
 }
 
@@ -40,12 +42,20 @@ int fs_init_once(void) {
 
     if (kvxfs_init()) {
         printk("KVXFS: Disk sistemi basariyla baglandi.\n");
+        
+        // 1. DURUM: Disk zaten formatlıydı ve bağlandı. Ağacı döküyoruz!
+        kvxfs_tree("/"); 
+        
     } else {
         printk("KVXFS: Kalici disk bulunamadi veya formatli degil. Format atiliyor...\n");
         if (kvxfs_force_format()) {
             printk("KVXFS: Format tamam.\n");
             if (kvxfs_init()) {
                 printk("KVXFS: Disk sistemi basariyla baglandi.\n");
+                
+                // 2. DURUM: Disk yeni formatlandı ve bağlandı. Yeni ağacı döküyoruz!
+                kvxfs_tree("/"); 
+                
             } else {
                 printk("KVXFS: format sonrasi init basarisiz.\n");
             }
@@ -54,6 +64,7 @@ int fs_init_once(void) {
         }
     }
 
+    // Disk ağacını konsola bastıktan sonra kullanıcı katmanı dizinleri/dosyaları hazırlanıyor
     fs_prepare_user_layout();
 
     return 1;
