@@ -1,6 +1,6 @@
 // kernel/drivers/net/e1000.c
 #include <kernel/drivers/net/e1000.h>
-#include <kernel/drivers/net/pci.h>
+#include <kernel/drivers/pci/pci.h>
 #include <kernel/printk.h>
 #include <lib/string.h>
 #include <stdint.h>

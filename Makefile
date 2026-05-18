@@ -49,7 +49,9 @@ SRC_C = \
     kernel/drivers/input/mouse_ps2.c \
     kernel/drivers/net/e1000.c \
     kernel/drivers/net/net.c \
-    kernel/drivers/net/pci.c \
+    kernel/drivers/pci/pci.c \
+    kernel/drivers/audio/hda.c \
+    kernel/drivers/usb/host/xhci.c \
     kernel/drivers/rtc/rtc.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
@@ -202,10 +204,12 @@ run: iso
 	@chmod 666 /home/anilerden/KuvixOS-V2/main/disk.img
 
 	@# 3. QEMU'yu merkezî diskimizle ateşleyelim
-	qemu-system-i386 -cdrom $(IMAGE) \
-		-drive file=/home/anilerden/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
-		-device e1000,netdev=n0 -netdev user,id=n0 \
-		-m 256M -serial stdio
+	qemu-system-i386 -cdrom KuvixOS.iso \
+        -drive file=/home/anilerden/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
+        -device e1000,netdev=n0 -netdev user,id=n0 \
+        -device ich9-intel-hda -device hda-output \
+        -device qemu-xhci,id=xhci \
+        -m 256M -serial stdio
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)
