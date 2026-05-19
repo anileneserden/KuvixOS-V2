@@ -2,7 +2,6 @@
 #include <lib/shell.h>
 #include <lib/string.h>
 #include <kernel/drivers/video/gfx.h>
-#include <ui/desktop.h>
 #include <kernel/printk.h>
 #include <lib/commands.h>
 

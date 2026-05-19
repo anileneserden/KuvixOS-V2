@@ -2,7 +2,6 @@
 #include <kernel/drivers/input/mouse_ps2.h>
 #include <arch/x86/io.h>
 #include <stdint.h>
-#include <ui/wm.h>
 
 // Telemetri (debug_screen'den okunacak)
 volatile int32_t g_mouse_last_dx = 0;
@@ -48,8 +47,6 @@ static uint8_t ps2_mouse_read_byte(void) {
 }
 
 static uint8_t ps2_mouse_read_ack(void) {
-    // Mouse komutlarına ACK genelde 0xFA döner.
-    // Çok sıkı kontrol etmek istemezsen direkt oku geç.
     return ps2_mouse_read_byte();
 }
 
@@ -71,13 +68,13 @@ static uint8_t ps2_mouse_get_device_id(void) {
 // ------------------------------------------------------------
 static uint8_t packet[4];
 static int packet_index = 0;
-static int packet_size  = 3; // 3 = standart, 4 = wheel (IntelliMouse)
+static int packet_size  = 3; 
 
 // Event queue
 typedef struct {
     int dx, dy;
-    int wheel;          // 0 normally, +/- on wheel
-    uint8_t buttons;    // bit0 L, bit1 R, bit2 M
+    int wheel;          
+    uint8_t buttons;    
 } mouse_ev_t;
 
 #define MOUSE_QSIZE 32
@@ -87,7 +84,6 @@ static int q_r = 0, q_w = 0;
 static void q_push(int dx, int dy, int wheel, uint8_t buttons) {
     int next = (q_w + 1) % MOUSE_QSIZE;
     if (next == q_r) {
-        // dolu -> en eskiyi ez
         q_r = (q_r + 1) % MOUSE_QSIZE;
     }
     q[q_w].dx = dx;
@@ -114,39 +110,32 @@ int ps2_mouse_pop(int* dx, int* dy, int* wheel, uint8_t* buttons) {
 // Init
 // ------------------------------------------------------------
 void ps2_mouse_init(void) {
-    // A. Flush
     for (int i = 0; i < 32; i++) {
         if (inb(0x64) & 0x01) (void)inb(0x60);
     }
 
-    // B. AUX disable
     ps2_wait_write();
     outb(0x64, 0xA7);
 
-    // C. AUX enable
     ps2_wait_write();
     outb(0x64, 0xA8);
 
-    // D. Command byte ayarla
     ps2_wait_write();
     outb(0x64, 0x20);
     ps2_wait_read();
     uint8_t status = inb(0x60);
 
-    status |= 0x02;   // IRQ12 enable
-    status &= ~0x20;  // Mouse disable bitini kaldır
+    status |= 0x02;   
+    status &= ~0x20;  
 
     ps2_wait_write();
     outb(0x64, 0x60);
     ps2_wait_write();
     outb(0x60, status);
 
-    // E. defaults
     ps2_mouse_write(0xF6);
-    (void)ps2_mouse_read_ack(); // ACK
+    (void)ps2_mouse_read_ack(); 
 
-    // --- Wheel enable (IntelliMouse) ---
-    // Set sample rate sequence: 200, 100, 80 then Get ID
     ps2_mouse_set_sample_rate(200);
     ps2_mouse_set_sample_rate(100);
     ps2_mouse_set_sample_rate(80);
@@ -154,26 +143,21 @@ void ps2_mouse_init(void) {
     uint8_t id = ps2_mouse_get_device_id();
     packet_size = (id == 3) ? 4 : 3;
 
-    // F. enable reporting
     ps2_mouse_write(0xF4);
-    (void)ps2_mouse_read_ack(); // ACK
+    (void)ps2_mouse_read_ack(); 
 
-    // G. Flush
     while (inb(0x64) & 0x01) (void)inb(0x60);
 
-    // reset assembly
     packet_index = 0;
     g_mouse_last_wheel = 0;
 }
 
 // ------------------------------------------------------------
-// Byte handler (called from IRQ / poll)
+// Byte handler
 // ------------------------------------------------------------
 void ps2_mouse_handle_byte(uint8_t data) {
     if (packet_index == 0) {
-        // sync bit (bit3) şart
         if ((data & 0x08) == 0) return;
-        // overflow bayrakları set ise discard
         if (data & 0xC0) return;
     }
 
@@ -190,22 +174,20 @@ void ps2_mouse_handle_byte(uint8_t data) {
 
     int wheel = 0;
     if (packet_size == 4) {
-        wheel = (int)(int8_t)packet[3]; // genelde -1/+1
+        wheel = (int)(int8_t)packet[3]; 
         g_mouse_last_wheel = wheel;
     } else {
         g_mouse_last_wheel = 0;
     }
 
-    // Telemetri
     g_mouse_last_dx = dx;
     g_mouse_last_dy = dy;
 
-    // buttons: low 3 bits
     q_push(dx, dy, wheel, (uint8_t)(b & 0x07));
 }
 
 // ------------------------------------------------------------
-// Update -> WM
+// Update -> WM (GUI bağları koparıldı)
 // ------------------------------------------------------------
 void ps2_mouse_update(void) {
     int dx, dy, wheel;
@@ -221,26 +203,9 @@ void ps2_mouse_update(void) {
         if (mouse_x > 1023) mouse_x = 1023;
         if (mouse_y > 767)  mouse_y = 767;
 
-#ifndef DEBUG_SELFTEST
-        wm_handle_mouse_move(mouse_x, mouse_y);
-
-        uint8_t pressed  = (uint8_t)(buttons & ~last_buttons);
-        uint8_t released = (uint8_t)(last_buttons & ~buttons);
-
-        if (pressed || released) {
-            wm_handle_mouse(mouse_x, mouse_y, pressed, released, buttons);
-        }
-
-        // WHEEL event:
-        // WM tarafına wheel route etmek için 2 seçeneğin var:
-        // 1) wm_handle_mouse_wheel(...) diye yeni fonksiyon ekle
-        // 2) wm_handle_mouse(...) imzasını genişlet (e1/e2 gibi)
-        //
-        // Şimdilik sadece telemetri olarak duruyor.
-        // Eğer WM'e eklemek istersen örnek:
-        // if (wheel != 0) wm_handle_mouse_wheel(mouse_x, mouse_y, wheel, buttons);
-#endif
-
+        // 🚫 Monolitik GUI bağımlılıkları tamamen kaldırıldı.
+        // Gelecekte TTY tabanlı konsol faresi yazılmak istenirse buraya eklenebilir.
+        (void)last_buttons; 
         last_buttons = buttons;
     }
 }
@@ -254,8 +219,6 @@ void ps2_mouse_poll(void) {
         uint8_t data   = inb(0x60);
         if (status & 0x20) {
             ps2_mouse_handle_byte(data);
-        } else {
-            // klavye byte'ı -> drop
         }
     }
 }
@@ -272,12 +235,9 @@ void mouse_handler(void) {
 
         if (status & 0x20) {
             ps2_mouse_handle_byte(data);
-        } else {
-            // klavye byte'ı -> drop
         }
     }
 
-    // EOI
     outb(0xA0, 0x20);
     outb(0x20, 0x20);
 }

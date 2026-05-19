@@ -27,8 +27,6 @@
 
 #include <kernel/system/seed_files.h>
 
-#include <ui/theme/theme.h>
-
 #include <kernel/fs/vfs.h>
 
 #include <kernel/user.h>
@@ -125,9 +123,6 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     shell_set_username("anil");
     shell_set_hostname("kuvix");
     
-
-    ui_theme_bootstrap_default();
-
     // UI
     ui_session_init();
     ui_session_switch(UI_SESSION_TTY1);

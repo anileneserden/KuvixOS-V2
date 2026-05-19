@@ -33,22 +33,13 @@ void commands_set_output(commands_out_fn_t fn, void* user) {
     g_out_user = user;
 }
 
-// commands.c içine bu prototipleri ekle
-extern void wm_draw(void);
-extern void desktop_request_redraw(void); // Masaüstünü çizmek için gerekebilir
-extern void fb_present(void);   // Çizilenleri ekrana basmak için (Video Buffer)
-
 void commands_puts(const char* s) {
     if (!s) return;
 
     if (g_out) {
         g_out(g_out_user, s);
-
-        // ✅ KRİTİK NOKTA: Döngü devam ederken ekranı tazele
-        // Bu sayede progress bar her karakterde güncellenir
-        desktop_request_redraw(); // Arka plan
-        wm_draw();      // Pencereler ve terminal
-        fb_present();   // Fiziksel ekran günellemesi
+        // 🚫 Eski GUI yenileme kodları (desktop_request_redraw, wm_draw, fb_present) temizlendi.
+        // Artık saf TTY console veya seri port üzerinden akış doğrudan sağlanıyor.
     } else {
         printk("%s", s);
     }
@@ -167,7 +158,6 @@ static int k_streq(const char* a, const char* b) {
     return a[i] == 0 && b[i] == 0;
 }
 
-// Satırı boşluklara göre argv'ye böler
 static int split_line(char* line, char** argv, int max_args) {
     int argc = 0;
     char* p = line;

@@ -54,6 +54,8 @@ SRC_C = \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/gfx.c \
+    kernel/drivers/video/font/font8x8_basic.c \
+    kernel/drivers/video/font/font8x16_basic.c \
     kernel/drivers/ata_pio.c \
     kernel/drivers/power.c \
     kernel/drivers/ps2.c \
@@ -67,76 +69,8 @@ SRC_C = \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
-    ui/apps/calculator.c \
-    ui/apps/controls_test.c \
-    ui/apps/demo.c \
-    ui/apps/designer.c \
-    ui/apps/demo_font.c \
-    ui/apps/file_manager.c \
-    ui/apps/grid_demo.c \
-    ui/apps/kbi_viewer.c \
-    ui/apps/kuvix_browser.c \
-    ui/apps/kuvix_store.c \
-    ui/apps/memmon.c \
-    ui/apps/notepad.c \
-    ui/apps/pixel_draw_app.c \
-    ui/apps/run.c \
-    ui/apps/scroll_demo.c \
-    ui/apps/settings.c \
-    ui/apps/setup_wizard.c \
-    ui/apps/terminal.c \
-    ui/bitmaps/icons/icon_close_16.c \
-    ui/bitmaps/icons/icon_max_16.c \
-    ui/bitmaps/icons/icon_min_16.c \
-    ui/controls/button2.c \
-    ui/controls/combobox2.c \
-    ui/controls/control.c \
-    ui/controls/label2.c \
-    ui/controls/panel2.c \
-    ui/controls/textbox2.c \
-    ui/controls/ui_context.c \
-    ui/dialogs/open_dialog.c \
-    ui/dialogs/save_dialog.c \
-    ui/dialogs/messagebox.c \
-    ui/font/font8x8_basic.c \
-    ui/font/font8x16_basic.c \
-    ui/html/html_dom.c \
-    ui/html/html_parser.c \
-    ui/html/html_render.c \
-    ui/html/html_tokenizer.c \
-    ui/html/url_resolver.c \
-    ui/wm/hittest.c \
-    ui/app_manager.c \
-    ui/context_menu.c \
-    ui/cursor.c \
-    ui/debug_overlay.c \
-    ui/desktop_icons.c \
-    ui/desktop_seed.c \
-    ui/desktop.c \
-    ui/icons/ui_icons.c \
-    ui/inputtest.c \
-    ui/mouse.c \
-    ui/net_status.c \
-    ui/notification.c \
-    ui/power_screen.c \
-    ui/select.c \
     ui/session.c \
-    ui/theme/theme_bootstrap.c \
-    ui/theme/theme_builtin_data.c \
-    ui/theme/theme_parser.c \
-    ui/theme/theme_runtime.c \
-    ui/theme/theme_session.c \
-    ui/topbar.c \
-    ui/ui_button.c \
     ui/ui_init.c \
-    ui/ui_label.c \
-    ui/ui_settings.c \
-    ui/wallpaper.c \
-    ui/window_chrome.c \
-    ui/window.c \
-    ui/widgets/textbox.c \
-    ui/wm.c \
-    ui/theme/theme_builtin.c \
     lib/commands/commands.c \
     lib/service/service_registry.c \
     lib/service/service.c \
@@ -192,16 +126,13 @@ iso: $(KERNEL)
 
 # --- Çalıştır ---
 run: iso
-	@# 1. Güvenlik Kontrolü: Eğer disk FUSE tarafında mount edilmişse QEMU'nun diski bozmasını engellemek için uyaralım.
 	@if mountpoint -q /home/anilerden/KuvixFSMountSystem/mnt; then \
 		echo "⚠️  UYARI: disk.img şu anda FUSE (mnt) üzerinde bağlı! Güvenlik için unmount ediliyor..."; \
 		fusermount -u /home/anilerden/KuvixFSMountSystem/mnt || true; \
 	fi
 
-	@# 2. Disk izinlerinin doğru olduğundan emin olalım
 	@chmod 666 /home/anilerden/KuvixOS-V2/main/disk.img
 
-	@# 3. QEMU'yu merkezî diskimizle ateşleyelim
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=/home/anilerden/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
 		-device e1000,netdev=n0 -netdev user,id=n0 \

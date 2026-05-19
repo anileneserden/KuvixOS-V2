@@ -1,6 +1,6 @@
 // src/lib/font/font8x16_basic.c
-#include <ui/font/font8x16_basic.h>
-#include <ui/font/font8x8_basic.h>
+#include <kernel/drivers/video/font/font8x16_basic.h>
+#include <kernel/drivers/video/font/font8x8_basic.h>
 #include <stdint.h>
 
 static inline uint8_t row8(uint8_t ch, int r8) {

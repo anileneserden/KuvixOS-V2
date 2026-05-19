@@ -3,8 +3,8 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
 
-#include <ui/font/font8x16_basic.h>
-#include <ui/font/font8x8_basic.h>   // glyph boş mu kontrolü
+#include <kernel/drivers/video/font/font8x8_basic.h>
+#include <kernel/drivers/video/font/font8x16_basic.h>
 
 #include <stdint.h>
 #include <stdbool.h>

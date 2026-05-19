@@ -1,5 +1,5 @@
 // src/lib/font/font8x8_basic.c
-#include <ui/font/font8x8_basic.h>
+#include <kernel/drivers/video/font/font8x8_basic.h>
 
 /*
  * Çok basit bir 8x8 font tablosu.

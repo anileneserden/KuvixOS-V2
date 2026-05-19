@@ -1,7 +1,7 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/video/fb.h>
-#include <ui/font/font8x8_basic.h>
-#include <ui/font/font8x16_basic.h>
+#include <kernel/drivers/video/font/font8x8_basic.h>
+#include <kernel/drivers/video/font/font8x16_basic.h>
 
 static int g_origin_x = 0;
 static int g_origin_y = 0;

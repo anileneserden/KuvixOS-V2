@@ -1,7 +1,6 @@
 #include <kernel/time.h>
 #include <arch/x86/io.h>
 #include <kernel/drivers/rtc/rtc.h>
-#include <ui/desktop.h>
 
 // --- Değişkenler ---
 volatile uint32_t g_ticks_ms = 0;
@@ -14,7 +13,7 @@ static int32_t g_tz_off_sec = 0;
 void time_set_tz_offset_sec(int32_t off_sec) { g_tz_off_sec = off_sec; }
 int32_t time_get_tz_offset_sec(void) { return g_tz_off_sec; }
 
-// --- Yardımcı Zaman Fonksiyonları (En Üste Alındı) ---
+// --- Yardımcı Zaman Fonksiyonları ---
 
 static int is_leap(int y) {
     return (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0));
@@ -38,7 +37,6 @@ static uint64_t days_since_epoch(int y, int m, int d) {
     return days;
 }
 
-// Hata veren fonksiyon buydu, artık yukarıda olduğu için sorun çıkmayacak
 static uint64_t datetime_to_epoch(const rtc_datetime_t* t) {
     uint64_t days = days_since_epoch((int)t->year, (int)t->month, (int)t->day);
     uint64_t sec  = days * 86400ULL;
@@ -109,7 +107,6 @@ void timer_handler(void) {
 void time_init_from_rtc(void) {
     rtc_datetime_t t;
     if (rtc_read_datetime(&t)) {
-        // Artık datetime_to_epoch yukarıda tanımlı olduğu için derleyici hata vermez
         g_boot_epoch = datetime_to_epoch(&t);
         g_hour = t.hour;
         g_minute = t.min;
