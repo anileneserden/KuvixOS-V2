@@ -69,8 +69,8 @@ SRC_C = \
     kernel/fs/vfs.c \
     kernel/memory/kmalloc.c \
     kernel/system/removable.c \
-    ui/session.c \
-    ui/ui_init.c \
+    init/init.c \
+    init/session.c \
     lib/commands/commands.c \
     lib/service/service_registry.c \
     lib/service/service.c \

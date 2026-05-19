@@ -21,7 +21,8 @@
 
 #include <kernel/memory/kmalloc.h>
 
-#include <ui/session.h>
+#include <init/init.h>
+#include <init/session.h>
 
 #include <kernel/fs/fs_init.h>
 
@@ -48,15 +49,15 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
     uint32_t addr  = 0;
     uint32_t w     = 0;
     uint32_t h     = 0;
-    uint32_t pitch = 0;   // bytes
+    uint32_t pitch = 0;
     uint32_t bpp   = 32;
+    (void)bpp;
 
-    // Multiboot1 magic: 0x2BADB002
     if (magic == 0x2BADB002 && mbi && (mbi->flags & (1 << 12))) {
         addr  = (uint32_t)mbi->framebuffer_addr;
         w     = (uint32_t)mbi->framebuffer_width;
         h     = (uint32_t)mbi->framebuffer_height;
-        pitch = (uint32_t)mbi->framebuffer_pitch; // bytes per line
+        pitch = (uint32_t)mbi->framebuffer_pitch;
         bpp   = (uint32_t)mbi->framebuffer_bpp;
     }
 
@@ -87,7 +88,6 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     idt_init();
 
     uintptr_t heap_base = align_up((uintptr_t)&_end, 0x1000);
-
     uint32_t heap_size = 32u * 1024u * 1024u;
 
     kmalloc_init((void*)heap_base, heap_size);
@@ -116,26 +116,23 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     asm volatile("sti");
 
     fs_init_once();
-    // seed_files_run();
 
     vfs_set_cwd("/home/anil");
 
     shell_set_username("anil");
     shell_set_hostname("kuvix");
-    
-    // UI
-    ui_session_init();
-    ui_session_switch(UI_SESSION_TTY1);
+
+    session_init(); 
+
+    os_init();
 
     while (1) {
-        // klavye event dispatch
         uint16_t sc;
         while ((sc = kbd_pop_event()) != 0) {
-            ui_session_handle_scancode(sc);
+            session_handle_scancode(sc);
         }
 
-        // frame tick
-        ui_session_tick();
+        session_tick();
 
         asm volatile("hlt");
     }
