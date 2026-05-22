@@ -5,7 +5,7 @@
 #include <kernel/fs/kvxfs.h>
 #include <kernel/printk.h>
 
-// Context yapısı: Dosyanın tam yolunu oluşturmak için gerekli veriyi taşır
+// Callback yapısı
 typedef struct {
     const char* base_path;
 } ls_context_t;
@@ -15,30 +15,42 @@ static int ls_cb(const char* name, uint32_t size, void* u) {
     ls_context_t* ctx = (ls_context_t*)u;
     
     char full_path[VFS_PATH_MAX];
-    // Tam yolu oluştur: /home/anil + / + desktop
-    vfs_join_path(ctx->base_path, name, full_path, sizeof(full_path));
+    
+    // Manuel Path Birleştirme (Kendi string.c fonksiyonlarını kullanarak)
+    strcpy(full_path, ctx->base_path);
+    
+    // Eğer yolun sonunda / yoksa ekle
+    size_t len = strlen(full_path);
+    if (len > 0 && full_path[len - 1] != '/') {
+        strcat(full_path, "/");
+    }
+    strcat(full_path, name);
 
     vfs_stat_t st;
     
-    // Artık tam yolu (full_path) stat ediyoruz
+    // Dosya tipine göre renk belirleme
     if (vfs_stat(full_path, &st) == 0) {
         if (st.type == VFS_T_DIR) {
-            fb_console_set_color(0x000000FF, 0x00000000); // Mavi (Dizin)
+            // Mavi (Dizin)
+            fb_console_set_color(0x000000FF, 0x00000000); 
         } else {
-            fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz (Dosya)
+            // Beyaz (Dosya)
+            fb_console_set_color(0x00FFFFFF, 0x00000000); 
         }
     }
 
     commands_puts(name);
     commands_puts("\n");
 
-    fb_console_set_color(0x00FFFFFF, 0x00000000); // Reset
+    // Rengi varsayılana döndür (Beyaz)
+    fb_console_set_color(0x00FFFFFF, 0x00000000);
     return 0;
 }
 
 void cmd_ls(int argc, char** argv) {
     char resolved[VFS_PATH_MAX];
     
+    // Yolu belirle (Parametre varsa onu, yoksa CWD'yi al)
     const char* input = (argc > 1) ? argv[1] : vfs_get_cwd();
     
     if (!vfs_resolve_path(input, resolved, sizeof(resolved))) {
@@ -46,12 +58,11 @@ void cmd_ls(int argc, char** argv) {
         return;
     }
 
-    // Callback'e tam yolu iletmek için context oluşturuyoruz
     ls_context_t ctx = { .base_path = resolved };
 
-    // VFS katmanını dene
+    // VFS listeyi dene
     if (vfs_list(resolved, ls_cb, &ctx) != 0) {
-        // Fallback: KVXFS doğrudan tarama
+        // Hata durumunda KVXFS fallback
         kvxfs_list_all(resolved);
     }
 }
