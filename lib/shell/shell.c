@@ -123,6 +123,8 @@ void shell_init(void) {
     commands_set_output(shell_cmd_out, NULL);
     commands_set_clear(shell_cmd_clear, NULL);
 
+    fb_console_clear();
+
     // ✅ Kullanıcı adını USER_NAME makrosundan veya kernel_main'den gelen veriden alabiliriz
     // Ama şimdilik kernel_main'de shell_set_username çağıracağız.
 
