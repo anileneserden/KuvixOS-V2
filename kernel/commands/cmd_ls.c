@@ -5,16 +5,23 @@
 #include <kernel/fs/kvxfs.h>
 #include <kernel/printk.h>
 
-// vfs_list fonksiyonundan dönecek olan her bir dosya/klasör için çağrılan callback
+// Context yapısı: Dosyanın tam yolunu oluşturmak için gerekli veriyi taşır
+typedef struct {
+    const char* base_path;
+} ls_context_t;
+
 static int ls_cb(const char* name, uint32_t size, void* u) {
-    // GCC'nin 'unused parameter' uyarısını susturmak için
-    (void)u;
     (void)size;
+    ls_context_t* ctx = (ls_context_t*)u;
+    
+    char full_path[VFS_PATH_MAX];
+    // Tam yolu oluştur: /home/anil + / + desktop
+    vfs_join_path(ctx->base_path, name, full_path, sizeof(full_path));
 
     vfs_stat_t st;
     
-    // Gelen ismin tipini (klasör mü dosya mı) dinamik olarak sorgula
-    if (vfs_stat(name, &st) == 0) {
+    // Artık tam yolu (full_path) stat ediyoruz
+    if (vfs_stat(full_path, &st) == 0) {
         if (st.type == VFS_T_DIR) {
             fb_console_set_color(0x000000FF, 0x00000000); // Mavi (Dizin)
         } else {
@@ -22,33 +29,29 @@ static int ls_cb(const char* name, uint32_t size, void* u) {
         }
     }
 
-    // Dosya/Klasör ismini ekrana bas
     commands_puts(name);
     commands_puts("\n");
 
-    // Konsol rengini varsayılana (beyaz) geri döndür
-    fb_console_set_color(0x00FFFFFF, 0x00000000);
+    fb_console_set_color(0x00FFFFFF, 0x00000000); // Reset
     return 0;
 }
 
 void cmd_ls(int argc, char** argv) {
     char resolved[VFS_PATH_MAX];
     
-    // 1. Yolu çöz (CWD veya dışarıdan gelen parametre)
     const char* input = (argc > 1) ? argv[1] : vfs_get_cwd();
+    
     if (!vfs_resolve_path(input, resolved, sizeof(resolved))) {
         commands_puts("Hata: yol cozumlenemedi.\n");
         return;
     }
 
-    // 2. Önce resmi ve dinamik yol olan VFS katmanını dene
-    int ret = vfs_list(resolved, ls_cb, NULL);
-    
-    // 3. KÖPRÜ KOPUKSA FALLBACK (YEDEK PLAN) DEVREYE GİRER:
-    // Eğer VFS katmanı hata dönerse (ret != 0), statik yol kontrolü yapmadan 
-    // doğrudan disk okuma fonksiyonunu tetikle!
-    if (ret != 0) {
-        // Doğrudan disk üzerindeki KVXFS tablolarını dinamik olarak tarar
+    // Callback'e tam yolu iletmek için context oluşturuyoruz
+    ls_context_t ctx = { .base_path = resolved };
+
+    // VFS katmanını dene
+    if (vfs_list(resolved, ls_cb, &ctx) != 0) {
+        // Fallback: KVXFS doğrudan tarama
         kvxfs_list_all(resolved);
     }
 }
