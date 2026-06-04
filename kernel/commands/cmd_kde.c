@@ -12,7 +12,6 @@ void cmd_kde(int argc, char** argv) {
 
     commands_puts("[KDE LOADER V2] /home/anil/desktop.kde yukleniyor...\n");
 
-    // 1. Masaüstü binary'si için üst sınır bellek alanı tanımlıyoruz (64 KB)
     uint32_t max_size = 64 * 1024; 
     uint8_t* kde_buffer = (uint8_t*)kmalloc(max_size);
 
@@ -23,7 +22,6 @@ void cmd_kde(int argc, char** argv) {
 
     uint32_t nread = 0;
 
-    // 2. vfs_read_all fonksiyonuyla ham binary'yi doğrudan belleğe çekiyoruz
     if (vfs_read_all("/home/anil/desktop.kde", kde_buffer, max_size, &nread)) {
         if (nread == 0) {
             commands_puts("Error: /home/anil/desktop.kde is empty!\n");
@@ -36,32 +34,28 @@ void cmd_kde(int argc, char** argv) {
         return;
     }
 
-    // 3. Grafik köprüsünü (DE_API) dolduruyoruz
-    DE_API api;
-    api.clear          = fb_clear;
-    api.put_pixel      = fb_putpixel; // KuvixOS kernel fonksiyon adına göre eşitlendi
-    api.update_display = fb_present;
-    api.log            = (void(*)(const char*))printk; // printk köprüsü
+    int width = fb_get_width();
+    int height = fb_get_height();
 
-    // 4. KST metin konsolunu kapatıyoruz (Yırtılmaları ve kaymaları önlemek için)
+    DE_API api;
+    api.screen_width   = width;
+    api.screen_height  = height;
+    api.clear          = fb_clear;
+    api.put_pixel      = fb_putpixel;
+    api.update_display = fb_present;
+    api.log            = (void(*)(const char*))printk;
+
     fb_console_set_enabled(false);
 
-    // 5. Zıplama Çizgisi (Function Pointer)
-    // DEDK v2 tarafında _start fonksiyonunu tam 0x0 adresine bağladığımız için direkt tamponun başına zıplıyoruz.
     typedef void (*kde_entry_t)(DE_API*);
     kde_entry_t start_desktop = (kde_entry_t)kde_buffer;
 
-    // KONTROLÜ RESMEN MASAÜSTÜNE DEVREDİYORUZ!
     start_desktop(&api);
 
-    // 6. Güvenlik Duvarı
-    // Masaüstü döngüsü bir şekilde biterse, sistem karanlıkta kalmasın diye konsolu geri açıyoruz.
     fb_console_set_enabled(true);
     commands_puts("\n[KDE LOADER V2] Warning: Desktop execution finished. Returned to shell.\n");
 
-    // Belleği temizliyoruz
     kfree(kde_buffer);
 }
 
-// KuvixOS otomatik komut kayıt makrosu
 REGISTER_COMMAND(kde, cmd_kde, "Starts KuvixOS DEDK V2 Desktop Environment");
