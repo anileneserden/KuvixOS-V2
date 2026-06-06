@@ -58,7 +58,6 @@ SRC_C = \
     kernel/drivers/video/font/font8x16_basic.c \
     kernel/drivers/ata_pio.c \
     kernel/drivers/power.c \
-    kernel/drivers/ps2.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
     kernel/fs/fs_init.c \
