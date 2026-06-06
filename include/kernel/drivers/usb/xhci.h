@@ -25,6 +25,16 @@ typedef struct {
     uint8_t  b_num_configurations;
 } __attribute__((packed)) usb_device_descriptor_t;
 
+typedef struct {
+    uint8_t  caplength;
+    uint8_t  reserved;
+    uint16_t hciversion;
+    uint32_t hcsparams1;
+    uint32_t hcsparams2;
+    uint32_t hcsparams3;
+    uint32_t hccparams1;
+} __attribute__((packed)) xhci_cap_regs_t;
+
 /**
  * xHCI Kontrolcü Yapısı
  * Donanımın temel adresini ve durumunu tutar.

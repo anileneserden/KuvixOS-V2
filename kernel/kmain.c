@@ -17,6 +17,8 @@
 
 #include <kernel/drivers/net/net.h>
 
+#include <kernel/drivers/pci/pci.h>
+
 #include <kernel/time.h>
 
 #include <kernel/memory/kmalloc.h>
@@ -82,6 +84,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     gdt_init();
     idt_init();
+
+    check_usb_pci();
 
     uintptr_t heap_base = align_up((uintptr_t)&_end, 0x1000);
 

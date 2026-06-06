@@ -9,3 +9,4 @@ void pci_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32
 void pci_write16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t value);
 
 void pci_scan_dump_nics(void);
+void check_usb_pci(void);

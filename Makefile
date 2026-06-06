@@ -54,8 +54,9 @@ SRC_C = \
     kernel/drivers/input/mouse_ps2.c \
     kernel/drivers/net/e1000.c \
     kernel/drivers/net/net.c \
-    kernel/drivers/net/pci.c \
+    kernel/drivers/pci/pci.c \
     kernel/drivers/rtc/rtc.c \
+    kernel/drivers/usb/xhci.c \
     kernel/drivers/video/fb_console.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/gfx.c \
@@ -151,7 +152,11 @@ SRC_C = \
 
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
-SRC_CPP = $(wildcard cpp/drivers/usb/hid/*.cpp)
+
+SRC_CPP = \
+    cpp/kernel/new_delete.cpp \
+    cpp/drivers/usb/hid/HIDManager.cpp \
+    cpp/drivers/usb/hid/MouseDevice.cpp
 
 OBJS = $(SRC_S:%.S=$(BUILD)/%.o) \
        $(SRC_ASM:%.asm=$(BUILD)/%.o) \
@@ -206,10 +211,12 @@ run: iso
 	@test -f disk2.img || dd if=/dev/zero of=disk2.img bs=1M count=5
 	@chmod 666 disk.img disk2.img
 	qemu-system-i386 -cdrom $(IMAGE) \
-		-drive file=disk.img,format=raw,index=0,media=disk \
-		-drive file=disk2.img,format=raw,index=1,media=disk \
+	    -drive file=disk.img,format=raw,index=0,media=disk \
+	    -drive file=disk2.img,format=raw,index=1,media=disk \
         -device e1000,netdev=n0 -netdev user,id=n0 \
-		-m 256M -serial stdio
+        -device nec-usb-xhci,id=xhci \
+        -device usb-mouse,bus=xhci.0 \
+        -m 256M -serial stdio
 
 clean:
 	rm -rf $(BUILD) $(ISO) $(IMAGE)
