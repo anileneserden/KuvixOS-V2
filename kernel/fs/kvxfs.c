@@ -277,6 +277,40 @@ int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_s
     return 1;
 }
 
+// Belirli bir offset'ten itibaren n byte oku
+int kvxfs_read_at(const char* path, void* out, uint32_t offset, uint32_t n, uint32_t* out_nread) {
+    if (!path || !out) return 0;
+    
+    char clean[64];
+    kvxfs_trim_path(path, clean, 64);
+    int idx = find_ent(clean);
+    if (idx < 0) return 0;
+
+    uint32_t file_size = g_meta.ent[idx].size;
+    if (offset >= file_size) {
+        *out_nread = 0; // Dosya sonuna gelindi
+        return 1;
+    }
+
+    uint32_t can_read = file_size - offset;
+    if (n > can_read) n = can_read;
+
+    // Sektör bazlı okuma (Sadece gereken kısmı oku)
+    uint32_t start_lba = g_meta.ent[idx].start_lba;
+    uint8_t sec[512];
+    
+    // Basit bir yaklaşım: Okunacak bloğu bul ve kopyala
+    // Not: Bu kısım daha performanslı olması için sektör bazlı geliştirilebilir
+    uint32_t sector_idx = offset / 512;
+    uint32_t offset_in_sector = offset % 512;
+    
+    block_read(start_lba + sector_idx, 1, sec);
+    memcpy(out, sec + offset_in_sector, n);
+
+    *out_nread = n;
+    return 1;
+}
+
 void kvxfs_list_all(const char* filter_path) {
     if (!filter_path || !kvxfs_init()) return;
     
