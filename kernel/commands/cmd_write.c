@@ -7,7 +7,7 @@
 void cmd_write(int argc, char** argv) {
     if (argc < 3) {
         commands_puts("Kullanim: write <path> <text...>\n");
-        commands_puts("Ornek: write /persist/test/a.txt merhaba dunya\n");
+        commands_puts("Ornek: write /test/a.txt merhaba dunya\n");
         return;
     }
 
