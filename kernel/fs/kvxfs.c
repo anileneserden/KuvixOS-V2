@@ -351,3 +351,29 @@ int kvxfs_exists(const char* path) {
     kvxfs_trim_path(path, clean, 64);
     return find_ent(clean) >= 0;
 }
+
+int kvxfs_open(const char* path) {
+    if (!kvxfs_init()) return -1;
+    return find_ent(path);
+}
+
+int kvxfs_read(int fd, void* out, uint32_t n, uint32_t* out_nread) {
+    if (fd < 0 || fd >= KVX_MAX_FILES || !g_meta.ent[fd].used) return 0;
+    
+    // Basit bir read işlemi (kvxfs_read_all'u buraya uyarla)
+    // Bu fonksiyonu vfs_read içinde kullanacağız.
+    return kvxfs_read_all(g_meta.ent[fd].path, out, n, out_nread);
+}
+
+void kvxfs_close(int fd) {
+    // Şu anki KVXFS yapımız durum bilgisini (offset vb.) dosya bazlı tutmadığı için
+    // kapatılacak aktif bir oturum veya kaynak bulunmuyor.
+    // Ancak ileride dosyaya yazma/okuma pozisyonu (offset) eklersek 
+    // burada o verileri temizleyeceğiz.
+    
+    // Gelen FD'nin geçerli olup olmadığını kontrol etmek iyi bir pratiktir:
+    if (fd < 0 || fd >= KVX_MAX_FILES) return;
+    
+    // Şimdilik sadece "bu dosyayı kapatma isteği alındı" bilgisini 
+    // loglamak istersen buraya printk eklenebilir.
+}

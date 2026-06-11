@@ -107,16 +107,15 @@ static void path_pop(char* path) {
 
 typedef enum {
     BACK_RAM = 1,
-    BACK_TOY = 2
+    BACK_TOY = 2,
+    BACK_DISK = 3
 } vfs_backend_t;
 
 struct vfs_file {
     vfs_backend_t back;
     int           flags;
-    // ram
     int           rfd;
-    // toy
-    int           th; // toyfs handle
+    int           th;
 };
 
 static char vfs_cwd[128] = "/";
@@ -182,86 +181,63 @@ static void toy_close(int h) {
 int vfs_open(const char* path, int flags, vfs_file_t** out) {
     if (!path || !out) return 0;
 
-    // ------------------------------------------------------
-    // /removable -> ToyFS only (read-only mount view)
-    // ------------------------------------------------------
-    if (is_removable_path(path)) {
-        int want_write2 = (flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR);
-        if (want_write2) return 0;
+    char resolved[VFS_PATH_MAX];
+    if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
+    // /removable -> ToyFS
+    if (is_removable_path(resolved)) {
+        if ((flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR)) return 0;
         char real[VFS_PATH_MAX];
-        removable_to_toy(path, real, sizeof(real));
-
+        removable_to_toy(resolved, real, sizeof(real));
         int th;
         if (!toy_open_ro(real, &th)) return 0;
-
         struct vfs_file* f = alloc_slot();
         if (!f) { toy_close(th); return 0; }
-
-        f->back  = BACK_TOY;
-        f->flags = flags;
-        f->rfd   = -1;
-        f->th    = th;
-        *out = f;
-        return 1;
+        f->back = BACK_TOY; f->flags = flags; f->rfd = -1; f->th = th;
+        *out = f; return 1;
     }
 
-    // write -> always RAM
+    // RAMFS Yazma veya Okuma
     int want_write = (flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR);
-    if (want_write) {
+    if (want_write || ramfs_exists(resolved)) {
         int create = (flags & VFS_O_CREAT) ? 1 : 0;
         int rfd;
-        if (!ramfs_open(path, create, &rfd)) return 0;
-
+        if (!ramfs_open(resolved, create, &rfd)) return 0;
         struct vfs_file* f = alloc_slot();
         if (!f) { ramfs_close(rfd); return 0; }
-
-        f->back = BACK_RAM;
-        f->flags = flags;
-        f->rfd = rfd;
-        f->th = -1;
-        *out = f;
-        return 1;
+        f->back = BACK_RAM; f->flags = flags; f->rfd = rfd; f->th = -1;
+        *out = f; return 1;
     }
 
-    // read -> overlay: RAM first, then TOY
-    if (ramfs_exists(path)) {
-        int rfd;
-        if (!ramfs_open(path, 0, &rfd)) return 0;
-
-        struct vfs_file* f = alloc_slot();
-        if (!f) { ramfs_close(rfd); return 0; }
-
-        f->back = BACK_RAM;
-        f->flags = flags;
-        f->rfd = rfd;
-        f->th = -1;
-        *out = f;
-        return 1;
+    // KVXFS Okuma (Disk Desteği)
+    if (kvxfs_exists(resolved)) {
+        int kfd = kvxfs_open(resolved);
+        if (kfd >= 0) {
+            struct vfs_file* f = alloc_slot();
+            if (!f) { kvxfs_close(kfd); return 0; }
+            f->back = BACK_DISK; f->flags = flags; f->rfd = kfd; f->th = -1;
+            *out = f; return 1;
+        }
     }
 
+    // ToyFS Okuma
     int th;
-    if (!toy_open_ro(path, &th)) return 0;
-
+    if (!toy_open_ro(resolved, &th)) return 0;
     struct vfs_file* f = alloc_slot();
     if (!f) { toy_close(th); return 0; }
-
-    f->back = BACK_TOY;
-    f->flags = flags;
-    f->rfd = -1;
-    f->th = th;
-    *out = f;
-    return 1;
+    f->back = BACK_TOY; f->flags = flags; f->rfd = -1; f->th = th;
+    *out = f; return 1;
 }
 
 int vfs_read(vfs_file_t* f, void* out, uint32_t n, uint32_t* out_nread) {
     if (out_nread) *out_nread = 0;
     if (!f || f->back == 0) return 0;
 
-    if (f->back == BACK_RAM) {
-        return ramfs_read(f->rfd, out, n, out_nread);
-    } else {
-        return toy_read(f->th, out, n, out_nread);
+    switch (f->back) {
+        case BACK_RAM:  return ramfs_read(f->rfd, out, n, out_nread);
+        case BACK_DISK: return kvxfs_read(f->rfd, out, n, out_nread);
+        case BACK_TOY:  return toy_read(f->th, out, n, out_nread);
+        default:        return 0;
     }
 }
 
@@ -290,17 +266,22 @@ int vfs_mkdir(const char* path) {
 }
 
 int vfs_stat(const char* path, vfs_stat_t* st) {
-    if (!st) return 0;
+    if (!st || !path) return 0;
+    
+    // Yolu çözümle (.. ve . gibi yapıları temizle)
+    char resolved[VFS_PATH_MAX];
+    if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
+
     st->type = 0; st->size = 0; st->backend = 0;
 
-    // /removable -> toyfs view
-    if (is_removable_path(path)) {
+    // 1. /removable -> ToyFS görünümü
+    if (is_removable_path(resolved)) {
         char real[VFS_PATH_MAX];
-        removable_to_toy(path, real, sizeof(real));
+        removable_to_toy(resolved, real, sizeof(real));
 
         if (toyfs_iter(real, 0, 0)) {
             st->type = VFS_T_DIR;
-            st->backend = 2;
+            st->backend = BACK_TOY;
             return 1;
         }
 
@@ -308,29 +289,36 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
         if (h >= 0) {
             toyfs_close(h);
             st->type = VFS_T_FILE;
-            st->backend = 2;
+            st->backend = BACK_TOY;
             return 1;
         }
         return 0;
     }
 
-    if (ramfs_is_dir(path)) {
+    // 2. RAMFS Kontrolü
+    if (ramfs_is_dir(resolved)) {
         st->type = VFS_T_DIR;
-        st->backend = 1;
+        st->backend = BACK_RAM;
         return 1;
     }
-
-    if (ramfs_exists(path)) {
+    if (ramfs_exists(resolved)) {
         st->type = VFS_T_FILE;
-        st->backend = 1;
+        st->backend = BACK_RAM;
         return 1;
     }
 
-    int h = toyfs_open(path);
+    if (kvxfs_exists(resolved)) {
+        st->type = VFS_T_FILE;
+        st->backend = 3;
+        return 1;
+    }
+
+    // 4. TOYFS Kontrolü (En son seçenek)
+    int h = toyfs_open(resolved);
     if (h >= 0) {
         toyfs_close(h);
         st->type = VFS_T_FILE;
-        st->backend = 2;
+        st->backend = BACK_TOY;
         return 1;
     }
 
@@ -369,9 +357,15 @@ int vfs_set_cwd(const char* path) {
 }
 
 void vfs_close(vfs_file_t* f) {
-    if (!f || f->back == 0) return;
-    if (f->back == BACK_RAM) ramfs_close(f->rfd);
-    else toy_close(f->th);
+    if (!f) return;
+    
+    if (f->back == BACK_RAM) {
+        ramfs_close(f->rfd);
+    } else if (f->back == BACK_DISK) {
+        kvxfs_close(f->rfd);
+    } else if (f->back == BACK_TOY) {
+        toy_close(f->th);
+    }
     free_slot(f);
 }
 

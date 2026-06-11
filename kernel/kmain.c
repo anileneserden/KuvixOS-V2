@@ -78,6 +78,28 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
     fb_init(addr, w, h, pitch);
 }
 
+void test_vfs_disk_access() {
+    printk("\n[DISK-TEST] VFS disk baglantisi kontrol ediliyor...\n");
+    
+    // Test etmek istediğin dosya (örneğin kdf dosyan veya bir text dosyası)
+    const char* test_file = "/home/anil/mouse_ps2.kdf"; 
+    
+    vfs_stat_t st;
+    if (vfs_stat(test_file, &st)) {
+        printk("[DISK-TEST] OK: '%s' bulundu! Backend: %d\n", test_file, st.backend);
+        
+        uint32_t size = 0;
+        // Dosyayı diske okumayı dene (BACK_DISK ise 3 olmalı)
+        if (st.backend == 3) {
+            printk("[DISK-TEST] OK: Backend 3 (KVXFS) dogrulandi.\n");
+        } else {
+            printk("[DISK-TEST] UYARI: Dosya bulundu ama backend beklenenden farkli: %d\n", st.backend);
+        }
+    } else {
+        printk("[DISK-TEST] HATA: '%s' bulunamadi! VFS yolu veya mount hatasi.\n", test_file);
+    }
+}
+
 // ------------------------------------------------------------
 // Kernel entry
 // ------------------------------------------------------------
@@ -118,15 +140,9 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     fs_init_once();
 
-    // VFS'in diskten okuyabildiğini doğrulamak için küçük bir test:
-    // vfs_exists fonksiyonunu kullanalım
-    if (vfs_exists("/persist/home/anil/mouse_ps2.kdf")) {
-        printk("[DEBUG] Dosya sistemde bulundu!\n");
-    } else {
-        printk("[DEBUG] HATA: Dosya vfs_exists ile bulunamadi!\n");
-    }
+    test_vfs_disk_access();
 
-    int kdf_res = kdf_load_driver("/persist/home/anil/mouse_ps2.kdf");
+    vfs_set_cwd("/home/anil");
 
     shell_set_username("anil");
     shell_set_hostname("kuvix");
