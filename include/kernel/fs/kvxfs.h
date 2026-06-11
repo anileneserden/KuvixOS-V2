@@ -17,5 +17,6 @@ int kvxfs_format(void);
 int kvxfs_open(const char* path);
 void kvxfs_close(int fd);
 int kvxfs_read(int fd, void* out, uint32_t n, uint32_t* out_nread);
+uint32_t kvxfs_get_size(const char* path);
 
 #endif

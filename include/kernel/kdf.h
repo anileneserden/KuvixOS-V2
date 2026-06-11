@@ -13,12 +13,12 @@ typedef struct {
 } KernelAPI;
 
 typedef struct {
-    uint32_t magic;           
-    uint32_t driver_version;  
-    char     driver_name[32]; 
-    uint32_t init_offset;     
-    uint32_t exit_offset;     
-    uint32_t code_size;       
+    uint32_t magic;           // 4
+    uint32_t driver_version;  // 4
+    char     driver_name[32]; // 32
+    uint32_t init_offset;     // 4
+    uint32_t exit_offset;     // 4
+    uint32_t code_size;       // 4
 } __attribute__((packed)) KDF_Header;
 
 int kdf_load_driver(const char* path);

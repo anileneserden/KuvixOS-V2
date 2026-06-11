@@ -307,13 +307,21 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
         return 1;
     }
 
+    // 3. KVXFS Kontrolü
     if (kvxfs_exists(resolved)) {
-        st->type = VFS_T_FILE;
-        st->backend = 3;
+        // kvxfs.h'de tanımlı olduğunu varsaydığımız fonksiyonu kullanıyoruz
+        if (kvxfs_is_dir(resolved)) {
+            st->type = VFS_T_DIR;
+            st->size = 0; // Klasörlerin dosya sisteminde boyutu 0'dır
+        } else {
+            st->type = VFS_T_FILE;
+            st->size = kvxfs_get_size(resolved); // Artık doğru boyutu alacak
+        }
+        
+        st->backend = BACK_DISK; // BACK_DISK değerinin tanımlı olduğundan emin ol (genelde 3)
         return 1;
     }
 
-    // 4. TOYFS Kontrolü (En son seçenek)
     int h = toyfs_open(resolved);
     if (h >= 0) {
         toyfs_close(h);
