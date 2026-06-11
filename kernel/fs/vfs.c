@@ -2,6 +2,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/ramfs.h>
 #include <kernel/fs/kvxfs.h>
+#include <kernel/fs/toyfs.h>
 #include <lib/string.h>
 
 // toyfs header:
@@ -659,6 +660,20 @@ int vfs_is_dir(const char* path) {
 
     // RamFS kontrolü
     if (strcmp(path, "/") == 0) return 1;
+    
+    return 0;
+}
+
+uint32_t vfs_get_size(vfs_file_t* f) {
+    if (!f || f->back == 0) return 0;
+
+    if (f->back == BACK_RAM) {
+        return ramfs_size(f->rfd);
+    }
+    else if (f->back == BACK_TOY) {
+        vfs_stat_t st;
+        return 0;
+    }
     
     return 0;
 }

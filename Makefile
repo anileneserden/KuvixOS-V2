@@ -31,6 +31,7 @@ SRC_ASM = kernel/arch/x86/interrupt_entry.asm
 
 SRC_C = \
     kernel/kmain.c \
+    kernel/kdf_loader.c \
     kernel/panic.c \
     kernel/printk.c \
     kernel/serial.c \

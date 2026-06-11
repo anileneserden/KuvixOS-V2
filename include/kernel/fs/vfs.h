@@ -51,3 +51,5 @@ int  vfs_list(const char* dir_prefix, int (*cb)(const char* path, uint32_t size,
 
 int vfs_read_all_alloc(const char* path, uint8_t** out_buf, uint32_t* out_size);
 void vfs_free_alloc(void* p);
+
+uint32_t vfs_get_size(vfs_file_t* f);

@@ -1,4 +1,4 @@
-// kernel/kmain.c
+// --- ÇEKİRDEK VE SİSTEM İNCLUDE'LARI ---
 #include <stdint.h>
 #include <multiboot2.h>
 
@@ -25,10 +25,11 @@
 #include <init/session.h>
 
 #include <kernel/fs/fs_init.h>
-
 #include <kernel/system/seed_files.h>
-
 #include <kernel/fs/vfs.h>
+
+// --- KDF (Kernel Driver Framework) İNCLUDE'U ---
+#include <kernel/kdf.h> 
 
 #include <kernel/user.h>
 #include <lib/shell.h>
@@ -117,13 +118,20 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     fs_init_once();
 
-    vfs_set_cwd("/home/anil");
+    // VFS'in diskten okuyabildiğini doğrulamak için küçük bir test:
+    // vfs_exists fonksiyonunu kullanalım
+    if (vfs_exists("/persist/home/anil/mouse_ps2.kdf")) {
+        printk("[DEBUG] Dosya sistemde bulundu!\n");
+    } else {
+        printk("[DEBUG] HATA: Dosya vfs_exists ile bulunamadi!\n");
+    }
+
+    int kdf_res = kdf_load_driver("/persist/home/anil/mouse_ps2.kdf");
 
     shell_set_username("anil");
     shell_set_hostname("kuvix");
 
-    session_init(); 
-
+    session_init();
     os_init();
 
     while (1) {
