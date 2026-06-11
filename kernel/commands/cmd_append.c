@@ -11,7 +11,7 @@
 void cmd_append(int argc, char** argv) {
     if (argc < 3) {
         commands_puts("Kullanim: append <path> <text...>\n");
-        commands_puts("Ornek: append /persist/test/a.txt merhaba dunya\n");
+        commands_puts("Ornek: append /test/a.txt merhaba dunya\n");
         return;
     }
 

@@ -5,7 +5,7 @@
 void cmd_mkdir(int argc, char** argv) {
     if (argc < 2) {
         commands_puts("Kullanim: mkdir <dizin>\n");
-        commands_puts("Ornek: mkdir /persist/test\n");
+        commands_puts("Ornek: mkdir /test\n");
         return;
     }
 

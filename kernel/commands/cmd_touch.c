@@ -5,15 +5,15 @@
 
 void cmd_touch(int argc, char** argv) {
     if (argc < 2) {
-        commands_puts("Kullanım: touch /persist/dosya_adı\n");
+        commands_puts("Kullanım: touch /dosya_adı\n");
         return;
     }
 
     const char* path = argv[1];
 
-    // Sadece /persist/ dizinine izin veriyoruz
-    if (strncmp(path, "/persist/", 9) != 0) {
-        commands_puts("Hata: Sadece /persist/ altında dosya oluşturulabilir.\n");
+    // Sadece / dizinine izin veriyoruz
+    if (strncmp(path, "/", 9) != 0) {
+        commands_puts("Hata: Sadece / altında dosya oluşturulabilir.\n");
         return;
     }
 

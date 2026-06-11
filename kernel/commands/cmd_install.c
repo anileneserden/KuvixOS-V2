@@ -9,14 +9,14 @@ void cmd_install(int argc, char** argv) {
 
     // 1. Gerekli klasörleri oluştur
     commands_puts("Sistem dizinleri oluşturuluyor...\n");
-    kvxfs_mkdir("/persist/system");
-    kvxfs_mkdir("/persist/boot");
+    kvxfs_mkdir("/system");
+    kvxfs_mkdir("/boot");
 
     // 2. Kernel'ı kopyala (Şimdilik sembolik, ileride vfs_read ile kernel.elf kopyalanacak)
     // Test amaçlı bir sistem dosyası yazalım
     const char* config_data = "KuvixOS V2 - Installed\nBootMode=ATA_PIO\n";
-    if (kvxfs_write_all("/persist/system/os.conf", (uint8_t*)config_data, 42)) {
-        commands_puts("Kurulum Tamamlandı! /persist/system/os.conf oluşturuldu.\n");
+    if (kvxfs_write_all("/system/os.conf", (uint8_t*)config_data, 42)) {
+        commands_puts("Kurulum Tamamlandı! /system/os.conf oluşturuldu.\n");
     } else {
         commands_puts("HATA: Dosya yazılamadı.\n");
     }

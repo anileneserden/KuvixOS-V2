@@ -5,7 +5,7 @@
 void cmd_rm(int argc, char** argv) {
     if (argc < 2) {
         commands_puts("Kullanim: rm <dosya/dizin>\n");
-        commands_puts("Ornek: rm /persist/test2/a.txt\n");
+        commands_puts("Ornek: rm /test2/a.txt\n");
         return;
     }
 
@@ -18,7 +18,7 @@ void cmd_rm(int argc, char** argv) {
 
     if (strcmp(path, "/") == 0 ||
         strcmp(path, "/persist") == 0 ||
-        strcmp(path, "/persist/") == 0 ||
+        strcmp(path, "/") == 0 ||
         strcmp(path, "/fat") == 0 ||
         strcmp(path, "/tmp") == 0) {
         commands_puts("Hata: bu yol silinemez.\n");

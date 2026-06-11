@@ -19,7 +19,7 @@ int fs_prepare_user_layout(void) {
     ensure_dir("/home");
     ensure_dir("/home/anil");
     ensure_dir("/sys");
-    ensure_dir("/sys/themes");
+    ensure_dir("/sys/drivers");
 
     if (vfs_exists("/home/anil")) {
         printk("[FS] Kullanici dizini hazir: /home/anil\n");

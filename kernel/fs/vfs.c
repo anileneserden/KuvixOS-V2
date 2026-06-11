@@ -85,7 +85,7 @@ static void path_pop(char* path) {
         return;
     }
 
-    // Sondaki slash'ı temizle: "/persist/" -> "/persist"
+    // Sondaki slash'ı temizle: "/" -> "/persist"
     if (path[len - 1] == '/') {
         path[len - 1] = 0;
         len--;
@@ -101,7 +101,7 @@ static void path_pop(char* path) {
         path[0] = '/';
         path[1] = 0;
     } else {
-        path[len - 1] = 0; // "/persist/apps" -> "/persist"
+        path[len - 1] = 0; // "/apps" -> "/persist"
     }
 }
 
@@ -353,7 +353,7 @@ int vfs_set_cwd(const char* path) {
 
     if (!path) return 0;
 
-    // 1. Yolu tam olarak çöz (/persist/.. -> / gibi)
+    // 1. Yolu tam olarak çöz (/.. -> / gibi)
     if (!vfs_resolve_path(path, new_cwd, sizeof(new_cwd))) {
         return 0;
     }
