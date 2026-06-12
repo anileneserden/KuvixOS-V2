@@ -13,4 +13,5 @@ typedef struct {
     
     void (*update_display)(void);
     void (*log)(const char* msg);
+    void (*get_time)(char* buffer);
 } DE_API;

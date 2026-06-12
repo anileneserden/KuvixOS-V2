@@ -7,8 +7,24 @@
 #include <lib/string.h>
 #include <kernel/printk.h>
 #include <kernel/drivers/video/gfx.h>
+#include <kernel/drivers/rtc/rtc.h> // RTC başlık dosyan
 
-// Dikdörtgen çizim köprüsü
+// Saati string formatında DEDK V2 için hazırlar
+void kernel_get_time(char* buffer) {
+    rtc_datetime_t dt;
+    if (rtc_read_datetime(&dt)) {
+        // Basit string formatlama (sprintf veya kütüphanen varsa onu kullan)
+        buffer[0] = (dt.hour / 10) + '0'; buffer[1] = (dt.hour % 10) + '0';
+        buffer[2] = ':';
+        buffer[3] = (dt.min / 10) + '0'; buffer[4] = (dt.min % 10) + '0';
+        buffer[5] = ':';
+        buffer[6] = (dt.sec / 10) + '0'; buffer[7] = (dt.sec % 10) + '0';
+        buffer[8] = '\0';
+    } else {
+        buffer[0] = '-'; buffer[1] = '-'; buffer[2] = ':'; buffer[3] = '-'; buffer[4] = '-'; buffer[5] = '\0';
+    }
+}
+
 void kernel_draw_rect(int start_x, int start_y, int w, int h, uint32_t color) {
     for (int y = start_y; y < start_y + h; y++) {
         for (int x = start_x; x < start_x + w; x++) {
@@ -17,8 +33,6 @@ void kernel_draw_rect(int start_x, int start_y, int w, int h, uint32_t color) {
     }
 }
 
-// Hatayı çözen yazı çizim köprüsü (Wrapper)
-// DE_API'den (x, y, text, color) alır, kernel'a (x, y, color, text) olarak iletir.
 void kernel_draw_text(int x, int y, const char* text, uint32_t color) {
     gfx_draw_text_utf8(x, y, color, text);
 }
@@ -37,7 +51,6 @@ void cmd_kde(int argc, char** argv) {
     }
 
     uint32_t nread = 0;
-
     if (vfs_read_all("/sys/de/desktop.kde", kde_buffer, max_size, &nread)) {
         if (nread == 0) {
             commands_puts("Error: /sys/de/desktop.kde is empty!\n");
@@ -45,25 +58,24 @@ void cmd_kde(int argc, char** argv) {
             return;
         }
     } else {
-        commands_puts("Error: Could not read /sys/de/desktop.kde. Make sure the file exists.\n");
+        commands_puts("Error: Could not read /sys/de/desktop.kde.\n");
         kfree(kde_buffer);
         return;
     }
 
-    int width = fb_get_width();
-    int height = fb_get_height();
-
+    // API Yapılandırması
     DE_API api;
-    api.screen_width   = width;
-    api.screen_height  = height;
+    api.screen_width   = fb_get_width();
+    api.screen_height  = fb_get_height();
     api.clear          = fb_clear;
     api.put_pixel      = fb_putpixel;
-
     api.draw_rect      = kernel_draw_rect;
     api.draw_text      = kernel_draw_text; 
-
     api.update_display = fb_present;
     api.log            = (void(*)(const char*))printk;
+    
+    // Yeni eklenen RTC köprüsü
+    api.get_time       = kernel_get_time; 
 
     fb_console_set_enabled(false);
 
@@ -73,8 +85,6 @@ void cmd_kde(int argc, char** argv) {
     start_desktop(&api);
 
     fb_console_set_enabled(true);
-    commands_puts("\n[KDE LOADER V2] Warning: Desktop execution finished. Returned to shell.\n");
-
     kfree(kde_buffer);
 }
 
