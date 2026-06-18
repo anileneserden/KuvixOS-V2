@@ -193,17 +193,17 @@ iso: $(KERNEL)
 # --- Çalıştır ---
 run: iso
 	@# 1. Güvenlik Kontrolü: Eğer disk FUSE tarafında mount edilmişse QEMU'nun diski bozmasını engellemek için uyaralım.
-	@if mountpoint -q /home/anilerden/KuvixFSMountSystem/mnt; then \
+	@if mountpoint -q /home/anil/KuvixFSMountSystem/mnt; then \
 		echo "⚠️  UYARI: disk.img şu anda FUSE (mnt) üzerinde bağlı! Güvenlik için unmount ediliyor..."; \
-		fusermount -u /home/anilerden/KuvixFSMountSystem/mnt || true; \
+		fusermount -u /home/anil/KuvixFSMountSystem/mnt || true; \
 	fi
 
 	@# 2. Disk izinlerinin doğru olduğundan emin olalım
-	@chmod 666 /home/anilerden/KuvixOS-V2/main/disk.img
+	@chmod 666 /home/anil/KuvixOS-V2/main/disk.img
 
 	@# 3. QEMU'yu merkezî diskimizle ateşleyelim
 	qemu-system-i386 -cdrom $(IMAGE) \
-		-drive file=/home/anilerden/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
+		-drive file=/home/anil/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
 		-device e1000,netdev=n0 -netdev user,id=n0 \
 		-m 256M -serial stdio
 

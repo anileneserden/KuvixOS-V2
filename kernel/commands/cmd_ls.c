@@ -48,23 +48,11 @@ static int ls_cb(const char* name, uint32_t size, void* u) {
 }
 
 void cmd_ls(int argc, char** argv) {
-    char resolved[VFS_PATH_MAX];
+    // Eğer parametre verilmediyse kök dizini ("/") listele
+    const char* target_path = (argc > 1) ? argv[1] : "/";
     
-    // Yolu belirle (Parametre varsa onu, yoksa CWD'yi al)
-    const char* input = (argc > 1) ? argv[1] : vfs_get_cwd();
-    
-    if (!vfs_resolve_path(input, resolved, sizeof(resolved))) {
-        commands_puts("Hata: yol cozumlenemedi.\n");
-        return;
-    }
-
-    ls_context_t ctx = { .base_path = resolved };
-
-    // VFS listeyi dene
-    if (vfs_list(resolved, ls_cb, &ctx) != 0) {
-        // Hata durumunda KVXFS fallback
-        kvxfs_list_all(resolved);
-    }
+    // Doğrudan senin yazdığın fonksiyonu çağırıyoruz
+    kvxfs_list_all(target_path);
 }
 
 REGISTER_COMMAND(ls, cmd_ls, "Dizin icerigini listeler");
