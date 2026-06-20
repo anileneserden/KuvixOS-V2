@@ -356,3 +356,42 @@ int kvxfs_exists(const char* path) {
     kvxfs_trim_path(path, clean, 64);
     return find_ent(clean) >= 0;
 }
+
+int kvxfs_rename(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return 0;
+
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (g_meta.ent[i].used && strcmp(g_meta.ent[i].path, old_path) == 0) {
+            
+            char final_new_path[64] = {0};
+            strncpy(final_new_path, new_path, 63);
+            
+            size_t n_len = strlen(final_new_path);
+            
+            // YENİ GÜVENLİK ÖNLEMİ: 
+            // Eğer hedef yolun sonu '/' ile bitiyorsa VEYA hedef yol sistemde zaten bir dizinse (klasörse)
+            if ((n_len > 0 && final_new_path[n_len - 1] == '/') || kvxfs_is_dir(final_new_path)) {
+                
+                // Eğer yolun sonu '/' ile bitmiyorsa ama klasörse, sonuna '/' ekle
+                if (final_new_path[n_len - 1] != '/') {
+                    strcat(final_new_path, "/");
+                }
+                
+                // Kaynak dosyanın adını bul (test_dosyasi.txt)
+                const char* slash = strrchr(old_path, '/');
+                if (slash) {
+                    strcat(final_new_path, slash + 1);
+                } else {
+                    strcat(final_new_path, old_path);
+                }
+            }
+
+            // Meta tablodaki ismi jilet gibi güncelle
+            strncpy(g_meta.ent[i].path, final_new_path, 63);
+            g_meta.ent[i].path[63] = '\0';
+            
+            return 1; // Başarılı!
+        }
+    }
+    return 0; // Dosya bulunamadı
+}

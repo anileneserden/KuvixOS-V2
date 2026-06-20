@@ -587,12 +587,13 @@ int vfs_rename(const char* old_path, const char* new_path) {
     if (!vfs_resolve_path(old_path, res_old, sizeof(res_old))) return 0;
     if (!vfs_resolve_path(new_path, res_new, sizeof(res_new))) return 0;
 
+    // 1. RAMFS Kontrolü
     if (ramfs_exists(res_old) || ramfs_is_dir(res_old)) {
         return ramfs_rename(res_old, res_new);
     }
 
-    // ToyFS read-only
-    return 0;
+    // 2. KUVIXFS Kontrolü (İşte şimdi jilet gibi oldu!)
+    return kvxfs_rename(res_old, res_new);
 }
 
 int vfs_read_all_alloc(const char* path, uint8_t** out_buf, uint32_t* out_size) {

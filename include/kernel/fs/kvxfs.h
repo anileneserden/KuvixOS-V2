@@ -14,5 +14,6 @@ int kvxfs_remove(const char* path);
 void kvxfs_list_all(const char* filter_path);
 int kvxfs_tree(const char* root_path);
 int kvxfs_format(void);
+int kvxfs_rename(const char* old_path, const char* new_path);
 
 #endif
