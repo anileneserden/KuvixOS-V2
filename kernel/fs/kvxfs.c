@@ -295,6 +295,11 @@ void kvxfs_list_all(const char* filter_path) {
         
         const char* name = kvxfs_basename_ptr(g_meta.ent[i].path);
         
+        // 🔹 KRİTİK EKLEME: Nokta ile başlayan gizli dosya/klasörleri (örn: .Trash-1000) atla!
+        if (name && name[0] == '.') {
+            continue;
+        }
+        
         if (g_meta.ent[i].size == KVX_DIR_SIZE) {
             // 🔹 Klasör: Mavi yazı, Saf Siyah arka plan
             fb_console_set_color(0x000055FF, 0x00000000); 
