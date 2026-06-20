@@ -1,3 +1,4 @@
+#include <kernel/fs/vfs.h>
 #include <kernel/fs/kvxfs.h>
 #include <kernel/printk.h>
 #include <lib/commands.h>
@@ -5,26 +6,36 @@
 
 void cmd_touch(int argc, char** argv) {
     if (argc < 2) {
-        commands_puts("Kullanım: touch /persist/dosya_adı\n");
+        printk("Kullanım: touch <dosya_adi_veya_yolu>\n");
+        printk("Ornek: touch notlar.txt VEYA touch /home/anil/test.txt\n");
         return;
     }
 
     const char* path = argv[1];
+    char target_path[VFS_PATH_MAX] = {0};
 
-    // Sadece /persist/ dizinine izin veriyoruz
-    if (strncmp(path, "/persist/", 9) != 0) {
-        commands_puts("Hata: Sadece /persist/ altında dosya oluşturulabilir.\n");
-        return;
+    if (path[0] == '/') {
+        strncpy(target_path, path, VFS_PATH_MAX - 1);
+    } else {
+        const char* current_cwd = vfs_get_cwd();
+        if (!current_cwd) {
+            current_cwd = "/";
+        }
+        
+        strncpy(target_path, current_cwd, VFS_PATH_MAX - 1);
+        
+        size_t len = strlen(target_path);
+        if (len > 0 && target_path[len - 1] != '/') {
+            strcat(target_path, "/");
+        }
+        strcat(target_path, path);
     }
 
-    // Boş bir içerik oluşturuyoruz (0 byte)
     uint8_t empty_data = 0;
-    
-    // kvxfs_write_all kullanarak diske yazıyoruz
-    if (kvxfs_write_all(path, &empty_data, 0)) {
-        commands_printf("Dosya oluşturuldu: %s\n", path);
+    if (kvxfs_write_all(target_path, &empty_data, 0)) {
+        printk("Dosya olusturuldu: %s\n", target_path);
     } else {
-        commands_puts("Hata: Dosya oluşturulamadı!\n");
+        printk("Hata: Dosya olusturulamadı: %s\n", target_path);
     }
 }
 
