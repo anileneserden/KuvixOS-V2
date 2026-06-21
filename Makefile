@@ -77,6 +77,7 @@ SRC_C = \
     lib/shell/shell.c \
     lib/string/string.c
 
+# kernel/commands/ altındaki cmd_driver.c dahil tüm komutları otomatik ekler
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 
@@ -126,15 +127,15 @@ iso: $(KERNEL)
 
 # --- Çalıştır ---
 run: iso
-	@if mountpoint -q /home/anilerden/KuvixFSMountSystem/mnt; then \
+	@if mountpoint -q /home/anil/KuvixFSMountSystem/mnt; then \
 		echo "⚠️  UYARI: disk.img şu anda FUSE (mnt) üzerinde bağlı! Güvenlik için unmount ediliyor..."; \
-		fusermount -u /home/anilerden/KuvixFSMountSystem/mnt || true; \
+		fusermount -u /home/anil/KuvixFSMountSystem/mnt || true; \
 	fi
 
-	@chmod 666 /home/anilerden/KuvixOS-V2/main/disk.img
+	@chmod 666 /home/anil/KuvixOS-V2/main/disk.img
 
 	qemu-system-i386 -cdrom $(IMAGE) \
-		-drive file=/home/anilerden/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
+		-drive file=/home/anil/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
 		-device e1000,netdev=n0 -netdev user,id=n0 \
 		-m 256M -serial stdio
 
