@@ -111,19 +111,48 @@ int kdf_load_driver(const char* path) {
     return 0;
 }
 
-// Sürücü tablosundaki yüklü sürücüleri terminale basar
-void kdf_list_drivers(void) {
-    printk("--- YUKLENMIS KDF SURUCULERI ---\n");
-    if (g_driver_count == 0) {
-        printk("Sisteme yuklu aktif dinamik surucu bulunmamaktadir.\n");
-        return;
+static void print_padded_string(const char* str, int width) {
+    int len = 0;
+    while (str[len] && len < width) {
+        printk("%c", str[len]);
+        len++;
     }
+    while (len < width) {
+        printk(" ");
+        len++;
+    }
+}
 
-    printk("ID   SURUCU ADI                      SURUM\n");
-    printk("--------------------------------------------\n");
+void kdf_list_drivers(void) {
+    printk("\n========================================================================\n");
+    printk(" ID   SURUCU ADI                 SURUM         TABAN ADRES   DURUM      \n");
+    printk("========================================================================\n");
+    
+    int active_count = 0;
+
     for (int i = 0; i < g_driver_count; i++) {
         if (g_driver_table[i].active) {
-            printk("[%d]  %-30s 0x%x\n", i, g_driver_table[i].name, g_driver_table[i].version);
+            printk(" [%d]  ", i);
+            
+            print_padded_string(g_driver_table[i].name, 25);
+            
+            printk("%x", g_driver_table[i].version);
+            
+            printk("           ");
+            
+            printk("%x", (uint32_t)g_driver_table[i].base_address);
+            
+            printk("     ");
+            
+            printk("LOADED\n");
+            
+            active_count++;
         }
     }
+
+    if (active_count == 0) {
+        printk(" Sisteme yuklu aktif dinamik surucu bulunmamaktadir.\n");
+    }
+    
+    printk("========================================================================\n\n");
 }
