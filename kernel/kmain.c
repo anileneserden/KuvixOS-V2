@@ -1,4 +1,4 @@
-// kernel/kmain.c
+// --- ÇEKİRDEK VE SİSTEM İNCLUDE'LARI ---
 #include <stdint.h>
 #include <multiboot2.h>
 
@@ -25,10 +25,11 @@
 #include <init/session.h>
 
 #include <kernel/fs/fs_init.h>
-
 #include <kernel/system/seed_files.h>
-
 #include <kernel/fs/vfs.h>
+
+// --- KDF (Kernel Driver Framework) İNCLUDE'U ---
+#include <kernel/kdf.h> 
 
 #include <kernel/user.h>
 #include <lib/shell.h>
@@ -77,28 +78,6 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
     fb_init(addr, w, h, pitch);
 }
 
-void test_vfs_disk_access() {
-    printk("\n[DISK-TEST] VFS disk baglantisi kontrol ediliyor...\n");
-    
-    // Test etmek istediğin dosya (örneğin kdf dosyan veya bir text dosyası)
-    const char* test_file = "/home/anil/mouse_ps2.kdf"; 
-    
-    vfs_stat_t st;
-    if (vfs_stat(test_file, &st)) {
-        printk("[DISK-TEST] OK: '%s' bulundu! Backend: %d\n", test_file, st.backend);
-        
-        uint32_t size = 0;
-        // Dosyayı diske okumayı dene (BACK_DISK ise 3 olmalı)
-        if (st.backend == 3) {
-            printk("[DISK-TEST] OK: Backend 3 (KVXFS) dogrulandi.\n");
-        } else {
-            printk("[DISK-TEST] UYARI: Dosya bulundu ama backend beklenenden farkli: %d\n", st.backend);
-        }
-    } else {
-        printk("[DISK-TEST] HATA: '%s' bulunamadi! VFS yolu veya mount hatasi.\n", test_file);
-    }
-}
-
 // ------------------------------------------------------------
 // Kernel entry
 // ------------------------------------------------------------
@@ -139,15 +118,12 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     fs_init_once();
 
-    test_vfs_disk_access();
-
     vfs_set_cwd("/home/anil");
 
     shell_set_username("anil");
     shell_set_hostname("kuvix");
 
-    session_init(); 
-
+    session_init();
     os_init();
 
     while (1) {

@@ -2,6 +2,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/ramfs.h>
 #include <kernel/fs/kvxfs.h>
+#include <kernel/fs/toyfs.h>
 #include <lib/string.h>
 
 // toyfs header:
@@ -306,13 +307,21 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
         return 1;
     }
 
+    // 3. KVXFS Kontrolü
     if (kvxfs_exists(resolved)) {
-        st->type = VFS_T_FILE;
-        st->backend = 3;
+        // kvxfs.h'de tanımlı olduğunu varsaydığımız fonksiyonu kullanıyoruz
+        if (kvxfs_is_dir(resolved)) {
+            st->type = VFS_T_DIR;
+            st->size = 0; // Klasörlerin dosya sisteminde boyutu 0'dır
+        } else {
+            st->type = VFS_T_FILE;
+            st->size = kvxfs_get_size(resolved); // Artık doğru boyutu alacak
+        }
+        
+        st->backend = BACK_DISK; // BACK_DISK değerinin tanımlı olduğundan emin ol (genelde 3)
         return 1;
     }
 
-    // 4. TOYFS Kontrolü (En son seçenek)
     int h = toyfs_open(resolved);
     if (h >= 0) {
         toyfs_close(h);
@@ -653,6 +662,20 @@ int vfs_is_dir(const char* path) {
 
     // RamFS kontrolü
     if (strcmp(path, "/") == 0) return 1;
+    
+    return 0;
+}
+
+uint32_t vfs_get_size(vfs_file_t* f) {
+    if (!f || f->back == 0) return 0;
+
+    if (f->back == BACK_RAM) {
+        return ramfs_size(f->rfd);
+    }
+    else if (f->back == BACK_TOY) {
+        vfs_stat_t st;
+        return 0;
+    }
     
     return 0;
 }

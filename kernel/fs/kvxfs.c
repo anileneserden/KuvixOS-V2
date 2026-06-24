@@ -377,3 +377,18 @@ void kvxfs_close(int fd) {
     // Şimdilik sadece "bu dosyayı kapatma isteği alındı" bilgisini 
     // loglamak istersen buraya printk eklenebilir.
 }
+
+uint32_t kvxfs_get_size(const char* path) {
+    if (!path || !kvxfs_init()) return 0;
+    
+    char clean[64];
+    kvxfs_trim_path(path, clean, 64);
+    
+    int idx = find_ent(clean);
+    if (idx < 0) return 0; // Dosya bulunamadı
+    
+    // Eğer dizin ise boyut olarak 0 döndürebilirsin veya 
+    // KVX_DIR_SIZE değerini (0xFFFFFFFF) döndürebilirsin.
+    // Dosya boyutunu metadata'dan doğrudan çekiyoruz:
+    return g_meta.ent[idx].size;
+}

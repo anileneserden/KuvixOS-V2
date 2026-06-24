@@ -31,6 +31,7 @@ SRC_ASM = kernel/arch/x86/interrupt_entry.asm
 
 SRC_C = \
     kernel/kmain.c \
+    kernel/kdf_loader.c \
     kernel/panic.c \
     kernel/printk.c \
     kernel/serial.c \
@@ -76,6 +77,7 @@ SRC_C = \
     lib/shell/shell.c \
     lib/string/string.c
 
+# kernel/commands/ altındaki cmd_driver.c dahil tüm komutları otomatik ekler
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
 

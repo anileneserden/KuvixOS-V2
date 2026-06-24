@@ -1,7 +1,7 @@
 [BITS 32]
 extern timer_handler
-extern mouse_handler
-extern kbd_handler       ; C tarafındaki klavye fonksiyonunu dışarıdan al
+extern mouse_handler_c       ; C tarafındaki YENİ dinamik yönlendiriciyi çağıracağız
+extern kbd_handler           ; C tarafındaki klavye fonksiyonunu dışarıdan al
 
 global timer_handler_asm
 global mouse_handler_asm
@@ -48,7 +48,7 @@ mouse_handler_asm:
     mov fs, ax
     mov gs, ax
 
-    call mouse_handler  ; C tarafındaki mouse_handler'ı çağırır
+    call mouse_handler_c  ; YENİ: idt.c'deki dinamik dizi kontrol eden fonksiyonu çağırır
 
     popad           
     iretd
