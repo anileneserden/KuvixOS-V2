@@ -5,7 +5,6 @@
 
 #define KDF_MAGIC 0x46444B4B 
 
-// Sürücüye teslim edilecek canlı kernel servisleri
 typedef struct {
     void (*printk)(const char* fmt, ...);
     uint8_t (*inb)(uint16_t port);
@@ -13,7 +12,6 @@ typedef struct {
     void (*register_interrupt)(int irq, void (*handler)(void));
 } KernelAPI;
 
-// JENERİK SÜRÜCÜ OPERASYONLARI (Her sürücü bunu dolduracak)
 typedef struct {
     int (*read)(void* buffer, uint32_t size);
     int (*write)(const void* buffer, uint32_t size);
@@ -29,7 +27,6 @@ typedef struct {
     uint32_t code_size;       // 4
 } __attribute__((packed)) KDF_Header;
 
-// Çekirdeğin hafızasında kayıtlı kalacak sürücü yönetim yapısı
 typedef struct {
     char name[32];
     uint32_t version;
@@ -38,9 +35,9 @@ typedef struct {
     uint8_t active;
 } KDF_DriverInstance;
 
-// Dışarıya sunulan çekirdek fonksiyonları
 int kdf_load_driver(const char* path);
 KDF_DriverInstance* kdf_find_driver(const char* name);
 void kdf_list_drivers(void);
+void kdf_autoload_drivers(void);
 
 #endif

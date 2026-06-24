@@ -116,7 +116,15 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     asm volatile("sti");
 
+    // 1. Dosya sistemi altyapısını ilklendiriyoruz
     fs_init_once();
+
+    // =========================================================
+    //  KDF OTOMATİK SÜRÜCÜ YÜKLEME ENTEGRASYONU
+    // =========================================================
+    // VFS ve KuvixFS ayağa kalktığı için artık /sys/config/autoload.cfg okunabilir!
+    kdf_autoload_drivers();
+    // =========================================================
 
     vfs_set_cwd("/home/anil");
 
