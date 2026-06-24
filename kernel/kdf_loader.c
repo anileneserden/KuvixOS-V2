@@ -156,3 +156,68 @@ void kdf_list_drivers(void) {
     
     printk("========================================================================\n\n");
 }
+
+// Sistem açılışında belirtilen konfigürasyon dosyasındaki tüm sürücüleri otomatik yükler
+void kdf_autoload_drivers(void) {
+    const char* config_path = "/sys/config/autoload.cfg";
+    printk("[KDF] Otomatik surucu yukleme baslatildi (%s)...\n", config_path);
+
+    // 1. Yapılandırma dosyasını VFS üzerinden aç
+    vfs_file_t* file_ptr = 0;
+    if (!vfs_open(config_path, VFS_O_RDONLY, &file_ptr)) {
+        printk("[KDF] Uyari: Otomatik yukleme dosyasi bulunamadi. Atlaniyor.\n");
+        return;
+    }
+
+    // 2. Dosya içeriğini okumak için stat ile boyutunu alalım
+    vfs_stat_t st;
+    if (!vfs_stat(config_path, &st) || st.size == 0) {
+        vfs_close(file_ptr);
+        return;
+    }
+
+    // Geçici bir buffer oluşturup dosyayı tümden okuyalım
+    char* buf = (char*)kmalloc(st.size + 1);
+    if (!buf) {
+        vfs_close(file_ptr);
+        return;
+    }
+
+    uint32_t bytes_read = 0;
+    vfs_read(file_ptr, buf, st.size, &bytes_read);
+    buf[bytes_read] = '\0'; // String sonu imi
+    vfs_close(file_ptr);
+
+    // 3. Dosyayı satır satır işle (Her satır bir .kdf yolu olacak)
+    char* line = buf;
+    char* next_line;
+    
+    while (line && *line) {
+        // Bir sonraki satırın başlangıcını bul
+        next_line = strchr(line, '\n');
+        if (next_line) {
+            *next_line = '\0'; // Mevcut satırın sonunu kes
+            next_line++;       // Bir sonraki satıra geçiş yap
+        }
+
+        // Satır sonundaki carriage return (\r) varsa temizle (Windows/dos editörleri için)
+        int len = strlen(line);
+        if (len > 0 && line[len - 1] == '\r') {
+            line[len - 1] = '\0';
+        }
+
+        // Boş satırları veya '#' ile başlayan yorum satırlarını atla
+        if (strlen(line) > 0 && line[0] != '#') {
+            // Canlı canlı mevcut yükleme fonksiyonumuzu çağırıyoruz!
+            int res = kdf_load_driver(line);
+            if (res != 0) {
+                printk("[KDF] Otomatik yukleme hatasi: %s (Hata Kodu: %d)\n", line, res);
+            }
+        }
+
+        line = next_line;
+    }
+
+    kfree(buf);
+    printk("[KDF] Otomatik surucu yukleme islemi tamamlandi.\n");
+}
