@@ -75,7 +75,8 @@ SRC_C = \
     lib/service/service_registry.c \
     lib/service/service.c \
     lib/shell/shell.c \
-    lib/string/string.c
+    lib/string/string.c \
+    lib/stdio.c
 
 # kernel/commands/ altındaki cmd_driver.c dahil tüm komutları otomatik ekler
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
