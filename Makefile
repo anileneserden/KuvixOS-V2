@@ -12,7 +12,8 @@ KERNEL = $(BUILD)/kernel.elf
 IMAGE  = KuvixOS.iso
 
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra \
-          -fno-pie -fno-stack-protector \
+          -fno-pie -fno-stack-protector -fno-builtin \
+          -mno-sse -mno-sse2 -mno-mmx -mno-80387 \
           -nostdlib -nostartfiles \
           -Iinclude -DTIMEZONE_OFFSET=3
 
