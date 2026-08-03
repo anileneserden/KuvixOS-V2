@@ -7,10 +7,12 @@
 extern "C" {
 #endif
 
+// Global Koordinatlar ve Buton Durumu
 extern int mouse_x;
 extern int mouse_y;
+extern uint8_t g_mouse_buttons; // Bit 0: Sol, Bit 1: Sağ, Bit 2: Orta
 
-// (Opsiyonel) telemetri/debug
+// Telemetri / Debug
 extern volatile int32_t g_mouse_last_dx;
 extern volatile int32_t g_mouse_last_dy;
 extern volatile int32_t g_mouse_last_wheel;
@@ -19,7 +21,7 @@ extern volatile uint32_t g_mouse_irq_count;
 void ps2_mouse_init(void);
 void mouse_handler(void);
 
-// IRQ/poll byte assembly
+// IRQ/poll byte işleyici
 void ps2_mouse_handle_byte(uint8_t data);
 
 // Event queue pop:
@@ -35,4 +37,4 @@ void ps2_mouse_update(void);
 }
 #endif
 
-#endif
+#endif // MOUSE_PS2_H

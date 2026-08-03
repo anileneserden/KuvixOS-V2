@@ -3,13 +3,16 @@
 #include <arch/x86/io.h>
 #include <stdint.h>
 
-// Telemetri (debug_screen'den okunacak)
+// Telemetri (debug_screen veya kabuk için)
 volatile int32_t g_mouse_last_dx = 0;
 volatile int32_t g_mouse_last_dy = 0;
 volatile int32_t g_mouse_last_wheel = 0;
 volatile uint32_t g_mouse_irq_count = 0;
 
-// Eski global koordinatlar
+// Anlık Buton Durumu (Bit 0: Sol, Bit 1: Sağ, Bit 2: Orta)
+uint8_t g_mouse_buttons = 0;
+
+// Global koordinatlar (Varsayılan başlangıç konumu)
 int mouse_x = 400;
 int mouse_y = 300;
 
@@ -64,13 +67,13 @@ static uint8_t ps2_mouse_get_device_id(void) {
 }
 
 // ------------------------------------------------------------
-// Packet assembly (3-byte default, 4-byte if wheel enabled)
+// Packet assembly (3-byte varsayılan, 4-byte teker aktifse)
 // ------------------------------------------------------------
 static uint8_t packet[4];
 static int packet_index = 0;
 static int packet_size  = 3; 
 
-// Event queue
+// Event queue (Olay Kuyruğu)
 typedef struct {
     int dx, dy;
     int wheel;          
@@ -107,7 +110,7 @@ int ps2_mouse_pop(int* dx, int* dy, int* wheel, uint8_t* buttons) {
 }
 
 // ------------------------------------------------------------
-// Init
+// Init (Sürücü Başlatma)
 // ------------------------------------------------------------
 void ps2_mouse_init(void) {
     for (int i = 0; i < 32; i++) {
@@ -136,6 +139,7 @@ void ps2_mouse_init(void) {
     ps2_mouse_write(0xF6);
     (void)ps2_mouse_read_ack(); 
 
+    // IntelliMouse tekerlek aktifleştirme dizisi
     ps2_mouse_set_sample_rate(200);
     ps2_mouse_set_sample_rate(100);
     ps2_mouse_set_sample_rate(80);
@@ -150,15 +154,16 @@ void ps2_mouse_init(void) {
 
     packet_index = 0;
     g_mouse_last_wheel = 0;
+    g_mouse_buttons = 0;
 }
 
 // ------------------------------------------------------------
-// Byte handler
+// Byte handler (Gelen baytları paketleme)
 // ------------------------------------------------------------
 void ps2_mouse_handle_byte(uint8_t data) {
     if (packet_index == 0) {
-        if ((data & 0x08) == 0) return;
-        if (data & 0xC0) return;
+        if ((data & 0x08) == 0) return; // Hizalama kontrolü
+        if (data & 0xC0) return;        // Taşma kontrolü
     }
 
     packet[packet_index++] = data;
@@ -170,7 +175,7 @@ void ps2_mouse_handle_byte(uint8_t data) {
 
     int dx = sign_extend_8(packet[1], (b & 0x10) != 0);
     int dy = sign_extend_8(packet[2], (b & 0x20) != 0);
-    dy = -dy;
+    dy = -dy; // Y ekseni ters çevrilir (Ekran koordinat sistemi)
 
     int wheel = 0;
     if (packet_size == 4) {
@@ -187,31 +192,29 @@ void ps2_mouse_handle_byte(uint8_t data) {
 }
 
 // ------------------------------------------------------------
-// Update -> WM (GUI bağları koparıldı)
+// Update (Kuyruktaki paketleri koordinat ve butona çevirme)
 // ------------------------------------------------------------
 void ps2_mouse_update(void) {
     int dx, dy, wheel;
     uint8_t buttons;
-    static uint8_t last_buttons = 0;
 
     while (ps2_mouse_pop(&dx, &dy, &wheel, &buttons)) {
         mouse_x += dx;
         mouse_y += dy;
 
+        // Varsayılan sınırlandırma (cmd_kde içinde ekran çözünürlüğüne göre tekrar clamp yapılır)
         if (mouse_x < 0) mouse_x = 0;
         if (mouse_y < 0) mouse_y = 0;
         if (mouse_x > 1023) mouse_x = 1023;
         if (mouse_y > 767)  mouse_y = 767;
 
-        // 🚫 Monolitik GUI bağımlılıkları tamamen kaldırıldı.
-        // Gelecekte TTY tabanlı konsol faresi yazılmak istenirse buraya eklenebilir.
-        (void)last_buttons; 
-        last_buttons = buttons;
+        // Anlık tıklama bilgisini sakla
+        g_mouse_buttons = buttons;
     }
 }
 
 // ------------------------------------------------------------
-// Poll (test mode)
+// Poll (Test / Yoklama Modu)
 // ------------------------------------------------------------
 void ps2_mouse_poll(void) {
     while (inb(0x64) & 0x01) {
@@ -224,7 +227,7 @@ void ps2_mouse_poll(void) {
 }
 
 // ------------------------------------------------------------
-// IRQ12 handler
+// IRQ12 Handler (Kesme İşleyicisi)
 // ------------------------------------------------------------
 void mouse_handler(void) {
     g_mouse_irq_count++;
@@ -238,6 +241,7 @@ void mouse_handler(void) {
         }
     }
 
+    // PIC EOI (End of Interrupt) Bildirimi
     outb(0xA0, 0x20);
     outb(0x20, 0x20);
 }
