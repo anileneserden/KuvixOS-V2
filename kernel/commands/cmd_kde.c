@@ -9,6 +9,7 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/rtc/rtc.h>
 #include <kernel/drivers/input/mouse_ps2.h>
+#include <kernel/drivers/input/keyboard.h> // <-- Klavye sürücü başlığı eklendi
 
 #define KDE_LOAD_ADDRESS 0x00800000
 
@@ -35,31 +36,41 @@ static void kernel_draw_rect(int x, int y, int w, int h, uint32_t color) {
 
 static void kernel_draw_text(int x, int y, const char* text, uint32_t color) {
     if (!text || text[0] == '\0') return;
-    // Parameters: (x, y, color, text)
     gfx_draw_text_utf8(x, y, color, text);
 }
 
 static void kernel_get_mouse(de_mouse_state_t* state) {
     if (!state) return;
 
+    extern void ps2_mouse_poll(void); 
+    ps2_mouse_poll();
     ps2_mouse_update();
 
-    int max_w = fb_get_width();
-    int max_h = fb_get_height();
+    // Dinamik ekran çözünürlüğü
+    int max_w = (int)fb_get_width();
+    int max_h = (int)fb_get_height();
 
-    int rx = mouse_x;
-    int ry = mouse_y;
+    // Çözünürlüğe göre kısıtla
+    if (mouse_x < 0) mouse_x = 0;
+    if (mouse_y < 0) mouse_y = 0;
+    if (mouse_x >= max_w) mouse_x = max_w - 1;
+    if (mouse_y >= max_h) mouse_y = max_h - 1;
 
-    if (rx < 0) rx = 0;
-    if (ry < 0) ry = 0;
-    if (rx >= max_w) rx = max_w - 1;
-    if (ry >= max_h) ry = max_h - 1;
-
-    state->x = rx;
-    state->y = ry;
+    state->x = mouse_x;
+    state->y = mouse_y;
     state->left_button   = (g_mouse_buttons & 0x01) ? 1 : 0;
     state->right_button  = (g_mouse_buttons & 0x02) ? 1 : 0;
     state->middle_button = (g_mouse_buttons & 0x04) ? 1 : 0;
+}
+
+static char kernel_get_key(void) {
+    kbd_poll();
+
+    if (kbd_has_character()) {
+        return kbd_get_char();
+    }
+
+    return 0;
 }
 
 static void kernel_get_time(char* buffer) {
@@ -116,6 +127,7 @@ void cmd_kde(int argc, char** argv) {
     g_kde_api.clear_screen   = fb_clear;
     g_kde_api.update_display = fb_present;
     g_kde_api.get_mouse      = kernel_get_mouse;
+    g_kde_api.get_key        = kernel_get_key;
     g_kde_api.get_time       = kernel_get_time;
     g_kde_api.log            = kernel_log;
 
@@ -127,23 +139,17 @@ void cmd_kde(int argc, char** argv) {
 
     printk("[KDE LOADER] 'start_desktop' fonksiyon isaretcisine atlaniyor...\n");
 
-    // -------------------------------------------------------------------------
-    // KONSOLU KAPAT VE EKRANI TEMİZLE
-    // -------------------------------------------------------------------------
     fb_console_set_enabled(false);
     fb_clear(0x000000);
     if (fb_present) {
         fb_present();
     }
 
-    // cdecl standardı ile adresi çağır
     typedef void (__attribute__((cdecl)) *kde_entry_t)(DE_API*);
     kde_entry_t start_desktop = (kde_entry_t)(uintptr_t)kde_target;
 
-    // Binary'yi Çalıştır
     start_desktop(&g_kde_api);
 
-    // Masaüstünden çıkılınca konsolu yeniden aktif et
     fb_console_set_enabled(true);
     printk("[KDE LOADER] 'desktop.kde' kapandi.\n");
     kfree(kde_target);

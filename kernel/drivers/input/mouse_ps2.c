@@ -32,11 +32,6 @@ static int ps2_wait_read(void) {
     return 0;
 }
 
-static int sign_extend_8(uint8_t v, int sign_bit_set) {
-    if (sign_bit_set) return (int)((int32_t)(v | 0xFFFFFF00u));
-    return (int)v;
-}
-
 static void ps2_mouse_write(uint8_t data) {
     ps2_wait_write();
     outb(0x64, 0xD4);
@@ -118,25 +113,25 @@ void ps2_mouse_init(void) {
     }
 
     ps2_wait_write();
-    outb(0x64, 0xA7);
+    outb(0x64, 0xA7); // Enable Auxiliary Device (Mouse)
 
     ps2_wait_write();
     outb(0x64, 0xA8);
 
     ps2_wait_write();
-    outb(0x64, 0x20);
+    outb(0x64, 0x20); // Read Controller Command Byte
     ps2_wait_read();
     uint8_t status = inb(0x60);
 
-    status |= 0x02;   
-    status &= ~0x20;  
+    status |= 0x02;   // Enable IRQ12 (Bit 1)
+    status &= ~0x20;  // Disable Mouse Clock = 0 (Fareyi aktif bırak)
 
     ps2_wait_write();
-    outb(0x64, 0x60);
+    outb(0x64, 0x60); // Write Controller Command Byte
     ps2_wait_write();
     outb(0x60, status);
 
-    ps2_mouse_write(0xF6);
+    ps2_mouse_write(0xF6); // Set Defaults
     (void)ps2_mouse_read_ack(); 
 
     // IntelliMouse tekerlek aktifleştirme dizisi
@@ -147,7 +142,7 @@ void ps2_mouse_init(void) {
     uint8_t id = ps2_mouse_get_device_id();
     packet_size = (id == 3) ? 4 : 3;
 
-    ps2_mouse_write(0xF4);
+    ps2_mouse_write(0xF4); // Enable Data Reporting
     (void)ps2_mouse_read_ack(); 
 
     while (inb(0x64) & 0x01) (void)inb(0x60);
@@ -162,8 +157,8 @@ void ps2_mouse_init(void) {
 // ------------------------------------------------------------
 void ps2_mouse_handle_byte(uint8_t data) {
     if (packet_index == 0) {
-        if ((data & 0x08) == 0) return; // Hizalama kontrolü
-        if (data & 0xC0) return;        // Taşma kontrolü
+        if ((data & 0x08) == 0) return; // Hizalama kontrolü (Bit 3 her zaman 1'dir)
+        if (data & 0xC0) return;        // Taşma (Overflow) kontrolü
     }
 
     packet[packet_index++] = data;
@@ -173,9 +168,10 @@ void ps2_mouse_handle_byte(uint8_t data) {
 
     uint8_t b = packet[0];
 
-    int dx = sign_extend_8(packet[1], (b & 0x10) != 0);
-    int dy = sign_extend_8(packet[2], (b & 0x20) != 0);
-    dy = -dy; // Y ekseni ters çevrilir (Ekran koordinat sistemi)
+    // DÜZELTME: Doğrudan (int8_t) cast ederek 2's complement negatif sayıları doğru hesaplıyoruz
+    int dx = (int8_t)packet[1];
+    int dy = (int8_t)packet[2];
+    dy = -dy; // Y ekseni ekranda terstir
 
     int wheel = 0;
     if (packet_size == 4) {
@@ -202,13 +198,6 @@ void ps2_mouse_update(void) {
         mouse_x += dx;
         mouse_y += dy;
 
-        // Varsayılan sınırlandırma (cmd_kde içinde ekran çözünürlüğüne göre tekrar clamp yapılır)
-        if (mouse_x < 0) mouse_x = 0;
-        if (mouse_y < 0) mouse_y = 0;
-        if (mouse_x > 1023) mouse_x = 1023;
-        if (mouse_y > 767)  mouse_y = 767;
-
-        // Anlık tıklama bilgisini sakla
         g_mouse_buttons = buttons;
     }
 }

@@ -118,7 +118,7 @@ iso: $(KERNEL)
 	@echo 'insmod video_cirrus' >> $(ISO)/boot/grub/grub.cfg
 	@echo '' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'menuentry "KuvixOS V2" {' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  set gfxmode=1024x768x32' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxmode=1280x720x32,1024x768x32,auto' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
@@ -127,18 +127,19 @@ iso: $(KERNEL)
 
 # --- Çalıştır ---
 run: iso
-	@# 1. Güvenlik Kontrolü: Eğer disk FUSE tarafında mount edilmişse QEMU'nun diski bozmasını engellemek için uyaralım.
 	@if mountpoint -q /home/anil/KuvixFSMountSystem/mnt; then \
 		echo "⚠️  UYARI: disk.img şu anda FUSE (mnt) üzerinde bağlı! Güvenlik için unmount ediliyor..."; \
 		fusermount -u /home/anil/KuvixFSMountSystem/mnt || true; \
 	fi
 
-	@# 2. Disk izinlerinin doğru olduğundan emin olalım
 	@chmod 666 /home/anil/KuvixOS-V2/main/disk.img
 
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=/home/anil/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
+		-boot d \
+		-vga std \
 		-device e1000,netdev=n0 -netdev user,id=n0 \
+		-rtc base=localtime \
 		-m 256M -serial stdio
 
 clean:

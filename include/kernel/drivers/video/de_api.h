@@ -27,6 +27,7 @@ typedef struct {
 
     // Girdi ve Sistem İşlevleri
     void (*get_mouse)(de_mouse_state_t* state);
+    char (*get_key)(void);
     void (*get_time)(char* buffer);
     void (*log)(const char* msg);
 } DE_API;
