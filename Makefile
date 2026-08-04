@@ -132,13 +132,16 @@ run: iso
 		fusermount -u /home/anil/KuvixFSMountSystem/mnt || true; \
 	fi
 
-	@chmod 666 /home/anil/KuvixOS-V2/main/disk.img
+	@if [ -f /home/anil/KuvixOS-V2/main/disk.img ]; then \
+		chmod 666 /home/anil/KuvixOS-V2/main/disk.img; \
+	fi
 
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=/home/anil/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
 		-boot d \
 		-vga std \
-		-device e1000,netdev=n0 -netdev user,id=n0 \
+		-display sdl,gl=on \
+		-net nic,model=e1000 -net user \
 		-rtc base=localtime \
 		-m 256M -serial stdio
 
