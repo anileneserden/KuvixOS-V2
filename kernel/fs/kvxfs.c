@@ -150,12 +150,10 @@ static void kvxfs_tree_walk(const char* root_path, int depth) {
         if (!g_meta.ent[i].used) continue;
 
         const char* path = g_meta.ent[i].path;
-        // root_path altındaki doğrudan çocukları (direct child) bulur, yani tamamen dinamiktir!
         if (!kvxfs_path_is_direct_child(root_path, path)) continue;
 
         const char* name = kvxfs_basename_ptr(path);
         
-        // Derinliğe göre tire (-) basma mekanizması
         for (int d = 0; d < depth; d++) {
             printk("-");
         }
@@ -163,7 +161,6 @@ static void kvxfs_tree_walk(const char* root_path, int depth) {
 
         if (g_meta.ent[i].size == KVX_DIR_SIZE) {
             printk("%s/\n", name); 
-            // Alt klasöre dallanırken derinliği dinamik olarak artırıyor
             kvxfs_tree_walk(path, depth + 1);
         } else {
             printk("%s (%d byte)\n", name, g_meta.ent[i].size);
@@ -202,7 +199,6 @@ int kvxfs_is_dir(const char* path) {
     char clean[64];
     kvxfs_trim_path(path, clean, 64);
     
-    // Kök dizin her zaman bir klasördür
     if (strcmp(clean, "/") == 0) return 1;
     
     int idx = find_ent(clean);
@@ -277,13 +273,42 @@ int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_s
     return 1;
 }
 
+int kvxfs_read_at(const char* path, void* out, uint32_t offset, uint32_t n, uint32_t* out_nread) {
+    if (!path || !out) return 0;
+    
+    char clean[64];
+    kvxfs_trim_path(path, clean, 64);
+    int idx = find_ent(clean);
+    if (idx < 0) return 0;
+
+    uint32_t file_size = g_meta.ent[idx].size;
+    if (offset >= file_size) {
+        *out_nread = 0;
+        return 1;
+    }
+
+    uint32_t can_read = file_size - offset;
+    if (n > can_read) n = can_read;
+
+    uint32_t start_lba = g_meta.ent[idx].start_lba;
+    uint8_t sec[512];
+    
+    uint32_t sector_idx = offset / 512;
+    uint32_t offset_in_sector = offset % 512;
+    
+    block_read(start_lba + sector_idx, 1, sec);
+    memcpy(out, sec + offset_in_sector, n);
+
+    *out_nread = n;
+    return 1;
+}
+
 void kvxfs_list_all(const char* filter_path) {
     if (!filter_path || !kvxfs_init()) return;
     
     char norm[64];
     kvxfs_trim_path(filter_path, norm, 64);
     
-    // 🔹 Arka planı saf siyah (0x00000000) yapıyoruz
     fb_console_set_color(0x00FFFFFF, 0x00000000); 
     printk("--- %s Icerigi ---\n", norm);
     
@@ -295,23 +320,23 @@ void kvxfs_list_all(const char* filter_path) {
         
         const char* name = kvxfs_basename_ptr(g_meta.ent[i].path);
         
+        if (name && name[0] == '.') {
+            continue;
+        }
+        
         if (g_meta.ent[i].size == KVX_DIR_SIZE) {
-            // 🔹 Klasör: Mavi yazı, Saf Siyah arka plan
             fb_console_set_color(0x000055FF, 0x00000000); 
             printk("%s\n", name);
         } else {
-            // 🔹 Düz Dosya: Yeşil boyut bilgisi, Saf Siyah arka plan
             fb_console_set_color(0x0000FF00, 0x00000000); 
             printk("%d byte  ", g_meta.ent[i].size);
             
-            // Dosya adı: Beyaz yazı, Saf Siyah arka plan
             fb_console_set_color(0x00FFFFFF, 0x00000000); 
             printk("%s\n", name);
         }
         found++;
     }
     
-    // Konsol rengini tamamen varsayılan siyah-beyaza döndürüyoruz
     fb_console_set_color(0x00FFFFFF, 0x00000000);
     
     if (!found) {
@@ -320,15 +345,14 @@ void kvxfs_list_all(const char* filter_path) {
 }
 
 int kvxfs_tree(const char* root_path) {
-    // Statik persist kontrolünü kaldırdık, sadece null pointer güvenliği kaldı
     if (!root_path) return 0;
     if (!kvxfs_init()) return 0;
     
-    char norm[VFS_PATH_MAX]; // Güvenlik için 64 yerine VFS_PATH_MAX (genelde 256 veya 512'dir)
+    char norm[VFS_PATH_MAX];
     kvxfs_trim_path(root_path, norm, sizeof(norm));
     
-    printk("\n* (Kök Dizin: %s)\n", norm); // Ağacın tepesine yıldızı çaktık
-    kvxfs_tree_walk(norm, 1); // Yürümeye 1 tire derinliğiyle başla
+    printk("\n* (Kök Dizin: %s)\n", norm);
+    kvxfs_tree_walk(norm, 1);
     printk("\n");
     return 1;
 }
@@ -359,21 +383,42 @@ int kvxfs_open(const char* path) {
 
 int kvxfs_read(int fd, void* out, uint32_t n, uint32_t* out_nread) {
     if (fd < 0 || fd >= KVX_MAX_FILES || !g_meta.ent[fd].used) return 0;
-    
-    // Basit bir read işlemi (kvxfs_read_all'u buraya uyarla)
-    // Bu fonksiyonu vfs_read içinde kullanacağız.
     return kvxfs_read_all(g_meta.ent[fd].path, out, n, out_nread);
 }
 
 void kvxfs_close(int fd) {
-    // Şu anki KVXFS yapımız durum bilgisini (offset vb.) dosya bazlı tutmadığı için
-    // kapatılacak aktif bir oturum veya kaynak bulunmuyor.
-    // Ancak ileride dosyaya yazma/okuma pozisyonu (offset) eklersek 
-    // burada o verileri temizleyeceğiz.
-    
-    // Gelen FD'nin geçerli olup olmadığını kontrol etmek iyi bir pratiktir:
     if (fd < 0 || fd >= KVX_MAX_FILES) return;
-    
-    // Şimdilik sadece "bu dosyayı kapatma isteği alındı" bilgisini 
-    // loglamak istersen buraya printk eklenebilir.
+}
+
+int kvxfs_rename(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return 0;
+
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (g_meta.ent[i].used && strcmp(g_meta.ent[i].path, old_path) == 0) {
+            
+            char final_new_path[64] = {0};
+            strncpy(final_new_path, new_path, 63);
+            
+            size_t n_len = strlen(final_new_path);
+            
+            if ((n_len > 0 && final_new_path[n_len - 1] == '/') || kvxfs_is_dir(final_new_path)) {
+                if (final_new_path[n_len - 1] != '/') {
+                    strcat(final_new_path, "/");
+                }
+                
+                const char* slash = strrchr(old_path, '/');
+                if (slash) {
+                    strcat(final_new_path, slash + 1);
+                } else {
+                    strcat(final_new_path, old_path);
+                }
+            }
+
+            strncpy(g_meta.ent[i].path, final_new_path, 63);
+            g_meta.ent[i].path[63] = '\0';
+            
+            return 1;
+        }
+    }
+    return 0;
 }

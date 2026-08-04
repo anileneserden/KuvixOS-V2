@@ -117,7 +117,7 @@ iso: $(KERNEL)
 	@echo 'insmod video_cirrus' >> $(ISO)/boot/grub/grub.cfg
 	@echo '' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'menuentry "KuvixOS V2" {' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  set gfxmode=1024x768x32' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxmode=1280x720x32,1024x768x32,auto' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
@@ -131,11 +131,17 @@ run: iso
 		fusermount -u /home/anil/KuvixFSMountSystem/mnt || true; \
 	fi
 
-	@chmod 666 /home/anil/KuvixOS-V2/main/disk.img
+	@if [ -f /home/anil/KuvixOS-V2/main/disk.img ]; then \
+		chmod 666 /home/anil/KuvixOS-V2/main/disk.img; \
+	fi
 
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=/home/anil/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
-		-device e1000,netdev=n0 -netdev user,id=n0 \
+		-boot d \
+		-vga std \
+		-display sdl,gl=on \
+		-net nic,model=e1000 -net user \
+		-rtc base=localtime \
 		-m 256M -serial stdio
 
 clean:

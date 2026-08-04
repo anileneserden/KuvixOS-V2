@@ -64,10 +64,7 @@ static int rem_cb_prefix(const char* toy_path, uint32_t size, void* u2) {
     // "/removable"
     copy_str(outp, REMOUNT_PREFIX, sizeof(outp));
 
-    // toy_path "/" ise root'u temsil ediyor olabilir, onu atlayabiliriz.
-    // (vfs_list tarafında zaten parent skip yapıyorsun ama burada da güvenli tutalım)
     if (toy_path && strcmp(toy_path, "/") != 0) {
-        // toy_path absolute başlar: "/system/.."
         strncat(outp, toy_path, sizeof(outp) - strlen(outp) - 1);
     }
 
@@ -78,41 +75,38 @@ static int rem_cb_prefix(const char* toy_path, uint32_t size, void* u2) {
 
 static void path_pop(char* path) {
     uint32_t len = strlen(path);
-    if (len <= 1) { // Zaten root "/" ise bir şey yapma
+    if (len <= 1) { 
         path[0] = '/';
         path[1] = 0;
         return;
     }
 
-    // Sondaki slash'ı temizle: "/" -> "/persist"
     if (path[len - 1] == '/') {
         path[len - 1] = 0;
         len--;
     }
 
-    // Sondan başa doğru ilk slash'ı bul
     while (len > 0 && path[len - 1] != '/') {
         len--;
     }
 
-    // Eğer "/" bulduysak oradan kes
     if (len <= 1) {
         path[0] = '/';
         path[1] = 0;
     } else {
-        path[len - 1] = 0; // "/apps" -> "/persist"
+        path[len - 1] = 0; 
     }
 }
 
 typedef enum {
     BACK_RAM = 1,
-    BACK_TOY = 2,
-    BACK_DISK = 3
+    BACK_TOY = 2
 } vfs_backend_t;
 
 struct vfs_file {
     vfs_backend_t back;
     int           flags;
+    // ram
     int           rfd;
     int           th;
 };
@@ -183,20 +177,29 @@ int vfs_open(const char* path, int flags, vfs_file_t** out) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    // /removable -> ToyFS
+    // ------------------------------------------------------
+    // /removable -> ToyFS only (read-only mount view)
+    // ------------------------------------------------------
     if (is_removable_path(resolved)) {
-        if ((flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR)) return 0;
+        int want_write2 = (flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR);
+        if (want_write2) return 0;
+
         char real[VFS_PATH_MAX];
         removable_to_toy(resolved, real, sizeof(real));
         int th;
         if (!toy_open_ro(real, &th)) return 0;
         struct vfs_file* f = alloc_slot();
         if (!f) { toy_close(th); return 0; }
-        f->back = BACK_TOY; f->flags = flags; f->rfd = -1; f->th = th;
-        *out = f; return 1;
+
+        f->back  = BACK_TOY;
+        f->flags = flags;
+        f->rfd   = -1;
+        f->th    = th;
+        *out = f;
+        return 1;
     }
 
-    // RAMFS Yazma veya Okuma
+    // write -> always RAM
     int want_write = (flags & VFS_O_WRONLY) || (flags & VFS_O_RDWR);
     if (want_write || ramfs_exists(resolved)) {
         int create = (flags & VFS_O_CREAT) ? 1 : 0;
@@ -204,39 +207,53 @@ int vfs_open(const char* path, int flags, vfs_file_t** out) {
         if (!ramfs_open(resolved, create, &rfd)) return 0;
         struct vfs_file* f = alloc_slot();
         if (!f) { ramfs_close(rfd); return 0; }
-        f->back = BACK_RAM; f->flags = flags; f->rfd = rfd; f->th = -1;
-        *out = f; return 1;
+
+        f->back = BACK_RAM;
+        f->flags = flags;
+        f->rfd = rfd;
+        f->th = -1;
+        *out = f;
+        return 1;
     }
 
-    // KVXFS Okuma (Disk Desteği)
-    if (kvxfs_exists(resolved)) {
-        int kfd = kvxfs_open(resolved);
-        if (kfd >= 0) {
-            struct vfs_file* f = alloc_slot();
-            if (!f) { kvxfs_close(kfd); return 0; }
-            f->back = BACK_DISK; f->flags = flags; f->rfd = kfd; f->th = -1;
-            *out = f; return 1;
-        }
+    // read -> overlay: RAM first, then TOY
+    if (ramfs_exists(resolved)) {
+        int rfd;
+        if (!ramfs_open(resolved, 0, &rfd)) return 0;
+
+        struct vfs_file* f = alloc_slot();
+        if (!f) { ramfs_close(rfd); return 0; }
+
+        f->back = BACK_RAM;
+        f->flags = flags;
+        f->rfd = rfd;
+        f->th = -1;
+        *out = f;
+        return 1;
     }
 
-    // ToyFS Okuma
     int th;
     if (!toy_open_ro(resolved, &th)) return 0;
+
     struct vfs_file* f = alloc_slot();
     if (!f) { toy_close(th); return 0; }
-    f->back = BACK_TOY; f->flags = flags; f->rfd = -1; f->th = th;
-    *out = f; return 1;
+
+    f->back = BACK_TOY;
+    f->flags = flags;
+    f->rfd = -1;
+    f->th = th;
+    *out = f;
+    return 1;
 }
 
 int vfs_read(vfs_file_t* f, void* out, uint32_t n, uint32_t* out_nread) {
     if (out_nread) *out_nread = 0;
     if (!f || f->back == 0) return 0;
 
-    switch (f->back) {
-        case BACK_RAM:  return ramfs_read(f->rfd, out, n, out_nread);
-        case BACK_DISK: return kvxfs_read(f->rfd, out, n, out_nread);
-        case BACK_TOY:  return toy_read(f->th, out, n, out_nread);
-        default:        return 0;
+    if (f->back == BACK_RAM) {
+        return ramfs_read(f->rfd, out, n, out_nread);
+    } else {
+        return toy_read(f->th, out, n, out_nread);
     }
 }
 
@@ -244,7 +261,6 @@ int vfs_write(vfs_file_t* f, const void* in, uint32_t n, uint32_t* out_nwritten)
     if (out_nwritten) *out_nwritten = 0;
     if (!f || f->back == 0) return 0;
 
-    // toyfs is read-only
     if (f->back != BACK_RAM) return 0;
 
     return ramfs_write(f->rfd, in, n, out_nwritten);
@@ -256,7 +272,6 @@ int vfs_mkdir(const char* path) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    // Eğer /dev veya /removable değilse KVXFS'de oluşturmayı dene
     if (strncmp(resolved, "/dev", 4) != 0 && strncmp(resolved, "/removable", 10) != 0) {
         if (kvxfs_mkdir(resolved) == 0) return 1;
     }
@@ -267,13 +282,11 @@ int vfs_mkdir(const char* path) {
 int vfs_stat(const char* path, vfs_stat_t* st) {
     if (!st || !path) return 0;
     
-    // Yolu çözümle (.. ve . gibi yapıları temizle)
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
     st->type = 0; st->size = 0; st->backend = 0;
 
-    // 1. /removable -> ToyFS görünümü
     if (is_removable_path(resolved)) {
         char real[VFS_PATH_MAX];
         removable_to_toy(resolved, real, sizeof(real));
@@ -294,7 +307,6 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
         return 0;
     }
 
-    // 2. RAMFS Kontrolü
     if (ramfs_is_dir(resolved)) {
         st->type = VFS_T_DIR;
         st->backend = BACK_RAM;
@@ -312,7 +324,6 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
         return 1;
     }
 
-    // 4. TOYFS Kontrolü (En son seçenek)
     int h = toyfs_open(resolved);
     if (h >= 0) {
         toyfs_close(h);
@@ -340,31 +351,22 @@ int vfs_set_cwd(const char* path) {
 
     if (!path) return 0;
 
-    // 1. Yolu tam olarak çöz (/.. -> / gibi)
     if (!vfs_resolve_path(path, new_cwd, sizeof(new_cwd))) {
         return 0;
     }
 
-    // 2. Bu yol bir dizin mi? (vfs_is_dir artık hem ramfs hem kvxfs biliyor)
     if (!vfs_is_dir(new_cwd)) {
         return 0;
     }
 
-    // 3. Geçerliyse kopyala
     strncpy(vfs_cwd, new_cwd, VFS_PATH_MAX - 1);
     return 1;
 }
 
 void vfs_close(vfs_file_t* f) {
-    if (!f) return;
-    
-    if (f->back == BACK_RAM) {
-        ramfs_close(f->rfd);
-    } else if (f->back == BACK_DISK) {
-        kvxfs_close(f->rfd);
-    } else if (f->back == BACK_TOY) {
-        toy_close(f->th);
-    }
+    if (!f || f->back == 0) return;
+    if (f->back == BACK_RAM) ramfs_close(f->rfd);
+    else toy_close(f->th);
     free_slot(f);
 }
 
@@ -375,7 +377,9 @@ int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_siz
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    if (strncmp(resolved, "/persist", 8) == 0 || strncmp(resolved, "/home", 5) == 0) {
+    if (strncmp(resolved, "/persist", 8) == 0 || 
+        strncmp(resolved, "/home", 5) == 0 || 
+        strncmp(resolved, "/sys", 4) == 0) {
         if (kvxfs_read_all(resolved, out, cap, out_size)) return 1;
     }
 
@@ -408,7 +412,6 @@ int vfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     return ramfs_write_all(resolved, data, size);
 }
 
-// vfs_list içinde kullanacağımız küçük wrapper
 typedef struct {
     const char* dir;
     int (*cb)(const char* path, uint32_t size, void* u);
@@ -420,11 +423,9 @@ static int vfs_toyfs_iter_cb(const char* path, uint32_t size, void* u)
     vfs_list_wrap_t* w = (vfs_list_wrap_t*)u;
     if (!w || !w->cb) return 0;
 
-    // dizinin kendisini atla
     if (strcmp(path, w->dir) == 0)
         return 1;
 
-    // overlay: RAM'de varsa toyfs'i gösterme
     if (ramfs_exists(path))
         return 1;
 
@@ -437,19 +438,16 @@ int vfs_list(const char* dir_prefix,
 {
     char resolved[VFS_PATH_MAX];
 
-    // boş veya NULL → cwd
     if (!dir_prefix || !dir_prefix[0]) {
         strcpy(resolved, vfs_get_cwd());
     } else {
         vfs_resolve_path(dir_prefix, resolved, sizeof(resolved));
     }
 
-    // /removable view
     if (is_removable_path(resolved)) {
         char real[VFS_PATH_MAX];
         removable_to_toy(resolved, real, sizeof(real));
 
-        // sadece kontrol (var mı)
         if (!cb) {
             if (toyfs_iter(real, 0, 0)) return 1;
             return 0;
@@ -460,7 +458,6 @@ int vfs_list(const char* dir_prefix,
         return 1;
     }
 
-    // sadece kontrol (cd için)
     if (!cb) {
         if (ramfs_is_dir(resolved))
             return 1;
@@ -473,6 +470,8 @@ int vfs_list(const char* dir_prefix,
 
     vfs_list_wrap_t w = { resolved, cb, u };
     toyfs_iter(resolved, vfs_toyfs_iter_cb, &w);
+
+    kvxfs_list_all(resolved);
 
     return 1;
 }
@@ -497,7 +496,6 @@ int vfs_resolve_path(const char* in, char* out, uint32_t cap)
 
     char temp[VFS_PATH_MAX];
     
-    // 1. Mutlak veya Göreceli birleştirme
     if (in[0] == '/') {
         strncpy(temp, in, VFS_PATH_MAX - 1);
     } else {
@@ -509,7 +507,6 @@ int vfs_resolve_path(const char* in, char* out, uint32_t cap)
         strncat(temp, in, VFS_PATH_MAX - strlen(temp) - 1);
     }
 
-    // 2. Normalleştirme (.. ve . temizliği)
     char normalized[VFS_PATH_MAX];
     char* parts[32]; 
     int level = 0;
@@ -517,15 +514,14 @@ int vfs_resolve_path(const char* in, char* out, uint32_t cap)
     char work_copy[VFS_PATH_MAX];
     strncpy(work_copy, temp, VFS_PATH_MAX - 1);
     
-    // Manuel tokenizing (strtok yerine)
     char* start = work_copy;
-    while (*start == '/') start++; // Başlangıç slash'larını geç
+    while (*start == '/') start++;
 
     char* curr = start;
     while (1) {
         if (*curr == '/' || *curr == '\0') {
             char end_char = *curr;
-            *curr = '\0'; // Parçayı sonlandır
+            *curr = '\0';
             
             if (strlen(start) > 0) {
                 if (strcmp(start, "..") == 0) {
@@ -543,7 +539,6 @@ int vfs_resolve_path(const char* in, char* out, uint32_t cap)
         curr++;
     }
 
-    // 3. Yeniden Oluştur
     normalized[0] = '/';
     normalized[1] = 0;
     for (int i = 0; i < level; i++) {
@@ -564,7 +559,6 @@ int vfs_remove(const char* path) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    // Sadece /persist değil, /home altındaki dosyalar da KVXFS (diskte) bulunuyor
     if (strncmp(resolved, "/persist", 8) == 0 || strncmp(resolved, "/home", 5) == 0) {
         return kvxfs_remove(resolved);
     }
@@ -585,8 +579,7 @@ int vfs_rename(const char* old_path, const char* new_path) {
         return ramfs_rename(res_old, res_new);
     }
 
-    // ToyFS read-only
-    return 0;
+    return kvxfs_rename(res_old, res_new);
 }
 
 int vfs_read_all_alloc(const char* path, uint8_t** out_buf, uint32_t* out_size) {
@@ -632,26 +625,20 @@ void vfs_free_alloc(void* p) {
     if (p) kfree(p);
 }
 
-// Bir dosya veya dizin var mı?
 int vfs_exists(const char* path) {
     if (!path) return 0;
     vfs_stat_t st;
     return vfs_stat(path, &st);
 }
 
-// vfs_is_dir fonksiyonunu güncelle (eski halini silip bunu yapıştır)
 int vfs_is_dir(const char* path) {
     if (!path) return 0;
 
-    // Eğer /dev veya /removable gibi özel bir yer değilse diske sor
-    // (kvxfs_is_dir içindeki logic'e güveniyoruz)
     if (strncmp(path, "/dev", 4) == 0) return 0;
-    if (strncmp(path, "/removable", 10) == 0) return 1; // ToyFS root
+    if (strncmp(path, "/removable", 10) == 0) return 1;
 
-    // KVXFS'e sor
     if (kvxfs_is_dir(path)) return 1;
 
-    // RamFS kontrolü
     if (strcmp(path, "/") == 0) return 1;
     
     return 0;
