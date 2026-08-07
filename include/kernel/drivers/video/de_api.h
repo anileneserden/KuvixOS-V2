@@ -4,8 +4,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma pack(push, 1)
 
+// Fare Durumu Yapısı
 typedef struct {
     int x;
     int y;
@@ -14,6 +19,7 @@ typedef struct {
     uint8_t middle_button;
 } de_mouse_state_t;
 
+// Çekirdek ile DE Uygulaması Arasındaki API Yapısı
 typedef struct {
     int screen_width;
     int screen_height;
@@ -33,5 +39,9 @@ typedef struct {
 } DE_API;
 
 #pragma pack(pop)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // DE_API_H
