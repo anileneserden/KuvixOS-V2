@@ -180,6 +180,28 @@ static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
     return 1;
 }
 
+static void kernel_dmg_union_replace(int x1, int y1, int x2, int y2) {
+    // x2, y2 sağ-alt köşe belirttiği için genişlik (w) ve yüksekliği (h) hesaplıyoruz:
+    int w = x2 - x1;
+    int h = y2 - y1;
+
+    // Geçersiz veya ters verilmiş koordinat kontrolü
+    if (w <= 0 || h <= 0) return;
+
+    // Hazır yazılmış olan optimize rect yenileme fonksiyonunu çağırıyoruz
+    fb_present_rect(x1, y1, w, h);
+}
+
+// VFS üzerinden dosya okuma sarmalayıcısı
+static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
+    if (!path || !buffer || max_size == 0) return -1;
+    uint32_t nread = 0;
+    if (vfs_read_all(path, (uint8_t*)buffer, max_size, &nread)) {
+        return (int)nread;
+    }
+    return -1;
+}
+
 static DE_API g_kde_api;
 
 void cmd_kde(int argc, char** argv) {
@@ -253,18 +275,20 @@ void cmd_kde(int argc, char** argv) {
     kfree(file_buf);
 
     memset(&g_kde_api, 0, sizeof(DE_API));
-    g_kde_api.screen_width   = fb_get_width();
-    g_kde_api.screen_height  = fb_get_height();
-    g_kde_api.put_pixel      = fb_putpixel;
-    g_kde_api.draw_rect      = kernel_draw_rect;
-    g_kde_api.draw_text      = kernel_draw_text;
-    g_kde_api.clear_screen   = fb_clear;
-    g_kde_api.update_display = fb_present;
-    g_kde_api.get_mouse      = kernel_get_mouse;
-    g_kde_api.get_key        = kernel_get_key;
-    g_kde_api.get_time       = kernel_get_time;
-    g_kde_api.log            = kernel_log;
-    g_kde_api.render_kbi     = kernel_render_kbi; // Yeni KBI Render Fonksiyonu Bağlandı
+    g_kde_api.screen_width      = fb_get_width();
+    g_kde_api.screen_height     = fb_get_height();
+    g_kde_api.put_pixel         = fb_putpixel;
+    g_kde_api.draw_rect         = kernel_draw_rect;
+    g_kde_api.draw_text         = kernel_draw_text;
+    g_kde_api.clear_screen      = fb_clear;
+    g_kde_api.update_display    = fb_present;
+    g_kde_api.get_mouse         = kernel_get_mouse;
+    g_kde_api.get_key           = kernel_get_key;
+    g_kde_api.get_time          = kernel_get_time;
+    g_kde_api.log               = kernel_log;
+    g_kde_api.render_kbi        = kernel_render_kbi;
+    g_kde_api.dmg_union_replace = kernel_dmg_union_replace;
+    g_kde_api.read_file         = kernel_read_file;
 
     printk("[KDE LOADER] Giriş noktasına atlaniyor: 0x%x\n", entry_point);
 

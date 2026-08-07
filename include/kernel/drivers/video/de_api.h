@@ -38,6 +38,10 @@ typedef struct {
     void (*log)(const char* msg);
 
     int (*render_kbi)(int x, int y, const char* filepath);
+
+    int (*read_file)(const char* path, char* buffer, uint32_t max_size);
+
+    void (*dmg_union_replace)(int x1, int y1, int x2, int y2);
 } DE_API;
 
 #pragma pack(pop)

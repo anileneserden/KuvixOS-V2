@@ -9,6 +9,8 @@
 // ------------------------------------------------------------
 #define KM_MAGIC 0xC0FFEEAAu
 
+#define DEBUG_MEMORY 0
+
 typedef struct block_hdr {
     uint32_t magic;              // ✅ corruption guard
     uint32_t size;               // payload size (bytes)
@@ -186,9 +188,10 @@ void* kmalloc(size_t size) {
 
             void* p = hdr_to_payload(b);
 
-            // ✅ BU LOGU EKLE:
-            printk("[KM_DBG] ALLOC: %u bytes (aligned %u) at %p\n", 
-                (unsigned)size, (unsigned)want, p);
+            #if DEBUG_MEMORY
+                printk("[KM_DBG] ALLOC: %u bytes (aligned %u) at %p\n", 
+                    (unsigned)size, (unsigned)want, p);
+            #endif
 
             return p;
         }
@@ -212,8 +215,9 @@ void* kmalloc(size_t size) {
 void kfree(void* ptr) {
     if (!ptr) return;
 
-    // ✅ BU LOGU EKLE:
-    printk("[KM_DBG] FREE: %p\n", ptr);
+    #if DEBUG_MEMORY
+        printk("[KM_DBG] FREE: %p\n", ptr);
+    #endif
 
     block_hdr_t* b = payload_to_hdr(ptr);
 
