@@ -9,9 +9,41 @@
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/drivers/rtc/rtc.h>
 #include <kernel/drivers/input/mouse_ps2.h>
-#include <kernel/drivers/input/keyboard.h> // <-- Klavye sürücü başlığı eklendi
+#include <kernel/drivers/input/keyboard.h>
 
-#define KDE_LOAD_ADDRESS 0x00800000
+#define KDE_DEFAULT_LOAD_ADDRESS 0x00800000
+
+// --- 32-bit ELF YAPILARI ---
+
+typedef struct {
+    uint8_t  e_ident[16];
+    uint16_t e_type;
+    uint16_t e_machine;
+    uint32_t e_version;
+    uint32_t e_entry;
+    uint32_t e_phoff;
+    uint32_t e_shoff;
+    uint32_t e_flags;
+    uint16_t e_ehsize;
+    uint16_t e_phentsize;
+    uint16_t e_phnum;
+    uint16_t e_shentsize;
+    uint16_t e_shnum;
+    uint16_t e_shstrndx;
+} __attribute__((packed)) elf32_ehdr_t;
+
+typedef struct {
+    uint32_t p_type;
+    uint32_t p_offset;
+    uint32_t p_vaddr;
+    uint32_t p_paddr;
+    uint32_t p_filesz;
+    uint32_t p_memsz;
+    uint32_t p_flags;
+    uint32_t p_align;
+} __attribute__((packed)) elf32_phdr_t;
+
+#define PT_LOAD 1
 
 // --- API SARMALAYICILARI (WRAPPERS) ---
 
@@ -46,11 +78,9 @@ static void kernel_get_mouse(de_mouse_state_t* state) {
     ps2_mouse_poll();
     ps2_mouse_update();
 
-    // Dinamik ekran çözünürlüğü
     int max_w = (int)fb_get_width();
     int max_h = (int)fb_get_height();
 
-    // Çözünürlüğe göre kısıtla
     if (mouse_x < 0) mouse_x = 0;
     if (mouse_y < 0) mouse_y = 0;
     if (mouse_x >= max_w) mouse_x = max_w - 1;
@@ -95,28 +125,74 @@ static void kernel_log(const char* msg) {
 static DE_API g_kde_api;
 
 void cmd_kde(int argc, char** argv) {
-    (void)argc; (void)argv;
+    const char* filepath = "/sys/de/deneme.kde";
+    if (argc > 1 && argv[1] != NULL && argv[1][0] != '\0') {
+        filepath = argv[1];
+    }
 
-    printk("[KDE LOADER] /sys/de/desktop.kde yukleniyor...\n");
+    printk("[KDE LOADER] %s yukleniyor...\n", filepath);
 
     uint32_t max_size = 64 * 1024;
-    uint8_t* kde_target = (uint8_t*)kmalloc(max_size);
+    uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
 
-    if (!kde_target) {
+    if (!file_buf) {
         printk("Hata: Bellek ayrilamadi.\n");
         return;
     }
 
-    memset(kde_target, 0, max_size);
+    memset(file_buf, 0, max_size);
 
     uint32_t nread = 0;
-    if (!vfs_read_all("/sys/de/desktop.kde", kde_target, max_size, &nread) || nread == 0) {
-        printk("Hata: /sys/de/desktop.kde okunamadi!\n");
-        kfree(kde_target);
+    if (!vfs_read_all(filepath, file_buf, max_size, &nread) || nread == 0) {
+        printk("Hata: %s okunamadi!\n", filepath);
+        kfree(file_buf);
         return;
     }
 
-    printk("[KDE LOADER] %d bayt %p adresine yuklendi.\n", nread, (void*)kde_target);
+    printk("[KDE LOADER] %d bayt okundu.\n", nread);
+
+    uint32_t entry_point = 0;
+
+    // ELF Başlığı Kontrolü (\x7fELF)
+    if (nread >= sizeof(elf32_ehdr_t) && 
+        file_buf[0] == 0x7F && file_buf[1] == 'E' && 
+        file_buf[2] == 'L' && file_buf[3] == 'F') {
+
+        elf32_ehdr_t* ehdr = (elf32_ehdr_t*)file_buf;
+        entry_point = ehdr->e_entry;
+
+        printk("[KDE LOADER] ELF tespit edildi. e_entry: 0x%x, phnum: %d\n", entry_point, ehdr->e_phnum);
+
+        elf32_phdr_t* phdr = (elf32_phdr_t*)(file_buf + ehdr->e_phoff);
+        for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
+            if (phdr[i].p_type == PT_LOAD) {
+                void* dest = (void*)(uintptr_t)phdr[i].p_vaddr;
+                
+                printk("[KDE LOADER] Segment %d -> vaddr: 0x%x, offset: 0x%x, filesz: %d\n", 
+                       i, phdr[i].p_vaddr, phdr[i].p_offset, phdr[i].p_filesz);
+
+                memcpy(dest, file_buf + phdr[i].p_offset, phdr[i].p_filesz);
+
+                if (phdr[i].p_memsz > phdr[i].p_filesz) {
+                    memset((uint8_t*)dest + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
+                }
+            }
+        }
+
+        // Zıplanacak adresteki ilk 4 baytı kontrol et
+        uint8_t* entry_bytes = (uint8_t*)(uintptr_t)entry_point;
+        printk("[KDE LOADER] Entry adresi baytlari: 0x%x 0x%x 0x%x 0x%x\n",
+               entry_bytes[0], entry_bytes[1], entry_bytes[2], entry_bytes[3]);
+
+    } else {
+        // Düz binary ise doğrudan varsayılan yükleme adresine kopyala
+        entry_point = KDE_DEFAULT_LOAD_ADDRESS;
+        printk("[KDE LOADER] Raw Binary tespitedildi. 0x%x adresine kopyalaniyor...\n", entry_point);
+        memcpy((void*)(uintptr_t)entry_point, file_buf, nread);
+    }
+
+    // Geçici dosya tamponunu serbest bırak
+    kfree(file_buf);
 
     memset(&g_kde_api, 0, sizeof(DE_API));
     g_kde_api.screen_width   = fb_get_width();
@@ -131,13 +207,7 @@ void cmd_kde(int argc, char** argv) {
     g_kde_api.get_time       = kernel_get_time;
     g_kde_api.log            = kernel_log;
 
-    printk("[KDE DUMP] Ilk 16 bayt: ");
-    for(int i = 0; i < 16; i++) {
-        printk("%x ", (unsigned int)kde_target[i]);
-    }
-    printk("\n");
-
-    printk("[KDE LOADER] 'start_desktop' fonksiyon isaretcisine atlaniyor...\n");
+    printk("[KDE LOADER] Giriş noktasına atlaniyor: 0x%x\n", entry_point);
 
     fb_console_set_enabled(false);
     fb_clear(0x000000);
@@ -146,13 +216,12 @@ void cmd_kde(int argc, char** argv) {
     }
 
     typedef void (__attribute__((cdecl)) *kde_entry_t)(DE_API*);
-    kde_entry_t start_desktop = (kde_entry_t)(uintptr_t)kde_target;
+    kde_entry_t start_desktop = (kde_entry_t)(uintptr_t)entry_point;
 
     start_desktop(&g_kde_api);
 
     fb_console_set_enabled(true);
-    printk("[KDE LOADER] 'desktop.kde' kapandi.\n");
-    kfree(kde_target);
+    printk("[KDE LOADER] Masaustu kapandi.\n");
 }
 
 REGISTER_COMMAND(kde, cmd_kde, "Starts KuvixOS DEDK V2 Desktop Environment");
