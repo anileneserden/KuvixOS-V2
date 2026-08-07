@@ -45,6 +45,14 @@ typedef struct {
 
 #define PT_LOAD 1
 
+// --- KBI PIXEL YAPISI ---
+
+#pragma pack(push, 1)
+typedef struct {
+    uint8_t b, g, r, a;
+} KBIPixel;
+#pragma pack(pop)
+
 // --- API SARMALAYICILARI (WRAPPERS) ---
 
 static void kernel_draw_rect(int x, int y, int w, int h, uint32_t color) {
@@ -120,6 +128,56 @@ static void kernel_get_time(char* buffer) {
 
 static void kernel_log(const char* msg) {
     if (msg) printk("%s", msg);
+}
+
+// KBI Dosyasını Çözen ve Ekrana Çizen Fonksiyon
+static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
+    if (!filepath) return 0;
+
+    uint32_t max_size = 64 * 1024;
+    uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
+    if (!file_buf) return 0;
+
+    uint32_t nread = 0;
+    if (!vfs_read_all(filepath, file_buf, max_size, &nread) || nread < 10) {
+        kfree(file_buf);
+        return 0;
+    }
+
+    // Magic Number Kontrolü ("KBI1")
+    if (file_buf[0] != 'K' || file_buf[1] != 'B' || 
+        file_buf[2] != 'I' || file_buf[3] != '1') {
+        kfree(file_buf);
+        return 0;
+    }
+
+    uint16_t width = *(uint16_t*)&file_buf[4];
+    uint16_t height = *(uint16_t*)&file_buf[6];
+    
+    KBIPixel* pixels = (KBIPixel*)&file_buf[10];
+
+    int max_w = fb_get_width();
+    int max_h = fb_get_height();
+
+    // Piksel piksel ekrana çizim döngüsü (Alpha Blending / Şeffaflık Desteği ile)
+    for (uint16_t y = 0; y < height; y++) {
+        for (uint16_t x = 0; x < width; x++) {
+            KBIPixel p = pixels[y * width + x];
+            
+            if (p.a > 0) {
+                int px = target_x + x;
+                int py = target_y + y;
+
+                if (px >= 0 && px < max_w && py >= 0 && py < max_h) {
+                    uint32_t color = ((uint32_t)p.r << 16) | ((uint32_t)p.g << 8) | p.b;
+                    fb_putpixel(px, py, color);
+                }
+            }
+        }
+    }
+
+    kfree(file_buf);
+    return 1;
 }
 
 static DE_API g_kde_api;
@@ -206,6 +264,7 @@ void cmd_kde(int argc, char** argv) {
     g_kde_api.get_key        = kernel_get_key;
     g_kde_api.get_time       = kernel_get_time;
     g_kde_api.log            = kernel_log;
+    g_kde_api.render_kbi     = kernel_render_kbi; // Yeni KBI Render Fonksiyonu Bağlandı
 
     printk("[KDE LOADER] Giriş noktasına atlaniyor: 0x%x\n", entry_point);
 

@@ -36,6 +36,8 @@ typedef struct {
     char (*get_key)(void);
     void (*get_time)(char* buffer);
     void (*log)(const char* msg);
+
+    int (*render_kbi)(int x, int y, const char* filepath);
 } DE_API;
 
 #pragma pack(pop)
