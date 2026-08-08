@@ -27,6 +27,7 @@ typedef struct {
     // Temel Çizim İşlevleri
     void (*put_pixel)(int x, int y, uint32_t color);
     void (*draw_rect)(int x, int y, int w, int h, uint32_t color);
+    void (*fill_round_rect)(int x, int y, int w, int h, int r, uint32_t color);
     void (*draw_text)(int x, int y, const char* text, uint32_t color);
     void (*clear_screen)(uint32_t color);
     void (*update_display)(void);

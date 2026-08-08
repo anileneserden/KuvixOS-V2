@@ -144,7 +144,6 @@ static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
         return 0;
     }
 
-    // Magic Number Kontrolü ("KBI1")
     if (file_buf[0] != 'K' || file_buf[1] != 'B' || 
         file_buf[2] != 'I' || file_buf[3] != '1') {
         kfree(file_buf);
@@ -159,7 +158,6 @@ static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
     int max_w = fb_get_width();
     int max_h = fb_get_height();
 
-    // Piksel piksel ekrana çizim döngüsü (Alpha Blending / Şeffaflık Desteği ile)
     for (uint16_t y = 0; y < height; y++) {
         for (uint16_t x = 0; x < width; x++) {
             KBIPixel p = pixels[y * width + x];
@@ -181,18 +179,14 @@ static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
 }
 
 static void kernel_dmg_union_replace(int x1, int y1, int x2, int y2) {
-    // x2, y2 sağ-alt köşe belirttiği için genişlik (w) ve yüksekliği (h) hesaplıyoruz:
     int w = x2 - x1;
     int h = y2 - y1;
 
-    // Geçersiz veya ters verilmiş koordinat kontrolü
     if (w <= 0 || h <= 0) return;
 
-    // Hazır yazılmış olan optimize rect yenileme fonksiyonunu çağırıyoruz
     fb_present_rect(x1, y1, w, h);
 }
 
-// VFS üzerinden dosya okuma sarmalayıcısı
 static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
     if (!path || !buffer || max_size == 0) return -1;
     uint32_t nread = 0;
@@ -233,7 +227,6 @@ void cmd_kde(int argc, char** argv) {
 
     uint32_t entry_point = 0;
 
-    // ELF Başlığı Kontrolü (\x7fELF)
     if (nread >= sizeof(elf32_ehdr_t) && 
         file_buf[0] == 0x7F && file_buf[1] == 'E' && 
         file_buf[2] == 'L' && file_buf[3] == 'F') {
@@ -259,19 +252,12 @@ void cmd_kde(int argc, char** argv) {
             }
         }
 
-        // Zıplanacak adresteki ilk 4 baytı kontrol et
-        uint8_t* entry_bytes = (uint8_t*)(uintptr_t)entry_point;
-        printk("[KDE LOADER] Entry adresi baytlari: 0x%x 0x%x 0x%x 0x%x\n",
-               entry_bytes[0], entry_bytes[1], entry_bytes[2], entry_bytes[3]);
-
     } else {
-        // Düz binary ise doğrudan varsayılan yükleme adresine kopyala
         entry_point = KDE_DEFAULT_LOAD_ADDRESS;
-        printk("[KDE LOADER] Raw Binary tespitedildi. 0x%x adresine kopyalaniyor...\n", entry_point);
+        printk("[KDE LOADER] Raw Binary tespit edildi. 0x%x adresine kopyalaniyor...\n", entry_point);
         memcpy((void*)(uintptr_t)entry_point, file_buf, nread);
     }
 
-    // Geçici dosya tamponunu serbest bırak
     kfree(file_buf);
 
     memset(&g_kde_api, 0, sizeof(DE_API));
@@ -289,6 +275,7 @@ void cmd_kde(int argc, char** argv) {
     g_kde_api.render_kbi        = kernel_render_kbi;
     g_kde_api.dmg_union_replace = kernel_dmg_union_replace;
     g_kde_api.read_file         = kernel_read_file;
+    g_kde_api.fill_round_rect   = gfx_fill_round_rect;
 
     printk("[KDE LOADER] Giriş noktasına atlaniyor: 0x%x\n", entry_point);
 
