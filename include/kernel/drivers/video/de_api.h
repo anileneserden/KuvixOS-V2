@@ -38,11 +38,15 @@ typedef struct {
     void (*get_time)(char* buffer);
     void (*log)(const char* msg);
 
+    // KBI Dosya Çizim Fonksiyonu
     int (*render_kbi)(int x, int y, const char* filepath);
 
     int (*read_file)(const char* path, char* buffer, uint32_t max_size);
 
     void (*dmg_union_replace)(int x1, int y1, int x2, int y2);
+
+    int (*get_file_count)(const char* path);
+    int (*get_file_name_at)(const char* path, int index, char* dest_name, int max_len);
 } DE_API;
 
 #pragma pack(pop)

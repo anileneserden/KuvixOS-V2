@@ -422,3 +422,55 @@ int kvxfs_rename(const char* old_path, const char* new_path) {
     }
     return 0;
 }
+
+int kvxfs_get_file_count(const char* path) {
+    if (!path || !kvxfs_init()) return 0;
+    
+    char norm[64];
+    kvxfs_trim_path(path, norm, 64);
+    
+    int count = 0;
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (!g_meta.ent[i].used) continue;
+        if (strcmp(g_meta.ent[i].path, norm) == 0) continue;
+        
+        if (kvxfs_path_is_direct_child(norm, g_meta.ent[i].path)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+int kvxfs_get_file_name_at(const char* path, int index, char* dest_name, int max_len) {
+    if (!path || !dest_name || max_len <= 0) return 0;
+    if (!kvxfs_init()) return 0;
+    
+    char norm[64];
+    kvxfs_trim_path(path, norm, 64);
+    
+    int current_index = 0;
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (!g_meta.ent[i].used) continue;
+        if (strcmp(g_meta.ent[i].path, norm) == 0) continue;
+        
+        if (kvxfs_path_is_direct_child(norm, g_meta.ent[i].path)) {
+            if (current_index == index) {
+                const char* full_path = g_meta.ent[i].path;
+                const char* last_slash = full_path;
+                for (const char* p = full_path; *p != '\0'; p++) {
+                    if (*p == '/') last_slash = p + 1;
+                }
+                
+                int k = 0;
+                while (last_slash[k] != '\0' && k < max_len - 1) {
+                    dest_name[k] = last_slash[k];
+                    k++;
+                }
+                dest_name[k] = '\0';
+                return 1;
+            }
+            current_index++;
+        }
+    }
+    return 0;
+}

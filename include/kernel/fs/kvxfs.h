@@ -16,5 +16,7 @@ void kvxfs_list_all(const char* filter_path);
 int kvxfs_tree(const char* root_path);
 int kvxfs_format(void);
 int kvxfs_rename(const char* old_path, const char* new_path);
+int kvxfs_get_file_count(const char* path);
+int kvxfs_get_file_name_at(const char* path, int index, char* dest_name, int max_len);
 
 #endif

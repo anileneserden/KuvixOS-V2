@@ -10,6 +10,7 @@
 #include <kernel/drivers/rtc/rtc.h>
 #include <kernel/drivers/input/mouse_ps2.h>
 #include <kernel/drivers/input/keyboard.h>
+#include <kernel/fs/kvxfs.h>
 
 #define KDE_DEFAULT_LOAD_ADDRESS 0x00800000
 
@@ -196,6 +197,25 @@ static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
     return -1;
 }
 
+// --- GÜNCELLENMİŞ DOSYA SAYISI KERNEL SARMALAYICISI ---
+static int kernel_get_file_count(const char* path) {
+    if (!path) {
+        printk("[KDE KERNEL HATA] get_file_count: Yol NULL!\n");
+        return 0;
+    }
+    
+    int count = kvxfs_get_file_count(path);
+    
+    // Host terminaline (Serial) açık ve net şekilde yazdırıyoruz:
+    printk("[KDE KERNEL] >>> Sorgulanan Dizin: '%s' | Bulunan Dosya/Klasor Sayisi: %d <<<\n", path, count);
+    
+    return count;
+}
+
+static int kernel_get_file_name_at(const char* path, int index, char* dest_name, int max_len) {
+    return kvxfs_get_file_name_at(path, index, dest_name, max_len);
+}
+
 static DE_API g_kde_api;
 
 void cmd_kde(int argc, char** argv) {
@@ -276,6 +296,8 @@ void cmd_kde(int argc, char** argv) {
     g_kde_api.dmg_union_replace = kernel_dmg_union_replace;
     g_kde_api.read_file         = kernel_read_file;
     g_kde_api.fill_round_rect   = gfx_fill_round_rect;
+    g_kde_api.get_file_count    = kernel_get_file_count;
+    g_kde_api.get_file_name_at  = kernel_get_file_name_at;
 
     printk("[KDE LOADER] Giriş noktasına atlaniyor: 0x%x\n", entry_point);
 
