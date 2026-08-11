@@ -2,11 +2,16 @@
 #include <lib/commands.h>
 #include <kernel/fs/kvxfs.h>
 #include <kernel/exec/kef.h>
+#include <kernel/exec/task.h> // bg_task_t için
 #include <kernel/memory/kmalloc.h>
 #include <lib/string.h>
 #include <stdint.h>
 
-#define KEF_RELOC_MAX 256   // guvenlik siniri, tek dosyadaki max relocation sayisi
+#define KEF_RELOC_MAX 256
+
+// Arka plan görev listesi ve ID sayacı
+bg_task_t g_bg_tasks[MAX_BACKGROUND_TASKS];
+uint32_t g_next_task_id = 1;
 
 static void kef_print(const char* s) {
     commands_puts(s);
@@ -14,13 +19,38 @@ static void kef_print(const char* s) {
 
 static void cmd_exec(int argc, char** argv) {
     if (argc < 2) {
-        commands_puts("kullanim: exec <yol.kef>\n");
+        commands_puts("kullanim: exec <yol.kef> [&]\n");
         return;
     }
 
-    const char* path = argv[1];
-    char target_path[VFS_PATH_MAX] = {0};
+    const char* raw_path = NULL;
+    int is_background = 0;
 
+    // Argümanları esnek bir şekilde tarayalım (& işaretini ve dosya yolunu güvenle ayırt edelim)
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "&") == 0) {
+            is_background = 1;
+        } else if (raw_path == NULL) {
+            raw_path = argv[i];
+        }
+    }
+
+    if (!raw_path) {
+        commands_puts("kullanim: exec <yol.kef> [&]\n");
+        return;
+    }
+
+    // Eğer yolun bitişinde boşluksuz "&" birleşik kaldıysa temizleyelim
+    char path_buf[VFS_PATH_MAX] = {0};
+    strncpy(path_buf, raw_path, sizeof(path_buf) - 1);
+    size_t rlen = strlen(path_buf);
+    if (rlen > 0 && path_buf[rlen - 1] == '&') {
+        path_buf[rlen - 1] = '\0';
+        is_background = 1;
+    }
+    const char* path = path_buf;
+
+    char target_path[VFS_PATH_MAX] = {0};
     if (path[0] == '/') {
         strncpy(target_path, path, VFS_PATH_MAX - 1);
     } else {
@@ -54,7 +84,7 @@ static void cmd_exec(int argc, char** argv) {
         return;
     }
 
-    // --- 2. Kod+veri+bss icin bellek ayir (kmalloc, HERHANGI bir adres olabilir) ---
+    // --- 2. Bellek ayir ---
     uint32_t total_size = hdr.code_size + hdr.bss_size;
     uint8_t* buf = (uint8_t*)kmalloc(total_size);
     if (!buf) {
@@ -87,9 +117,8 @@ static void cmd_exec(int argc, char** argv) {
         }
     }
 
-    // --- 5. Delta'yi hesapla ve relocation'lari uygula ---
+    // --- 5. Delta'yi hesapla ve uygula ---
     int32_t delta = (int32_t)((uintptr_t)buf - hdr.preferred_addr);
-
     for (uint32_t i = 0; i < hdr.reloc_count; i++) {
         if (relocs[i].code_offset + 4 > hdr.code_size) {
             commands_puts("exec: gecersiz relocation offseti\n");
@@ -100,19 +129,37 @@ static void cmd_exec(int argc, char** argv) {
         *slot = (uint32_t)((int32_t)(*slot) + delta);
     }
 
-    // --- 6. DEBUG: gercek yukleme adresini goster ---
-    commands_printf("exec: preferred=%x actual=%p delta=%d\n",
-                 hdr.preferred_addr, buf, delta);
-
-    // --- 7. Calistir ---
     kef_api_t api;
     api.print = kef_print;
-
     kef_entry_fn entry = (kef_entry_fn)(buf + hdr.entry_off);
-    entry(&api);
 
-    kfree(buf);
-    commands_puts("\n");
+    // --- 6. Arka plan veya Ön plan kontrolü ---
+    if (is_background) {
+        int saved = 0;
+        for (int i = 0; i < MAX_BACKGROUND_TASKS; i++) {
+            if (!g_bg_tasks[i].active) {
+                g_bg_tasks[i].id = g_next_task_id++;
+                g_bg_tasks[i].buffer = buf;
+                strncpy(g_bg_tasks[i].path, target_path, VFS_PATH_MAX - 1);
+                g_bg_tasks[i].active = 1;
+                saved = 1;
+                break;
+            }
+        }
+
+        if (saved) {
+            commands_puts("[i] Surec arka plana atildi.\n");
+        } else {
+            commands_puts("exec: maksimum arka plan gorev siniri!\n");
+            kfree(buf);
+        }
+    } else {
+        commands_printf("exec: preferred=%x actual=%p delta=%d\n",
+                     hdr.preferred_addr, buf, delta);
+        entry(&api);
+        kfree(buf);
+        commands_puts("\n");
+    }
 }
 
-REGISTER_COMMAND(exec, cmd_exec, "exec <yol.kef> - Bir .kef v2 dosyasini calistirir (relocation destekli)");
+REGISTER_COMMAND(exec, cmd_exec, "exec <yol.kef> [&] - Bir .kef dosyasini calistirir");
