@@ -131,11 +131,11 @@ static void kernel_log(const char* msg) {
     if (msg) printk("%s", msg);
 }
 
-// KBI Dosyasını Çözen ve Ekrana Çizen Fonksiyon
 static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
     if (!filepath) return 0;
 
-    uint32_t max_size = 64 * 1024;
+    // 10 MB güvenli dinamik alan (1920x1080 ARGB görsel için)
+    uint32_t max_size = 10 * 1024 * 1024; 
     uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
     if (!file_buf) return 0;
 
@@ -159,18 +159,32 @@ static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
     int max_w = fb_get_width();
     int max_h = fb_get_height();
 
-    for (uint16_t y = 0; y < height; y++) {
-        for (uint16_t x = 0; x < width; x++) {
-            KBIPixel p = pixels[y * width + x];
-            
-            if (p.a > 0) {
-                int px = target_x + x;
-                int py = target_y + y;
+    // Tam ekran çizimlerinde hızlı bellek kopyalama (fb_backbuffer_ptr kullanılıyor)
+    if (target_x == 0 && target_y == 0 && width == max_w && height == max_h) {
+        uint32_t* fb = fb_backbuffer_ptr();
+        if (fb) {
+            for (uint32_t i = 0; i < (uint32_t)(width * height); i++) {
+                KBIPixel p = pixels[i];
+                fb[i] = ((uint32_t)p.r << 16) | ((uint32_t)p.g << 8) | p.b;
+            }
+            kfree(file_buf);
+            return 1;
+        }
+    }
 
-                if (px >= 0 && px < max_w && py >= 0 && py < max_h) {
-                    uint32_t color = ((uint32_t)p.r << 16) | ((uint32_t)p.g << 8) | p.b;
-                    fb_putpixel(px, py, color);
-                }
+    // Normal koordinatlı çizim
+    for (uint16_t y = 0; y < height; y++) {
+        int py = target_y + y;
+        if (py < 0 || py >= max_h) continue;
+
+        for (uint16_t x = 0; x < width; x++) {
+            int px = target_x + x;
+            if (px < 0 || px >= max_w) continue;
+
+            KBIPixel p = pixels[y * width + x];
+            if (p.a > 0) {
+                uint32_t color = ((uint32_t)p.r << 16) | ((uint32_t)p.g << 8) | p.b;
+                fb_putpixel(px, py, color);
             }
         }
     }
@@ -194,6 +208,23 @@ static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
     if (vfs_read_all(path, (uint8_t*)buffer, max_size, &nread)) {
         return (int)nread;
     }
+    return -1;
+}
+
+static int kernel_create_file(const char* path, const char* content, uint32_t size) {
+    if (!path) return -1;
+    
+    // Eğer içerik verilmediyse (boş dosya / touch mantığı) boş bir byte ile oluştur
+    const uint8_t* write_data = (const uint8_t*)(content ? content : "");
+    uint32_t write_size = (content && size > 0) ? size : 0;
+    
+    // Doğrudan kvxfs_write_all kullanarak dosyayı diske / dosya sistemine yaz
+    if (kvxfs_write_all(path, write_data, write_size)) {
+        printk("[KDE KERNEL] Dosya basariyla olusturuldu: '%s' (%d bayt)\n", path, write_size);
+        return (int)write_size;
+    }
+    
+    printk("[KDE KERNEL HATA] Dosya olusturulamadi: '%s'\n", path);
     return -1;
 }
 
@@ -294,6 +325,7 @@ void cmd_kde(int argc, char** argv) {
     g_kde_api.log               = kernel_log;
     g_kde_api.render_kbi        = kernel_render_kbi;
     g_kde_api.dmg_union_replace = kernel_dmg_union_replace;
+    g_kde_api.create_file       = kernel_create_file;
     g_kde_api.read_file         = kernel_read_file;
     g_kde_api.fill_round_rect   = gfx_fill_round_rect;
     g_kde_api.get_file_count    = kernel_get_file_count;
@@ -303,9 +335,7 @@ void cmd_kde(int argc, char** argv) {
 
     fb_console_set_enabled(false);
     fb_clear(0x000000);
-    if (fb_present) {
-        fb_present();
-    }
+    fb_present();
 
     typedef void (__attribute__((cdecl)) *kde_entry_t)(DE_API*);
     kde_entry_t start_desktop = (kde_entry_t)(uintptr_t)entry_point;
