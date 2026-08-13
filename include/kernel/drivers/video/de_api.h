@@ -41,6 +41,7 @@ typedef struct {
     // KBI Dosya Çizim Fonksiyonu
     int (*render_kbi)(int x, int y, const char* filepath);
 
+    int (*create_file)(const char* path, const char* content, uint32_t size);
     int (*read_file)(const char* path, char* buffer, uint32_t max_size);
 
     void (*dmg_union_replace)(int x1, int y1, int x2, int y2);

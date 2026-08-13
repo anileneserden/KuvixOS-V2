@@ -117,7 +117,7 @@ iso: $(KERNEL)
 	@echo 'insmod video_cirrus' >> $(ISO)/boot/grub/grub.cfg
 	@echo '' >> $(ISO)/boot/grub/grub.cfg
 	@echo 'menuentry "KuvixOS V2" {' >> $(ISO)/boot/grub/grub.cfg
-	@echo '  set gfxmode=1280x720x32,1024x768x32,auto' >> $(ISO)/boot/grub/grub.cfg
+	@echo '  set gfxmode=1920x1080x32,1280x720x32,auto' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  set gfxpayload=keep' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  multiboot /boot/kernel.elf' >> $(ISO)/boot/grub/grub.cfg
 	@echo '  boot' >> $(ISO)/boot/grub/grub.cfg
