@@ -330,6 +330,7 @@ void cmd_kde(int argc, char** argv) {
     g_kde_api.fill_round_rect   = gfx_fill_round_rect;
     g_kde_api.get_file_count    = kernel_get_file_count;
     g_kde_api.get_file_name_at  = kernel_get_file_name_at;
+    g_kde_api.snprintf          = ksprintf;
 
     printk("[KDE LOADER] Giriş noktasına atlaniyor: 0x%x\n", entry_point);
 

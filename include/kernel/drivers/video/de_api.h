@@ -48,6 +48,8 @@ typedef struct {
 
     int (*get_file_count)(const char* path);
     int (*get_file_name_at)(const char* path, int index, char* dest_name, int max_len);
+
+    int (*snprintf)(char* str, unsigned long size, const char* format, ...);
 } DE_API;
 
 #pragma pack(pop)
