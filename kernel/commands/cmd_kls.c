@@ -1,0 +1,291 @@
+#include <kernel/fs/vfs.h>
+#include <kernel/memory/kmalloc.h>
+#include <lib/commands.h>
+#include <lib/string.h>
+#include <kernel/printk.h>
+#include <kernel/drivers/video/fb_console.h>
+#include <kernel/drivers/video/fb.h>
+#include <kernel/drivers/video/gfx.h>
+#include <kernel/drivers/rtc/rtc.h>
+#include <kernel/drivers/input/mouse_ps2.h>
+#include <kernel/drivers/input/keyboard.h>
+#include <kernel/fs/kvxfs.h>
+#include <kernel/drivers/video/login_api.h> // Çekirdekteki LoginAPI tanımı için
+
+typedef struct {
+    uint8_t  e_ident[16];
+    uint16_t e_type;
+    uint16_t e_machine;
+    uint32_t e_version;
+    uint32_t e_entry;
+    uint32_t e_phoff;
+    uint32_t e_shoff;
+    uint32_t e_flags;
+    uint16_t e_ehsize;
+    uint16_t e_phentsize;
+    uint16_t e_phnum;
+    uint16_t e_shentsize;
+    uint16_t e_shnum;
+    uint16_t e_shstrndx;
+} __attribute__((packed)) elf32_ehdr_t;
+
+typedef struct {
+    uint32_t p_type;
+    uint32_t p_offset;
+    uint32_t p_vaddr;
+    uint32_t p_paddr;
+    uint32_t p_filesz;
+    uint32_t p_memsz;
+    uint32_t p_flags;
+    uint32_t p_align;
+} __attribute__((packed)) elf32_phdr_t;
+
+#define PT_LOAD 1
+
+// --- KBI PIXEL YAPISI ---
+
+#pragma pack(push, 1)
+typedef struct {
+    uint8_t b, g, r, a;
+} KBIPixel;
+#pragma pack(pop)
+
+// --- API SARMALAYICILARI (WRAPPERS) ---
+
+static void kernel_draw_rect(int x, int y, int w, int h, uint32_t color) {
+    int max_w = fb_get_width();
+    int max_h = fb_get_height();
+
+    int end_x = x + w;
+    int end_y = y + h;
+
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (end_x > max_w) end_x = max_w;
+    if (end_y > max_h) end_y = max_h;
+
+    for (int cy = y; cy < end_y; cy++) {
+        for (int cx = x; cx < end_x; cx++) {
+            fb_putpixel(cx, cy, color);
+        }
+    }
+}
+
+static void kernel_draw_text(int x, int y, const char* text, uint32_t color) {
+    if (!text || text[0] == '\0') return;
+    gfx_draw_text_utf8(x, y, color, text);
+}
+
+static void kernel_get_mouse(login_mouse_state_t* state) {
+    if (!state) return;
+
+    extern void ps2_mouse_poll(void); 
+    ps2_mouse_poll();
+    ps2_mouse_update();
+
+    int max_w = (int)fb_get_width();
+    int max_h = (int)fb_get_height();
+
+    if (mouse_x < 0) mouse_x = 0;
+    if (mouse_y < 0) mouse_y = 0;
+    if (mouse_x >= max_w) mouse_x = max_w - 1;
+    if (mouse_y >= max_h) mouse_y = max_h - 1;
+
+    state->x = mouse_x;
+    state->y = mouse_y;
+    state->left_button   = (g_mouse_buttons & 0x01) ? 1 : 0;
+    state->right_button  = (g_mouse_buttons & 0x02) ? 1 : 0;
+    state->middle_button = (g_mouse_buttons & 0x04) ? 1 : 0;
+}
+
+static char kernel_get_key(void) {
+    kbd_poll();
+
+    if (kbd_has_character()) {
+        return kbd_get_char();
+    }
+
+    return 0;
+}
+
+static void kernel_get_time(char* buffer) {
+    if (!buffer) return;
+    rtc_datetime_t dt;
+    if (rtc_read_datetime(&dt)) {
+        buffer[0] = (dt.hour / 10) + '0'; buffer[1] = (dt.hour % 10) + '0';
+        buffer[2] = ':';
+        buffer[3] = (dt.min / 10) + '0';  buffer[4] = (dt.min % 10) + '0';
+        buffer[5] = ':';
+        buffer[6] = (dt.sec / 10) + '0';  buffer[7] = (dt.sec % 10) + '0';
+        buffer[8] = '\0';
+    } else {
+        strcpy(buffer, "00:00:00");
+    }
+}
+
+static void kernel_log(const char* msg) {
+    if (msg) printk("%s", msg);
+}
+
+static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
+    if (!filepath) return 0;
+
+    // 10 MB güvenli dinamik alan (1920x1080 ARGB görsel için)
+    uint32_t max_size = 10 * 1024 * 1024; 
+    uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
+    if (!file_buf) return 0;
+
+    uint32_t nread = 0;
+    if (!vfs_read_all(filepath, file_buf, max_size, &nread) || nread < 10) {
+        kfree(file_buf);
+        return 0;
+    }
+
+    if (file_buf[0] != 'K' || file_buf[1] != 'B' || 
+        file_buf[2] != 'I' || file_buf[3] != '1') {
+        kfree(file_buf);
+        return 0;
+    }
+
+    uint16_t width = *(uint16_t*)&file_buf[4];
+    uint16_t height = *(uint16_t*)&file_buf[6];
+    
+    KBIPixel* pixels = (KBIPixel*)&file_buf[10];
+
+    int max_w = fb_get_width();
+    int max_h = fb_get_height();
+
+    // Tam ekran çizimlerinde hızlı bellek kopyalama (fb_backbuffer_ptr kullanılıyor)
+    if (target_x == 0 && target_y == 0 && width == max_w && height == max_h) {
+        uint32_t* fb = fb_backbuffer_ptr();
+        if (fb) {
+            for (uint32_t i = 0; i < (uint32_t)(width * height); i++) {
+                KBIPixel p = pixels[i];
+                fb[i] = ((uint32_t)p.r << 16) | ((uint32_t)p.g << 8) | p.b;
+            }
+            kfree(file_buf);
+            return 1;
+        }
+    }
+
+    // Normal koordinatlı çizim
+    for (uint16_t y = 0; y < height; y++) {
+        int py = target_y + y;
+        if (py < 0 || py >= max_h) continue;
+
+        for (uint16_t x = 0; x < width; x++) {
+            int px = target_x + x;
+            if (px < 0 || px >= max_w) continue;
+
+            KBIPixel p = pixels[y * width + x];
+            if (p.a > 0) {
+                uint32_t color = ((uint32_t)p.r << 16) | ((uint32_t)p.g << 8) | p.b;
+                fb_putpixel(px, py, color);
+            }
+        }
+    }
+
+    kfree(file_buf);
+    return 1;
+}
+
+static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
+    if (!path || !buffer || max_size == 0) return -1;
+    uint32_t nread = 0;
+    if (vfs_read_all(path, (uint8_t*)buffer, max_size, &nread)) {
+        return (int)nread;
+    }
+    return -1;
+}
+
+void cmd_kls(int argc, char** argv) {
+    const char* filepath = "/sys/login/DefaultLogin.kls";
+    if (argc > 1 && argv[1] != NULL && argv[1][0] != '\0') {
+        filepath = argv[1];
+    }
+
+    printk("[KLS TEST] %s yukleniyor...\n", filepath);
+
+    uint32_t max_size = 64 * 1024;
+    uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
+    if (!file_buf) {
+        printk("[KLS TEST HATA] Bellek ayrilamadi.\n");
+        return;
+    }
+
+    memset(file_buf, 0, max_size);
+    uint32_t nread = 0;
+    if (!vfs_read_all(filepath, file_buf, max_size, &nread) || nread == 0) {
+        printk("[KLS TEST HATA] Dosya okunamadi!\n");
+        kfree(file_buf);
+        return;
+    }
+
+    printk("[KLS TEST] Okunan bayt: %d\n", nread);
+
+    if (nread < sizeof(elf32_ehdr_t) || 
+        file_buf[0] != 0x7F || file_buf[1] != 'E' || 
+        file_buf[2] != 'L' || file_buf[3] != 'F') {
+        printk("[KLS TEST HATA] Gecersiz ELF formati!\n");
+        kfree(file_buf);
+        return;
+    }
+
+    elf32_ehdr_t* ehdr = (elf32_ehdr_t*)file_buf;
+    uint32_t entry_point = ehdr->e_entry;
+    printk("[KLS TEST] ELF Dogrulandi! Giris Adresi (e_entry): 0x%x\n", entry_point);
+
+    elf32_phdr_t* phdr = (elf32_phdr_t*)(file_buf + ehdr->e_phoff);
+    printk("[KLS TEST] Program Header Sayisi: %d\n", ehdr->e_phnum);
+    
+    for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
+        if (phdr[i].p_type == PT_LOAD) {
+            void* dest = (void*)(uintptr_t)phdr[i].p_vaddr;
+            printk("[KLS TEST] Segment %d yukleniyor -> vaddr: 0x%x, filesz: %d, memsz: %d\n", 
+                   i, phdr[i].p_vaddr, phdr[i].p_filesz, phdr[i].p_memsz);
+                   
+            if (phdr[i].p_filesz > 0) {
+                memcpy(dest, file_buf + phdr[i].p_offset, phdr[i].p_filesz);
+            }
+
+            if (phdr[i].p_memsz > phdr[i].p_filesz) {
+                memset((uint8_t*)dest + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
+            }
+        }
+    }
+
+    kfree(file_buf);
+
+    // LoginAPI yapısını tüm özellikleriyle eksiksiz dolduruyoruz
+    LoginAPI kls_api;
+    memset(&kls_api, 0, sizeof(LoginAPI));
+    kls_api.screen_width    = fb_get_width();
+    kls_api.screen_height   = fb_get_height();
+    kls_api.put_pixel       = fb_putpixel;
+    kls_api.draw_rect       = kernel_draw_rect;
+    kls_api.draw_text       = kernel_draw_text;
+    kls_api.clear_screen    = fb_clear;
+    kls_api.update_display  = fb_present;
+    kls_api.get_mouse       = kernel_get_mouse;
+    kls_api.get_key         = kernel_get_key;
+    kls_api.get_time        = kernel_get_time;
+    kls_api.log             = kernel_log;
+    kls_api.read_file       = kernel_read_file;
+    kls_api.render_kbi      = kernel_render_kbi;
+
+    printk("[KLS TEST] Adrese ve API ile atlaniyor -> 0x%x\n", entry_point);
+
+    // C++ app_main(LoginAPI* api) fonksiyonuna argümanı stack üzerinden verip zıplıyoruz
+    __asm__ volatile (
+        "push %1\n\t"   // &kls_api pointer'ını stack'e it
+        "call *%0\n\t"  // Adrese zıpla
+        "add $4, %%esp" // Temizle
+        :
+        : "r" (entry_point), "r" (&kls_api)
+        : "memory"
+    );
+
+    printk("[KLS TEST] Atlama sonrasi geri donuldu (Normalde buraya dusmemeli).\n");
+}
+
+REGISTER_COMMAND(kls, cmd_kls, "Test KLS Loader");
