@@ -32,6 +32,8 @@ typedef struct {
 
     // Dosya İşlemleri (Gerekirse kullanıcı listesi vb. okumak için)
     int (*read_file)(const char* path, char* buffer, uint32_t max_size);
+
+    int (*render_kbi)(int target_x, int target_y, const char* filepath);
 } LoginAPI;
 
 // Sadece C++ derleyicisi derlerken extern "C" kullanılsın
