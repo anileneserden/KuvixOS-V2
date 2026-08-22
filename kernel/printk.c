@@ -166,6 +166,10 @@ void printk(const char* fmt, ...) {
                 outc('%');
                 break;
 
+            case 'o':
+                print_uint(va_arg(args, unsigned int), 8); // 8 tabanında (octal) yazdırır
+                break;
+
             default:
                 outc('%');
                 outc(*p);

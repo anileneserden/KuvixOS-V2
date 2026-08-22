@@ -17,9 +17,10 @@
 typedef struct {
     char     path[64];
     uint32_t start_lba;
-    uint32_t size;      // KVX_DIR_SIZE => directory
+    uint32_t size;
     uint8_t  used;
-    uint8_t  _pad[3];
+    uint16_t permissions;
+    uint8_t  owner_uid;
 } __attribute__((packed)) kvx_ent_t;
 
 typedef struct {
@@ -239,6 +240,8 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
         strncpy(g_meta.ent[idx].path, clean, 63);
         g_meta.ent[idx].used = 1;
         g_meta.file_count++;
+        g_meta.ent[idx].permissions = 0644;
+        g_meta.ent[idx].owner_uid   = 0;
     }
     uint32_t new_sectors = (size + 511u) / 512u;
     uint32_t start = g_meta.next_free_lba;
@@ -255,12 +258,37 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     return meta_write();
 }
 
+// Basit bir yetki kontrol fonksiyonu örneği (Genişletilebilir)
+static int kvxfs_check_read_permission(const kvx_ent_t* ent) {
+    // Şimdilik aktif kullanıcının root (UID 0) olduğunu varsayıyoruz.
+    // Eğer dosya sahibi root ise veya herkes için okuma izni varsa geçe izin ver.
+    // Örn: POSIX other read biti (0004) veya owner read biti (0400) kontrolü
+    
+    // Eğer root (uid == 0) ise her zaman okuyabilir
+    // Veya dosyanın okuma izinleri açık ise okuyabilir
+    
+    // Örnek basit kural: Eğer permission 0600 ise ve UID 0 değilse reddet.
+    if (ent->permissions == 0600 && ent->owner_uid != 0) {
+        // Normal kullanıcı okuyamaz
+        return 0; 
+    }
+    
+    return 1; // İzin verildi
+}
+
 int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size) {
     if (!path || !out || !kvxfs_init()) return 0;
     char clean[64];
     kvxfs_trim_path(path, clean, 64);
     int idx = find_ent(clean);
     if (idx < 0 || g_meta.ent[idx].size == KVX_DIR_SIZE) return 0;
+
+    // --- Yeni İzin Kontrolü ---
+    if (!kvxfs_check_read_permission(&g_meta.ent[idx])) {
+        // İzin reddedildi
+        return 0;
+    }
+
     uint32_t sz = (g_meta.ent[idx].size > cap) ? cap : g_meta.ent[idx].size;
     uint32_t sectors = (sz + 511u) / 512u;
     uint8_t sec[512];
@@ -473,4 +501,40 @@ int kvxfs_get_file_name_at(const char* path, int index, char* dest_name, int max
         }
     }
     return 0;
+}
+
+int kvxfs_chmod(const char* path, uint16_t permissions) {
+    if (!path || !kvxfs_init()) return 0;
+    
+    char clean[64];
+    kvxfs_trim_path(path, clean, 64);
+    
+    int idx = find_ent(clean);
+    if (idx < 0) {
+        // Dosya bulunamadı
+        return 0;
+    }
+    
+    // İzinleri güncelle
+    g_meta.ent[idx].permissions = permissions;
+    
+    // Değişiklikleri diske kalıcı olarak yaz
+    return meta_write();
+}
+
+int kvxfs_stat(const char* path, uint32_t* size, uint16_t* permissions, uint8_t* owner_uid, int* is_dir) {
+    if (!path || !kvxfs_init()) return 0;
+    
+    char clean[64];
+    kvxfs_trim_path(path, clean, 64);
+    
+    int idx = find_ent(clean);
+    if (idx < 0) return 0;
+    
+    if (size) *size = g_meta.ent[idx].size;
+    if (permissions) *permissions = g_meta.ent[idx].permissions;
+    if (owner_uid) *owner_uid = g_meta.ent[idx].owner_uid;
+    if (is_dir) *is_dir = (g_meta.ent[idx].size == KVX_DIR_SIZE);
+    
+    return 1;
 }

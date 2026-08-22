@@ -12,7 +12,6 @@ typedef struct {
 static int ls_cb(const char* name, uint32_t size, void* u) {
     ls_context_t* ctx = (ls_context_t*)u;
     
-    // GÜVENLİK FİLTRESİ: Eğer gelen isim listenen klasörün kendi tam yoluyla aynıysa listede gösterme
     if (strcmp(name, ctx->base_path) == 0) {
         return 0; 
     }
@@ -29,11 +28,13 @@ static int ls_cb(const char* name, uint32_t size, void* u) {
     if (vfs_stat(full_path, &st) == 0) {
         if (st.type == VFS_T_DIR) {
             fb_console_set_color(0x000000FF, 0x00000000); // Mavi (Klasör)
+            printk("[dir]      ");
         } else {
             fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz (Dosya)
+            // İzinleri (örn [0644]) ve boyutu basıyoruz
+            printk("[%04o] %6d bytes  ", st.permissions, st.size);
         }
 
-        printk("%d bytes  ", st.size);
         commands_puts(name);
         commands_puts("\n");
     }
@@ -55,7 +56,6 @@ void cmd_ls(int argc, char** argv) {
         return;
     }
 
-    // Kendi yazdığımız printk başlığını kaldırdık, çünkü alt katman otomatik basıyor.
     ls_context_t ctx = { .base_path = resolved };
     vfs_list(resolved, ls_cb, &ctx);
 }

@@ -285,7 +285,12 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
-    st->type = 0; st->size = 0; st->backend = 0;
+    // Alanları sıfırla
+    st->type = 0; 
+    st->size = 0; 
+    st->backend = 0;
+    st->permissions = 0;
+    st->owner_uid = 0;
 
     if (is_removable_path(resolved)) {
         char real[VFS_PATH_MAX];
@@ -294,6 +299,7 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
         if (toyfs_iter(real, 0, 0)) {
             st->type = VFS_T_DIR;
             st->backend = BACK_TOY;
+            st->permissions = 0755; // Varsayılan taşınabilir dizin izni
             return 1;
         }
 
@@ -302,6 +308,7 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
             toyfs_close(h);
             st->type = VFS_T_FILE;
             st->backend = BACK_TOY;
+            st->permissions = 0644; // Varsayılan taşınabilir dosya izni
             return 1;
         }
         return 0;
@@ -310,17 +317,28 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
     if (ramfs_is_dir(resolved)) {
         st->type = VFS_T_DIR;
         st->backend = BACK_RAM;
+        st->permissions = 0755;
         return 1;
     }
     if (ramfs_exists(resolved)) {
         st->type = VFS_T_FILE;
         st->backend = BACK_RAM;
+        st->permissions = 0644;
         return 1;
     }
 
-    if (kvxfs_exists(resolved)) {
-        st->type = VFS_T_FILE;
-        st->backend = 3;
+    // --- KVXFS Stat Entegrasyonu ---
+    uint32_t kvx_size = 0;
+    uint16_t kvx_perms = 0;
+    uint8_t  kvx_uid = 0;
+    int      kvx_isdir = 0;
+
+    if (kvxfs_stat(resolved, &kvx_size, &kvx_perms, &kvx_uid, &kvx_isdir)) {
+        st->type = kvx_isdir ? VFS_T_DIR : VFS_T_FILE;
+        st->size = kvx_size;
+        st->permissions = kvx_perms;
+        st->owner_uid = kvx_uid;
+        st->backend = 3; // KVXFS
         return 1;
     }
 
@@ -329,6 +347,7 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
         toyfs_close(h);
         st->type = VFS_T_FILE;
         st->backend = BACK_TOY;
+        st->permissions = 0644;
         return 1;
     }
 

@@ -1,19 +1,19 @@
 #pragma once
 #include <stdint.h>
 
-// --- Eksik olan tanımlar eklendi ---
 #define VFS_PATH_MAX 256
 
 #define VFS_T_FILE   1
 #define VFS_T_DIR    2
 
 typedef struct {
-    int      type;     // VFS_T_FILE veya VFS_T_DIR
+    int      type;
     uint32_t size;
-    int      backend;  // 1: RAM, 2: TOY, 3: KVX
+    int      backend;
+    uint16_t permissions; 
+    uint8_t  owner_uid;   
 } vfs_stat_t;
 
-// --- Mevcut yapın ---
 typedef struct vfs_file vfs_file_t;
 
 // Open flags

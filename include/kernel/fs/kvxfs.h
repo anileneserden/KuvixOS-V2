@@ -18,5 +18,7 @@ int kvxfs_format(void);
 int kvxfs_rename(const char* old_path, const char* new_path);
 int kvxfs_get_file_count(const char* path);
 int kvxfs_get_file_name_at(const char* path, int index, char* dest_name, int max_len);
+int kvxfs_chmod(const char* path, uint16_t permissions);
+int kvxfs_stat(const char* path, uint32_t* size, uint16_t* permissions, uint8_t* owner_uid, int* is_dir);
 
 #endif
