@@ -21,6 +21,12 @@ static user_session_t current_session;
 static int is_logged_in = 0;
 static int require_password = 1; // Varsayılan olarak şifre istesin
 
+// Önceki oturum takibi için değişkenler (exit desteği için)
+static uint32_t prev_uid = 0;
+static char prev_username[32] = {0};
+static char prev_home[64] = {0};
+static int has_previous_session = 0;
+
 static char login_user_buf[32];
 static char login_pass_buf[32];
 static int login_step = 0; 
@@ -62,6 +68,7 @@ void session_init(void) {
     login_step = 0;
     user_pos = 0;
     pass_pos = 0;
+    has_previous_session = 0; // Oturum sıfırlandığında önceki oturumu da temizle
     
     fb_console_set_color(0x00FFFFFF, 0x00000000);
     printk("\n--- KUVIX OS GIRIS SISTEMI ---\n");
@@ -81,6 +88,33 @@ void session_set_user(uint32_t uid, const char* username, const char* home) {
     if (home) {
         strncpy(current_session.home_dir, home, sizeof(current_session.home_dir) - 1);
     }
+}
+
+// Önceki oturum yönetim fonksiyonları
+int session_has_previous(void) {
+    return has_previous_session;
+}
+
+void session_save_previous(uint32_t uid, const char* username, const char* home) {
+    prev_uid = uid;
+    if (username) strncpy(prev_username, username, sizeof(prev_username) - 1);
+    if (home) strncpy(prev_home, home, sizeof(prev_home) - 1);
+    has_previous_session = 1;
+}
+
+void session_restore_previous(void) {
+    if (!has_previous_session) return;
+
+    // Önceki kullanıcı bilgilerini geri yükle
+    session_set_user(prev_uid, prev_username, prev_home);
+    vfs_set_cwd(prev_home);
+    shell_set_username(prev_username);
+    shell_set_hostname("kuvix");
+
+    // Debug veya kontrol amaçlı ekrana yazdırabiliriz
+    printk("[SESSION] %s kullanicisina geri donuldu.\n", prev_username);
+
+    has_previous_session = 0; // Geri döndükten sonra sıfırla
 }
 
 static int check_user_exists(const char* username) {
@@ -137,7 +171,6 @@ static int check_user_exists(const char* username) {
     return exists;
 }
 
-// Parametreye eklenen "int start_shell" ile kontrolü sağlıyoruz
 int authenticate_user(const char* username, const char* password, int start_shell) {
     uint32_t max_size = 2048;
     char* buf = (char*)kmalloc(max_size);
@@ -214,7 +247,6 @@ int authenticate_user(const char* username, const char* password, int start_shel
                 
                 authenticated = 1;
                 
-                // Sadece istenirse shell_init tetiklenir
                 if (start_shell) {
                     printk("\n[SESSION] Giris basarili! Hosgeldiniz %s\n", fields[0]);
                     is_logged_in = 1;
@@ -256,8 +288,6 @@ void session_handle_scancode(uint16_t scancode) {
         printk("\n");
         if (login_step == 0) {
             login_user_buf[user_pos] = '\0';
-
-            LOGIN_DEBUG("[DEBUG-LOGIN] Girilen User Len: %d, Metin: '%s'\n", user_pos, login_user_buf);
             
             if (!check_user_exists(login_user_buf)) {
                 printk("[SESSION] Boyle bir kullanici bulunamadi!\n\n");
@@ -269,7 +299,7 @@ void session_handle_scancode(uint16_t scancode) {
             }
 
             if (!require_password) {
-                if (!authenticate_user(login_user_buf, "", 1)) { // <-- 1 eklendi
+                if (!authenticate_user(login_user_buf, "", 1)) {
                     printk("[SESSION] Giris basarisiz!\n\n");
                     login_step = 0;
                     user_pos = 0;
@@ -283,7 +313,7 @@ void session_handle_scancode(uint16_t scancode) {
         else if (login_step == 1) {
             login_pass_buf[pass_pos] = '\0';
             
-            if (!authenticate_user(login_user_buf, login_pass_buf, 1)) { // <-- 1 eklendi
+            if (!authenticate_user(login_user_buf, login_pass_buf, 1)) {
                 printk("[SESSION] Hatali sifre!\n\n");
                 login_step = 0;
                 user_pos = 0;
