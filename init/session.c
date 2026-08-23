@@ -95,6 +95,10 @@ int session_has_previous(void) {
     return has_previous_session;
 }
 
+int session_is_logged_in(void) {
+    return is_logged_in;
+}
+
 void session_save_previous(uint32_t uid, const char* username, const char* home) {
     prev_uid = uid;
     if (username) strncpy(prev_username, username, sizeof(prev_username) - 1);
@@ -115,6 +119,16 @@ void session_restore_previous(void) {
     printk("[SESSION] %s kullanicisina geri donuldu.\n", prev_username);
 
     has_previous_session = 0; // Geri döndükten sonra sıfırla
+}
+
+void session_logout(void) {
+    has_previous_session = 0;
+    is_logged_in = 0;
+    
+    fb_console_clear();
+    printk("[SESSION] Oturum kapatiliyor...\n");
+    
+    session_init();
 }
 
 static int check_user_exists(const char* username) {

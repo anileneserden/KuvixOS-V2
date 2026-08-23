@@ -196,7 +196,10 @@ void shell_handle_scancode(uint16_t ev) {
             return;
         }
 
-        shell_print_prompt();
+        // ✅ Oturum hala açık mı kontrol et. Logout yapıldıysa prompt basma!
+        if (session_is_logged_in()) {
+            shell_print_prompt();
+        }
         return;
     }
 

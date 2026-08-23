@@ -18,5 +18,6 @@ int authenticate_user(const char* username, const char* password, int start_shel
 int session_has_previous(void);
 void session_save_previous(uint32_t uid, const char* username, const char* home);
 void session_restore_previous(void);
+int session_is_logged_in(void);
 
 #endif
