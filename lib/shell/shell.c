@@ -12,6 +12,8 @@
 
 #include <kernel/drivers/input/keyboard.h>
 
+#include <init/session.h>
+
 // ✅ Dışarıdan passwd modülünün durumunu ve tuş işleyicisini çağırabilmek için:
 extern int passwd_is_active(void);
 extern int passwd_handle_scancode(uint16_t scancode);
@@ -50,30 +52,44 @@ static void shell_cmd_clear(void* u) {
 // Prompt
 // ------------------------------------------------------------
 void shell_print_prompt(void) {
-    // 1. Kullanıcı ve Hostname (Yeşil kısım)
-    fb_console_set_color(0x0000FF00, 0x00000000);
-    printk("%s", g_username);
-    printk("@%s", g_hostname);
+    user_session_t* session = session_get_current();
+    uint32_t current_uid = session ? session->uid : 1; 
 
-    // 2. Ayırıcı (Beyaz)
     fb_console_set_color(0x00FFFFFF, 0x00000000);
-    printk(":");
 
-    // 3. Yol Hesaplama
+    const char* active_user = (session && session->username[0]) ? session->username : g_username;
+    printk("%s", active_user);
+    printk("@%s:", g_hostname);
+
     const char* cwd = vfs_get_cwd();
-    
-    if (strcmp(cwd, "/home/anil") == 0) {
-        printk("~");
-    } 
-    else if (strncmp(cwd, "/home/anil/", 11) == 0) {
-        printk("~/%s", cwd + 11);
-    }
-    else {
+    const char* home_dir = (session && session->home_dir[0]) ? session->home_dir : "/home/anil";
+    int home_len = strlen(home_dir);
+
+    if (current_uid == 0) {
         printk("%s", cwd);
+    } else {
+        // Ev dizini veya sonundaki slash ile eşleşiyorsa ~ bas
+        if (strcmp(cwd, home_dir) == 0 || (strncmp(cwd, home_dir, home_len) == 0 && cwd[home_len] == '\0')) {
+            printk("~");
+        } 
+        else if (strncmp(cwd, home_dir, home_len) == 0 && cwd[home_len] == '/') {
+            // Eğer ev dizininin altındaysa (~/klasor)
+            if (cwd[home_len + 1] == '\0') {
+                printk("~");
+            } else {
+                printk("~%s", cwd + home_len);
+            }
+        }
+        else {
+            printk("%s", cwd);
+        }
     }
 
-    // 4. Prompt karakteri
-    printk("$ ");
+    if (current_uid == 0) {
+        printk("# ");
+    } else {
+        printk("$ ");
+    }
     
     g_dirty = 1;
 }

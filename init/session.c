@@ -137,7 +137,7 @@ static int check_user_exists(const char* username) {
     return exists;
 }
 
-static int authenticate_user(const char* username, const char* password) {
+int authenticate_user(const char* username, const char* password) {
     uint32_t max_size = 2048;
     char* buf = (char*)kmalloc(max_size);
     if (!buf) return 0;
