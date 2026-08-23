@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/drivers/video/fb_console.h>
+#include <init/session.h>
 
 #define KVX_MAGIC     "KVXFS1"
 #define KVX_MAX_FILES 256         // Sınırı 32'den 256'ya çıkardık!
@@ -283,10 +284,13 @@ int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_s
     int idx = find_ent(clean);
     if (idx < 0 || g_meta.ent[idx].size == KVX_DIR_SIZE) return 0;
 
-    // --- Yeni İzin Kontrolü ---
-    if (!kvxfs_check_read_permission(&g_meta.ent[idx])) {
-        // İzin reddedildi
-        return 0;
+    // --- İzin Kontrolü ---
+    user_session_t* session = session_get_current();
+    uint32_t current_uid = session ? session->uid : 1000;
+
+    // Eğer dosya root'a (UID 0) aitse ve okumaya çalışan kullanıcı root değilse engelle!
+    if (g_meta.ent[idx].owner_uid == 0 && current_uid != 0) {
+        return 0; // Yetki yok
     }
 
     uint32_t sz = (g_meta.ent[idx].size > cap) ? cap : g_meta.ent[idx].size;

@@ -4,6 +4,8 @@
 #include <kernel/fs/kvxfs.h>
 #include <lib/string.h>
 
+#include <init/session.h>
+
 // toyfs header:
 #include <kernel/fs/toyfs.h>   // toyfs_open / toyfs_read / toyfs_close / toyfs_iter
 
@@ -176,6 +178,18 @@ int vfs_open(const char* path, int flags, vfs_file_t** out) {
 
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
+
+    vfs_stat_t st;
+    if (vfs_stat(resolved, &st)) {
+        if (st.owner_uid == 0) {
+            if (strcmp(resolved, "/etc/passwd") == 0) {
+                user_session_t* session = session_get_current();
+                if (session && session->uid != 0) {
+                    return 0;
+                }
+            }
+        }
+    }
 
     // ------------------------------------------------------
     // /removable -> ToyFS only (read-only mount view)
@@ -396,6 +410,17 @@ int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_siz
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
 
+    // 🔹 İZİN KONTROLÜ BURAYA DA EKLENMELİ
+    vfs_stat_t st;
+    if (vfs_stat(resolved, &st)) {
+        if (st.owner_uid == 0 && strcmp(resolved, "/etc/passwd") == 0) {
+            user_session_t* session = session_get_current();
+            if (session && session->uid != 0) {
+                return 0; // Yetki yok!
+            }
+        }
+    }
+
     if (strncmp(resolved, "/persist", 8) == 0 || 
         strncmp(resolved, "/home", 5) == 0 || 
         strncmp(resolved, "/sys", 4) == 0 ||
@@ -423,6 +448,18 @@ int vfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
 
     char resolved[VFS_PATH_MAX];
     if (!vfs_resolve_path(path, resolved, sizeof(resolved))) return 0;
+
+    // 🔹 YAZMA İZİN KONTROLÜ
+    vfs_stat_t st;
+    if (vfs_stat(resolved, &st)) {
+        user_session_t* session = session_get_current();
+        uint32_t current_uid = session ? session->uid : 1000;
+
+        // Eğer dosya root'a (UID 0) aitse ve yazmaya çalışan kullanıcı root değilse engelle!
+        if (st.owner_uid == 0 && current_uid != 0) {
+            return 0; // Yetki yok (Permission Denied)
+        }
+    }
 
     if (strncmp(resolved, "/persist", 8) == 0) {
         if (kvxfs_write_all(resolved, data, size)) return 1;

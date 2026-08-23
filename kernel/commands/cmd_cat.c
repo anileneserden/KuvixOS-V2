@@ -4,6 +4,7 @@
 #include <lib/string.h>
 #include <kernel/printk.h>
 #include <kernel/fs/kvxfs.h>
+#include <init/session.h>
 
 void cmd_cat(int argc, char** argv) {
     if (argc < 2) {
@@ -15,19 +16,13 @@ void cmd_cat(int argc, char** argv) {
     const char* path = argv[1];
     char target_path[VFS_PATH_MAX] = {0};
 
-    // 1. Yol kombinasyonunu hazırla (Göreli yol mu, Tam yol mu?)
+    // Yol birleştirme işlemleri (aynı kalıyor)
     if (path[0] == '/') {
-        // Kullanıcı tam yol girdiyse doğrudan kopyala
         strncpy(target_path, path, VFS_PATH_MAX - 1);
     } else {
-        // Kullanıcı sadece dosya adı girdiyse mevcut CWD ile harmanla
         const char* current_cwd = vfs_get_cwd();
-        if (!current_cwd) {
-            current_cwd = "/";
-        }
-        
+        if (!current_cwd) current_cwd = "/";
         strncpy(target_path, current_cwd, VFS_PATH_MAX - 1);
-        
         size_t len = strlen(target_path);
         if (len > 0 && target_path[len - 1] != '/') {
             strcat(target_path, "/");
@@ -35,16 +30,25 @@ void cmd_cat(int argc, char** argv) {
         strcat(target_path, path);
     }
 
-    // Geçici bir okuma tamponu (Buffer) oluşturuyoruz (Maksimum 4KB)
+    // 🔹 ÖNCE DOSYANIN VARLIĞINI VE İZİN DURUMUNU KONTROL EDELİM
+    // (İsteğe bağlı: kvxfs içinde dosya index'ini bulan bir fonksiyonun varsa doğrudan sorgulayabilirsin)
+    // Şimdilik kvxfs_read_all başarısız olduğunda nedenini anlamak için basit bir kontrol:
+    
     static uint8_t cat_buf[4096]; 
     uint32_t read_size = 0;
 
-    // 2. Akıllıca oluşturulan target_path üzerinden okuma yapıyoruz
     if (kvxfs_read_all(target_path, cat_buf, sizeof(cat_buf) - 1, &read_size)) {
-        cat_buf[read_size] = '\0'; // String sonlandırıcı ekle
+        cat_buf[read_size] = '\0';
         printk("%s\n", (const char*)cat_buf);
     } else {
-        printk("Hata: Dosya okunamadı veya bulunamadı: %s\n", target_path);
+        // Dosya okunamadı. Acaba dosya var mı yoksa yetki mi yok?
+        // Oturumu kontrol edelim:
+        user_session_t* session = session_get_current();
+        if (session && session->uid != 0 && strcmp(target_path, "/etc/passwd") == 0) {
+            printk("Hata: Erişim reddedildi (Permission Denied): %s\n", target_path);
+        } else {
+            printk("Hata: Dosya bulunamadı veya okunamadı: %s\n", target_path);
+        }
     }
 }
 
