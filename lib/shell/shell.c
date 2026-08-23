@@ -12,6 +12,10 @@
 
 #include <kernel/drivers/input/keyboard.h>
 
+// ✅ Dışarıdan passwd modülünün durumunu ve tuş işleyicisini çağırabilmek için:
+extern int passwd_is_active(void);
+extern int passwd_handle_scancode(uint16_t scancode);
+
 // ------------------------------------------------------------
 // Identity + cwd
 // ------------------------------------------------------------
@@ -38,14 +42,14 @@ static void shell_cmd_out(void* u, const char* s) {
 
 static void shell_cmd_clear(void* u) {
     (void)u;
-    fb_console_clear(); // bu zaten present yapıyor ama kalsın
+    fb_console_clear(); 
     g_dirty = 1;
 }
 
 // ------------------------------------------------------------
 // Prompt
 // ------------------------------------------------------------
-static void shell_print_prompt(void) {
+void shell_print_prompt(void) {
     // 1. Kullanıcı ve Hostname (Yeşil kısım)
     fb_console_set_color(0x0000FF00, 0x00000000);
     printk("%s", g_username);
@@ -55,18 +59,15 @@ static void shell_print_prompt(void) {
     fb_console_set_color(0x00FFFFFF, 0x00000000);
     printk(":");
 
-    // 3. Yol Hesaplama (Mavi veya Beyaz tercih edebilirsin)
+    // 3. Yol Hesaplama
     const char* cwd = vfs_get_cwd();
     
-    // Eğer CWD tam olarak "/home/anil" ise sadece "~" bas
     if (strcmp(cwd, "/home/anil") == 0) {
         printk("~");
     } 
-    // Eğer "/home/anil/" ile başlıyorsa (alt klasördeyse), yolu kısaltabiliriz
     else if (strncmp(cwd, "/home/anil/", 11) == 0) {
         printk("~/%s", cwd + 11);
     }
-    // Değilse (root veya başka dizindeyse) tam yolu bas
     else {
         printk("%s", cwd);
     }
@@ -125,17 +126,11 @@ void shell_init(void) {
 
     fb_console_clear();
 
-    // ✅ Kullanıcı adını USER_NAME makrosundan veya kernel_main'den gelen veriden alabiliriz
-    // Ama şimdilik kernel_main'de shell_set_username çağıracağız.
-
     printk("KuvixOS Shell V2 Hazir!\n");
     printk("Komutlar icin 'help' yazabilirsiniz.\n\n");
 
     g_len = 0;
     g_line[0] = 0;
-
-    // ✅ Shell açıldığında VFS'in mevcut konumunu güncelle (anil klasörü için)
-    // Eğer kernel_main'de vfs_set_cwd yaptıysan bu prompt doğru gelecektir.
     
     shell_print_prompt();
     fb_console_flush();
@@ -156,6 +151,11 @@ void shell_tick(void) {
 // Input
 // ------------------------------------------------------------
 void shell_handle_scancode(uint16_t ev) {
+    // ✅ Eğer interaktif passwd modundaysak, tuşları doğrudan passwd komutuna yönlendir!
+    if (passwd_is_active()) {
+        passwd_handle_scancode(ev);
+        return;
+    }
 
     uint8_t sc = (uint8_t)(ev & 0xFF);
     uint8_t is_e0 = ((ev & 0xFF00) == 0xE000);
@@ -167,9 +167,7 @@ void shell_handle_scancode(uint16_t ev) {
     if (!c) return;
 
     if (c == '\n' || c == '\r') {
-
         g_line[g_len] = 0;
-
         echo_newline();
 
         if (g_len > 0) {
@@ -179,30 +177,29 @@ void shell_handle_scancode(uint16_t ev) {
         g_len = 0;
         g_line[0] = 0;
 
+        // ✅ EĞER passwd komutu aktif hale geldiyse, hemen prompt BASMA!
+        if (passwd_is_active()) {
+            return;
+        }
+
         shell_print_prompt();
         return;
     }
 
     if (c == '\b' || (uint8_t)c == 8 || (uint8_t)c == 127) {
-
         if (g_len > 0) {
             g_len--;
             g_line[g_len] = 0;
             echo_backspace();
         }
-
         return;
     }
 
     uint8_t uc = (uint8_t)c;
-
     if (uc >= 32) {
-
         if (g_len < (int)sizeof(g_line) - 1) {
-
             g_line[g_len++] = (char)uc;
             g_line[g_len] = 0;
-
             echo_char(uc);
         }
     }
