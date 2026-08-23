@@ -65,26 +65,24 @@ void shell_print_prompt(void) {
     const char* home_dir = (session && session->home_dir[0]) ? session->home_dir : "/home/anil";
     int home_len = strlen(home_dir);
 
-    if (current_uid == 0) {
-        printk("%s", cwd);
-    } else {
-        // Ev dizini veya sonundaki slash ile eşleşiyorsa ~ bas
-        if (strcmp(cwd, home_dir) == 0 || (strncmp(cwd, home_dir, home_len) == 0 && cwd[home_len] == '\0')) {
+    // Ev dizini kontrolü (Kullanıcı kim olursa olsun, kendi home dizinindeyse ~ yazdır)
+    if (strcmp(cwd, home_dir) == 0 || (strncmp(cwd, home_dir, home_len) == 0 && cwd[home_len] == '\0')) {
+        printk("~");
+    } 
+    else if (strncmp(cwd, home_dir, home_len) == 0 && cwd[home_len] == '/') {
+        // Ev dizininin altındaki alt klasörler (~/klasor)
+        if (cwd[home_len + 1] == '\0') {
             printk("~");
-        } 
-        else if (strncmp(cwd, home_dir, home_len) == 0 && cwd[home_len] == '/') {
-            // Eğer ev dizininin altındaysa (~/klasor)
-            if (cwd[home_len + 1] == '\0') {
-                printk("~");
-            } else {
-                printk("~%s", cwd + home_len);
-            }
-        }
-        else {
-            printk("%s", cwd);
+        } else {
+            printk("~%s", cwd + home_len);
         }
     }
+    else {
+        // Ev dizini dışındaysa tam yolu yazdır (örn: /etc, /root vb.)
+        printk("%s", cwd);
+    }
 
+    // Yetkiye göre prompt işareti (# veya $)
     if (current_uid == 0) {
         printk("# ");
     } else {

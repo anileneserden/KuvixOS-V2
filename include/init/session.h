@@ -14,6 +14,6 @@ void session_init(void);
 user_session_t* session_get_current(void);
 void session_set_user(uint32_t uid, const char* username, const char* home);
 void session_handle_scancode(uint16_t scancode);
-int authenticate_user(const char* username, const char* password);
+int authenticate_user(const char* username, const char* password, int start_shell);
 
 #endif

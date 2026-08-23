@@ -137,7 +137,8 @@ static int check_user_exists(const char* username) {
     return exists;
 }
 
-int authenticate_user(const char* username, const char* password) {
+// Parametreye eklenen "int start_shell" ile kontrolü sağlıyoruz
+int authenticate_user(const char* username, const char* password, int start_shell) {
     uint32_t max_size = 2048;
     char* buf = (char*)kmalloc(max_size);
     if (!buf) return 0;
@@ -212,9 +213,13 @@ int authenticate_user(const char* username, const char* password) {
                 shell_set_hostname("kuvix");
                 
                 authenticated = 1;
-                printk("\n[SESSION] Giris basarili! Hosgeldiniz %s\n", fields[0]);
-                is_logged_in = 1;
-                shell_init(); 
+                
+                // Sadece istenirse shell_init tetiklenir
+                if (start_shell) {
+                    printk("\n[SESSION] Giris basarili! Hosgeldiniz %s\n", fields[0]);
+                    is_logged_in = 1;
+                    shell_init(); 
+                }
                 break;
             }
         }
@@ -264,7 +269,7 @@ void session_handle_scancode(uint16_t scancode) {
             }
 
             if (!require_password) {
-                if (!authenticate_user(login_user_buf, "")) {
+                if (!authenticate_user(login_user_buf, "", 1)) { // <-- 1 eklendi
                     printk("[SESSION] Giris basarisiz!\n\n");
                     login_step = 0;
                     user_pos = 0;
@@ -278,7 +283,7 @@ void session_handle_scancode(uint16_t scancode) {
         else if (login_step == 1) {
             login_pass_buf[pass_pos] = '\0';
             
-            if (!authenticate_user(login_user_buf, login_pass_buf)) {
+            if (!authenticate_user(login_user_buf, login_pass_buf, 1)) { // <-- 1 eklendi
                 printk("[SESSION] Hatali sifre!\n\n");
                 login_step = 0;
                 user_pos = 0;

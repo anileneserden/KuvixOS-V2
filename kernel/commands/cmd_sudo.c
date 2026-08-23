@@ -10,7 +10,7 @@
 extern command_t _cmd_start[];
 extern command_t _cmd_end[];
 
-extern int authenticate_user(const char* username, const char* password);
+extern int authenticate_user(const char* username, const char* password, int start_shell);
 
 // Şifreyi yıldızla (*) maskeleyerek okuyan fonksiyon
 static void sudo_get_password(char* buf, int max_len) {
@@ -48,21 +48,22 @@ void cmd_sudo(int argc, char** argv) {
 
     char password_input[64];
 
-    // Doğrudan "sudo" veya "sudo su" yazıldığında interaktif şifre iste
+    // ÖZEL DURUM: "sudo su" komutu
     if (argc == 1 || (argc == 2 && strcmp(argv[1], "su") == 0)) {
         sudo_get_password(password_input, sizeof(password_input));
 
-        if (!authenticate_user("root", password_input)) {
+        // 3. parametre 0 -> Ekranı temizlemeden ve shell'i resetlemeden doğrula
+        if (!authenticate_user("root", password_input, 0)) {
             printk("Uzgunum, basarisiz sifre denemesi.\n");
             return;
         }
 
         // Oturumu kalıcı olarak root yap
-        session_set_user(0, "root", "/");
-        vfs_set_cwd("/");
+        session_set_user(0, "root", "/root");
+        vfs_set_cwd("/root");
         shell_set_username("root");
         shell_set_hostname("kuvix");
-        printk("Root oturumu acildi.\n");
+        
         return;
     }
 
@@ -74,7 +75,7 @@ void cmd_sudo(int argc, char** argv) {
     }
 
     const char* direct_pwd = argv[1];
-    if (!authenticate_user("root", direct_pwd)) {
+    if (!authenticate_user("root", direct_pwd, 0)) {
         printk("Yanlis sifre!\n");
         return;
     }
