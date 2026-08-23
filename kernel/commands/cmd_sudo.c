@@ -4,39 +4,59 @@
 #include <init/session.h>
 #include <lib/shell.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/drivers/input/keyboard.h>
+#include <kernel/drivers/video/fb_console.h>
 
 extern command_t _cmd_start[];
 extern command_t _cmd_end[];
 
 extern int authenticate_user(const char* username, const char* password);
 
-void cmd_sudo(int argc, char** argv) {
-    if (argc < 3) {
-        printk("Kullanim: sudo <root_sifresi> <komut>\n");
-        printk("Ornek: sudo root_sifresi su\n");
-        printk("Ornek: sudo root_sifresi cat /etc/passwd\n");
-        return;
+// Şifreyi yıldızla (*) maskeleyerek okuyan fonksiyon
+static void sudo_get_password(char* buf, int max_len) {
+    int len = 0;
+    printk("[sudo] root password for %s: ", session_get_current()->username);
+    fb_console_flush(); // Prompt yazısını ekrana bas
+    
+    while (1) {
+        char c = kbd_get_char();
+        if (c == '\n' || c == '\r') {
+            printk("\n");
+            fb_console_flush();
+            break;
+        } else if (c == '\b' || c == 127) {
+            if (len > 0) {
+                len--;
+                printk("\b \b");
+                fb_console_flush();
+            }
+        } else if (c >= 32 && c < 127 && len < max_len - 1) {
+            buf[len++] = c;
+            printk("*");
+            fb_console_flush(); // Basılan yıldızı ekrana anında yansıt
+        }
     }
+    buf[len] = '\0';
+}
 
+void cmd_sudo(int argc, char** argv) {
     user_session_t* session = session_get_current();
     if (!session) {
         printk("Hata: Aktif bir oturum bulunamadi!\n");
         return;
     }
 
-    const char* password_input = argv[1]; // İkinci parametre şifre
+    char password_input[64];
 
-    // Sudo/Su için her zaman root şifresini kontrol et
-    if (!authenticate_user("root", password_input)) {
-        printk("Yanlis sifre!\n");
-        return;
-    }
+    // Doğrudan "sudo" veya "sudo su" yazıldığında interaktif şifre iste
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "su") == 0)) {
+        sudo_get_password(password_input, sizeof(password_input));
 
-    int sub_argc = argc - 2;
-    char** sub_argv = &argv[2];
+        if (!authenticate_user("root", password_input)) {
+            printk("Uzgunum, basarisiz sifre denemesi.\n");
+            return;
+        }
 
-    // ÖZEL DURUM: "sudo <sifre> su" komutu
-    if (sub_argc == 1 && strcmp(sub_argv[0], "su") == 0) {
         // Oturumu kalıcı olarak root yap
         session_set_user(0, "root", "/");
         vfs_set_cwd("/");
@@ -46,7 +66,22 @@ void cmd_sudo(int argc, char** argv) {
         return;
     }
 
-    // Normal komut çalıştırma (geçici root yetkisi)
+    // Geriye dönük parametreli kullanım desteği
+    if (argc < 3) {
+        printk("Kullanim: sudo su\n");
+        printk("Veya: sudo <sifre> <komut>\n");
+        return;
+    }
+
+    const char* direct_pwd = argv[1];
+    if (!authenticate_user("root", direct_pwd)) {
+        printk("Yanlis sifre!\n");
+        return;
+    }
+
+    int sub_argc = argc - 2;
+    char** sub_argv = &argv[2];
+
     command_t* target_cmd = 0;
     for (command_t* cmd = _cmd_start; cmd < _cmd_end; cmd++) {
         if (cmd->name && strcmp(sub_argv[0], cmd->name) == 0) {
@@ -62,9 +97,7 @@ void cmd_sudo(int argc, char** argv) {
 
     uint32_t old_uid = session->uid;
     session->uid = 0;
-
     target_cmd->fn(sub_argc, sub_argv);
-
     session->uid = old_uid;
 }
 
