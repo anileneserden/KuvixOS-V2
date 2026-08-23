@@ -528,7 +528,7 @@ int vfs_list(const char* dir_prefix,
     vfs_list_wrap_t w = { resolved, cb, u };
     toyfs_iter(resolved, vfs_toyfs_iter_cb, &w);
 
-    kvxfs_list_all(resolved);
+    kvxfs_list_callback(resolved, cb, u);
 
     return 1;
 }

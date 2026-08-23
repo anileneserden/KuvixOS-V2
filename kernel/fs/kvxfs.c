@@ -376,6 +376,26 @@ void kvxfs_list_all(const char* filter_path) {
     }
 }
 
+int kvxfs_list_callback(const char* filter_path, int (*cb)(const char* name, uint32_t size, void* u), void* u) {
+    if (!filter_path || !kvxfs_init() || !cb) return 0;
+    
+    char norm[64];
+    kvxfs_trim_path(filter_path, norm, sizeof(norm));
+    
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (!g_meta.ent[i].used) continue;
+        if (strcmp(g_meta.ent[i].path, norm) == 0) continue;
+        
+        if (!kvxfs_path_is_direct_child(norm, g_meta.ent[i].path)) continue;
+        
+        const char* name = kvxfs_basename_ptr(g_meta.ent[i].path);
+        if (name && name[0] == '.') continue;
+        
+        cb(name, g_meta.ent[i].size, u);
+    }
+    return 1;
+}
+
 int kvxfs_tree(const char* root_path) {
     if (!root_path) return 0;
     if (!kvxfs_init()) return 0;
