@@ -5,8 +5,9 @@
 #include <kernel/printk.h>
 #include <kernel/memory/kmalloc.h>
 
-// Çekirdek içerisindeki ortak modül yükleyicinin imzası
-extern void load_user_module(const char* path);
+// Çekirdek içerisindeki özel yükleyici imzaları (loader.c içinde tanımlı)
+extern void load_desktop_module(const char* path);
+extern void load_login_module(const char* path);
 
 // Config dosyasından anahtar-değer okuma yardımcısı
 static int parse_session_config(const char* filepath, const char* key, char* dest, int max_len) {
@@ -64,17 +65,17 @@ void session_init(void) {
         strcpy(is_password, "false"); // Varsayılan olarak kapalı kabul et
     }
 
-    // 2. Şifre durumuna göre ilgili modül yolunu seç ve yükle
+    // 2. Şifre durumuna göre doğru yükleyiciyi ve modül yolunu seç
     if (strcmp(is_password, "true") == 0) {
         if (parse_session_config("/sys/configs/session.cfg", "loginScreen", target_path, sizeof(target_path))) {
             printk("[SESSION] Sifre aktif. Giris ekrani yukleniyor: %s\n", target_path);
-            load_user_module(target_path);
+            load_login_module(target_path); // LoginAPI kullanan kls loader
             return;
         }
     } else {
         if (parse_session_config("/sys/configs/session.cfg", "desktopScreen", target_path, sizeof(target_path))) {
             printk("[SESSION] Sifre kapali. Masaustu yukleniyor: %s\n", target_path);
-            load_user_module(target_path);
+            load_desktop_module(target_path); // DE_API kullanan kde loader
             return;
         }
     }
