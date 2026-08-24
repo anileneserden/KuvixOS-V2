@@ -6,6 +6,10 @@
 #include <kernel/memory/kmalloc.h>
 #include <kernel/drivers/video/fb_console.h>
 
+// Çekirdek içerisindeki özel yükleyici imzaları (loader.c içinde tanımlı)
+extern void load_desktop_module(const char* path);
+extern void load_login_module(const char* path);
+
 // Debug loglarını açmak için 1 yap, kapatmak için 0 yap
 #define DEBUG_LOGIN_ENABLED 0
 
@@ -59,23 +63,6 @@ static void load_session_config(void) {
     kfree(buf);
 }
 
-void session_init(void) {
-    fb_console_clear(); 
-    
-    printk("[SESSION] Oturum yoneticisi baslatiliyor...\n");
-    
-    is_logged_in = 0;
-    login_step = 0;
-    user_pos = 0;
-    pass_pos = 0;
-    has_previous_session = 0; // Oturum sıfırlandığında önceki oturumu da temizle
-    
-    fb_console_set_color(0x00FFFFFF, 0x00000000);
-    printk("\n--- KUVIX OS GIRIS SISTEMI ---\n");
-    printk("Kullanici adi (login): ");
-    fb_console_flush();
-}
-
 user_session_t* session_get_current(void) {
     return &current_session;
 }
@@ -115,10 +102,8 @@ void session_restore_previous(void) {
     shell_set_username(prev_username);
     shell_set_hostname("kuvix");
 
-    // Debug veya kontrol amaçlı ekrana yazdırabiliriz
     printk("[SESSION] %s kullanicisina geri donuldu.\n", prev_username);
-
-    has_previous_session = 0; // Geri döndükten sonra sıfırla
+    has_previous_session = 0;
 }
 
 void session_logout(void) {
@@ -276,6 +261,79 @@ int authenticate_user(const char* username, const char* password, int start_shel
 
     kfree(buf);
     return authenticated;
+}
+
+void session_init(void) {
+    fb_console_clear(); 
+    printk("[SESSION] Oturum yoneticisi baslatiliyor...\n");
+    
+    is_logged_in = 0;
+    login_step = 0;
+    user_pos = 0;
+    pass_pos = 0;
+    has_previous_session = 0;
+    
+    // Config dosyasından şifre gereksinimini yükle
+    load_session_config();
+
+    char is_password_str[16] = {0};
+    char target_path[64] = {0};
+
+    // session.cfg üzerinden isPassword ve modül yollarını kontrol etmeye çalışalım
+    uint32_t max_size = 512;
+    char* buf = (char*)kmalloc(max_size);
+    if (buf) {
+        uint32_t nread = 0;
+        if (vfs_read_all("/sys/configs/session.cfg", (uint8_t*)buf, max_size, &nread) && nread > 0) {
+            buf[nread] = '\0';
+            
+            // parse_session_config yerine mevcut config okuma mantığımızı veya basit arama kullanabiliriz
+            if (require_password) {
+                // Eğer şifreli giriş aktifse ve loginScreen tanımlıysa yükle
+                if (strstr(buf, "loginScreen=")) {
+                    char* p = strstr(buf, "loginScreen=");
+                    if (p) {
+                        p += 12;
+                        int i = 0;
+                        while (*p && *p != '\n' && *p != '\r' && i < 63) {
+                            target_path[i++] = *p++;
+                        }
+                        target_path[i] = '\0';
+                        
+                        kfree(buf);
+                        printk("[SESSION] Sifre aktif. Giris ekrani yukleniyor: %s\n", target_path);
+                        load_login_module(target_path);
+                        return;
+                    }
+                }
+            } else {
+                // Şifre kapalıysa doğrudan masaüstünü yükle
+                if (strstr(buf, "desktopScreen=")) {
+                    char* p = strstr(buf, "desktopScreen=");
+                    if (p) {
+                        p += 14;
+                        int i = 0;
+                        while (*p && *p != '\n' && *p != '\r' && i < 63) {
+                            target_path[i++] = *p++;
+                        }
+                        target_path[i] = '\0';
+                        
+                        kfree(buf);
+                        printk("[SESSION] Sifre kapali. Masaustu yukleniyor: %s\n", target_path);
+                        load_desktop_module(target_path);
+                        return;
+                    }
+                }
+            }
+        }
+        kfree(buf);
+    }
+
+    // Fallback: Modül yolu bulunamazsa normal metin tabanlı konsol giriş döngüsüne devam et
+    fb_console_set_color(0x00FFFFFF, 0x00000000);
+    printk("\n--- KUVIX OS GIRIS SISTEMI ---\n");
+    printk("Kullanici adi (login): ");
+    fb_console_flush();
 }
 
 void session_handle_scancode(uint16_t scancode) {

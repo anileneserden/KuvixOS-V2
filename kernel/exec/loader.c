@@ -1,4 +1,5 @@
 #include <kernel/drivers/video/de_api.h>
+#include <kernel/drivers/video/login_api.h>
 #include <kernel/drivers/video/fb_console.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/fs/vfs.h>
@@ -13,8 +14,7 @@
 
 #define DEFAULT_LOAD_ADDRESS 0x00800000
 
-// --- 32-bit ELF YAPILARI ---
-
+// --- ORTAK ELF YAPILARI VE KBI ---
 typedef struct {
     uint8_t  e_ident[16];
     uint16_t e_type;
@@ -45,20 +45,16 @@ typedef struct {
 
 #define PT_LOAD 1
 
-// --- KBI PIXEL YAPISI ---
-
 #pragma pack(push, 1)
 typedef struct {
     uint8_t b, g, r, a;
 } KBIPixel;
 #pragma pack(pop)
 
-// --- API SARMALAYICILARI (WRAPPERS) ---
-
+// --- ORTAK KERNEL WRAPPER'LARI ---
 static void kernel_draw_rect(int x, int y, int w, int h, uint32_t color) {
     int max_w = fb_get_width();
     int max_h = fb_get_height();
-
     int end_x = x + w;
     int end_y = y + h;
 
@@ -79,35 +75,11 @@ static void kernel_draw_text(int x, int y, const char* text, uint32_t color) {
     gfx_draw_text_utf8(x, y, color, text);
 }
 
-static void kernel_get_mouse(de_mouse_state_t* state) {
-    if (!state) return;
-
-    extern void ps2_mouse_poll(void); 
-    ps2_mouse_poll();
-    ps2_mouse_update();
-
-    int max_w = (int)fb_get_width();
-    int max_h = (int)fb_get_height();
-
-    if (mouse_x < 0) mouse_x = 0;
-    if (mouse_y < 0) mouse_y = 0;
-    if (mouse_x >= max_w) mouse_x = max_w - 1;
-    if (mouse_y >= max_h) mouse_y = max_h - 1;
-
-    state->x = mouse_x;
-    state->y = mouse_y;
-    state->left_button   = (g_mouse_buttons & 0x01) ? 1 : 0;
-    state->right_button  = (g_mouse_buttons & 0x02) ? 1 : 0;
-    state->middle_button = (g_mouse_buttons & 0x04) ? 1 : 0;
-}
-
 static char kernel_get_key(void) {
     kbd_poll();
-
     if (kbd_has_character()) {
         return kbd_get_char();
     }
-
     return 0;
 }
 
@@ -132,7 +104,6 @@ static void kernel_log(const char* msg) {
 
 static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
     if (!filepath) return 0;
-
     uint32_t max_size = 10 * 1024 * 1024; 
     uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
     if (!file_buf) return 0;
@@ -143,15 +114,13 @@ static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
         return 0;
     }
 
-    if (file_buf[0] != 'K' || file_buf[1] != 'B' || 
-        file_buf[2] != 'I' || file_buf[3] != '1') {
+    if (file_buf[0] != 'K' || file_buf[1] != 'B' || file_buf[2] != 'I' || file_buf[3] != '1') {
         kfree(file_buf);
         return 0;
     }
 
     uint16_t width = *(uint16_t*)&file_buf[4];
     uint16_t height = *(uint16_t*)&file_buf[6];
-    
     KBIPixel* pixels = (KBIPixel*)&file_buf[10];
 
     int max_w = fb_get_width();
@@ -189,15 +158,6 @@ static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
     return 1;
 }
 
-static void kernel_dmg_union_replace(int x1, int y1, int x2, int y2) {
-    int w = x2 - x1;
-    int h = y2 - y1;
-
-    if (w <= 0 || h <= 0) return;
-
-    fb_present_rect(x1, y1, w, h);
-}
-
 static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
     if (!path || !buffer || max_size == 0) return -1;
     uint32_t nread = 0;
@@ -207,54 +167,43 @@ static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
     return -1;
 }
 
-static int kernel_create_file(const char* path, const char* content, uint32_t size) {
-    if (!path) return -1;
-    
-    const uint8_t* write_data = (const uint8_t*)(content ? content : "");
-    uint32_t write_size = (content && size > 0) ? size : 0;
-    
-    if (kvxfs_write_all(path, write_data, write_size)) {
-        printk("[LOADER KERNEL] Dosya olusturuldu: '%s' (%d bayt)\n", path, write_size);
-        return (int)write_size;
-    }
-    return -1;
+// --- MOUSE WRAPPERS (Ayrı struct tipleri kullandıkları için ayrı yazılabilir) ---
+static void kernel_get_de_mouse(de_mouse_state_t* state) {
+    if (!state) return;
+    extern void ps2_mouse_poll(void); 
+    ps2_mouse_poll();
+    ps2_mouse_update();
+    state->x = mouse_x; state->y = mouse_y;
+    state->left_button   = (g_mouse_buttons & 0x01) ? 1 : 0;
+    state->right_button  = (g_mouse_buttons & 0x02) ? 1 : 0;
+    state->middle_button = (g_mouse_buttons & 0x04) ? 1 : 0;
 }
 
-static int kernel_get_file_count(const char* path) {
-    if (!path) return 0;
-    return kvxfs_get_file_count(path);
+static void kernel_get_login_mouse(login_mouse_state_t* state) {
+    if (!state) return;
+    extern void ps2_mouse_poll(void); 
+    ps2_mouse_poll();
+    ps2_mouse_update();
+    state->x = mouse_x; state->y = mouse_y;
+    state->left_button   = (g_mouse_buttons & 0x01) ? 1 : 0;
+    state->right_button  = (g_mouse_buttons & 0x02) ? 1 : 0;
+    state->middle_button = (g_mouse_buttons & 0x04) ? 1 : 0;
 }
 
-static int kernel_get_file_name_at(const char* path, int index, char* dest_name, int max_len) {
-    return kvxfs_get_file_name_at(path, index, dest_name, max_len);
-}
-
-static DE_API g_user_api;
-
-void load_user_module(const char* filepath) {
-    if (!filepath) return;
-
-    printk("[LOADER] %s yukleniyor...\n", filepath);
-
+// --- ORTAK ELF OKUYUCU YARDIMCISI ---
+static uint32_t load_elf_or_binary(const char* filepath) {
     uint32_t max_size = 64 * 1024;
     uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
-
-    if (!file_buf) {
-        printk("Hata: Bellek ayrilamadi.\n");
-        return;
-    }
+    if (!file_buf) return 0;
 
     memset(file_buf, 0, max_size);
-
     uint32_t nread = 0;
     if (!vfs_read_all(filepath, file_buf, max_size, &nread) || nread == 0) {
-        printk("Hata: %s okunamadi!\n", filepath);
         kfree(file_buf);
-        return;
+        return 0;
     }
 
     uint32_t entry_point = 0;
-
     if (nread >= sizeof(elf32_ehdr_t) && 
         file_buf[0] == 0x7F && file_buf[1] == 'E' && 
         file_buf[2] == 'L' && file_buf[3] == 'F') {
@@ -267,49 +216,106 @@ void load_user_module(const char* filepath) {
             if (phdr[i].p_type == PT_LOAD) {
                 void* dest = (void*)(uintptr_t)phdr[i].p_vaddr;
                 memcpy(dest, file_buf + phdr[i].p_offset, phdr[i].p_filesz);
-
                 if (phdr[i].p_memsz > phdr[i].p_filesz) {
                     memset((uint8_t*)dest + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
                 }
             }
         }
-
     } else {
         entry_point = DEFAULT_LOAD_ADDRESS;
         memcpy((void*)(uintptr_t)entry_point, file_buf, nread);
     }
 
     kfree(file_buf);
+    return entry_point;
+}
 
-    memset(&g_user_api, 0, sizeof(DE_API));
-    g_user_api.screen_width      = fb_get_width();
-    g_user_api.screen_height     = fb_get_height();
-    g_user_api.put_pixel         = fb_putpixel;
-    g_user_api.draw_rect         = kernel_draw_rect;
-    g_user_api.draw_text         = kernel_draw_text;
-    g_user_api.clear_screen      = fb_clear;
-    g_user_api.update_display    = fb_present;
-    g_user_api.get_mouse         = kernel_get_mouse;
-    g_user_api.get_key           = kernel_get_key;
-    g_user_api.get_time          = kernel_get_time;
-    g_user_api.log               = kernel_log;
-    g_user_api.render_kbi        = kernel_render_kbi;
-    g_user_api.dmg_union_replace = kernel_dmg_union_replace;
-    g_user_api.create_file       = kernel_create_file;
-    g_user_api.read_file         = kernel_read_file;
-    g_user_api.fill_round_rect   = gfx_fill_round_rect;
-    g_user_api.get_file_count    = kernel_get_file_count;
-    g_user_api.get_file_name_at  = kernel_get_file_name_at;
+// --- 1. MASAÜSTÜ YÜKLEYİCİ (.kde) ---
+static DE_API g_de_api;
+
+void load_desktop_module(const char* filepath) {
+    if (!filepath) return;
+    printk("[LOADER] Desktop yukleniyor: %s\n", filepath);
+
+    uint32_t entry_point = load_elf_or_binary(filepath);
+    if (!entry_point) {
+        printk("Hata: Desktop yuklenemedi!\n");
+        return;
+    }
+
+    memset(&g_de_api, 0, sizeof(DE_API));
+    g_de_api.screen_width      = fb_get_width();
+    g_de_api.screen_height     = fb_get_height();
+    g_de_api.put_pixel         = fb_putpixel;
+    g_de_api.draw_rect         = kernel_draw_rect;
+    g_de_api.draw_text         = kernel_draw_text;
+    g_de_api.clear_screen      = fb_clear;
+    g_de_api.update_display    = fb_present;
+    g_de_api.get_mouse         = kernel_get_de_mouse;
+    g_de_api.get_key           = kernel_get_key;
+    g_de_api.get_time          = kernel_get_time;
+    g_de_api.log               = kernel_log;
+    g_de_api.render_kbi        = kernel_render_kbi;
+    g_de_api.dmg_union_replace = (void*)(uintptr_t)fb_present_rect;
+    g_de_api.create_file       = (void*)(uintptr_t)kvxfs_write_all;
+    g_de_api.read_file         = kernel_read_file;
+    g_de_api.fill_round_rect   = gfx_fill_round_rect;
+    g_de_api.get_file_count    = kvxfs_get_file_count;
+    g_de_api.get_file_name_at  = kvxfs_get_file_name_at;
 
     fb_console_set_enabled(false);
     fb_clear(0x000000);
     fb_present();
 
-    typedef void (__attribute__((cdecl)) *module_entry_t)(DE_API*);
-    module_entry_t start_module = (module_entry_t)(uintptr_t)entry_point;
-
-    start_module(&g_user_api);
+    typedef void (__attribute__((cdecl)) *de_entry_t)(DE_API*);
+    de_entry_t start_de = (de_entry_t)(uintptr_t)entry_point;
+    start_de(&g_de_api);
 
     fb_console_set_enabled(true);
-    printk("[LOADER] Modul sonlandirildi.\n");
+    printk("[LOADER] Desktop sonlandirildi.\n");
+}
+
+// --- 2. GİRİŞ EKRANI YÜKLEYİCİ (.kls) ---
+static LoginAPI g_login_api;
+
+void load_login_module(const char* filepath) {
+    if (!filepath) return;
+    printk("[LOADER] Login ekrani yukleniyor: %s\n", filepath);
+
+    uint32_t entry_point = load_elf_or_binary(filepath);
+    if (!entry_point) {
+        printk("Hata: Login ekrani yuklenemedi!\n");
+        return;
+    }
+
+    memset(&g_login_api, 0, sizeof(LoginAPI));
+    g_login_api.screen_width   = fb_get_width();
+    g_login_api.screen_height  = fb_get_height();
+    g_login_api.put_pixel      = fb_putpixel;
+    g_login_api.draw_rect      = kernel_draw_rect;
+    g_login_api.draw_text      = kernel_draw_text;
+    g_login_api.clear_screen   = fb_clear;
+    g_login_api.update_display = fb_present;
+    g_login_api.get_mouse      = kernel_get_login_mouse;
+    g_login_api.get_key        = kernel_get_key;
+    g_login_api.get_time       = kernel_get_time;
+    g_login_api.log            = kernel_log;
+    g_login_api.read_file      = kernel_read_file;
+    g_login_api.render_kbi     = kernel_render_kbi;
+
+    fb_console_set_enabled(false);
+    fb_clear(0x000000);
+    fb_present();
+
+    typedef void (__attribute__((cdecl)) *login_entry_t)(LoginAPI*);
+    login_entry_t start_login = (login_entry_t)(uintptr_t)entry_point;
+    start_login(&g_login_api);
+
+    fb_console_set_enabled(true);
+    printk("[LOADER] Login ekrani sonlandirildi.\n");
+}
+
+// Geriye dönük uyumluluk veya eski çağrılar için:
+void load_user_module(const char* filepath) {
+    load_desktop_module(filepath);
 }
