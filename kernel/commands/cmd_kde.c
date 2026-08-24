@@ -320,6 +320,7 @@ void cmd_kde(int argc, char** argv) {
     g_kde_api.strlen  = strlen;
     g_kde_api.strcmp  = strcmp;
     g_kde_api.strncmp = strncmp;
+    g_kde_api.strrchr = strrchr;
 
     printk("[KDE LOADER] Giriş noktasına atlaniyor: 0x%x\n", entry_point);
 
