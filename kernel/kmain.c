@@ -146,17 +146,17 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     shell_set_username("anil");
     shell_set_hostname("kuvix");
 
-    session_init(); 
-
     os_init();
+
+    session_init();
 
     while (1) {
         uint16_t sc;
         while ((sc = kbd_pop_event()) != 0) {
-            session_handle_scancode(sc);
+            session_handle_scancode(sc); // Doğrudan session yönetir
         }
 
-        session_tick();
+        shell_tick();
 
         asm volatile("hlt");
     }

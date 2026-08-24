@@ -23,43 +23,64 @@ static inline void outc(char c) {
     }
 }
 
-static void print_int(int value, int base) {
+static void print_int_padded(int value, int base, int width, char pad_char, bool is_signed) {
+    char buf[32];
+    int i = 0;
+    char *digits = "0123456789ABCDEF";
+    bool negative = false;
+
+    if (is_signed && value < 0 && base == 10) {
+        negative = true;
+        value = -value;
+    }
+
+    if (value == 0) {
+        buf[i++] = '0';
+    } else {
+        unsigned int uv = (unsigned int)value;
+        while (uv > 0) {
+            buf[i++] = digits[uv % (unsigned)base];
+            uv /= (unsigned)base;
+        }
+    }
+
+    // Negatif işareti eklenecekse genişlik hesabına katılır
+    int len = i;
+    while (len < width) {
+        buf[i++] = pad_char;
+        len++;
+    }
+
+    if (negative) {
+        buf[i++] = '-';
+    }
+
+    while (--i >= 0) {
+        outc(buf[i]);
+    }
+}
+
+static void print_uint_padded(unsigned int value, int base, int width, char pad_char) {
     char buf[32];
     int i = 0;
     char *digits = "0123456789ABCDEF";
 
     if (value == 0) {
-        outc('0');
-        return;
+        buf[i++] = '0';
+    } else {
+        while (value > 0) {
+            buf[i++] = digits[value % (unsigned)base];
+            value /= (unsigned)base;
+        }
     }
 
-    if (value < 0 && base == 10) {
-        outc('-');
-        value = -value;
+    while (i < width) {
+        buf[i++] = pad_char;
     }
 
-    while (value > 0) {
-        buf[i++] = digits[value % base];
-        value /= base;
-    }
-
-    while (--i >= 0)
+    while (i--) {
         outc(buf[i]);
-}
-
-static void print_uint(unsigned int value, int base) {
-    char buf[32];
-    int i = 0;
-    char *digits = "0123456789ABCDEF";
-
-    if (value == 0) { outc('0'); return; }
-
-    while (value > 0) {
-        buf[i++] = digits[value % (unsigned)base];
-        value /= (unsigned)base;
     }
-
-    while (i--) outc(buf[i]);
 }
 
 void printk(const char* fmt, ...) {
@@ -118,8 +139,20 @@ void printk(const char* fmt, ...) {
             continue;
         }
 
-        // ---- FORMAT ----
+        // ---- FORMAT AYRIŞTIRMA (Flags & Width) ----
         p++;
+        char pad_char = ' ';
+        int width = 0;
+
+        if (*p == '0') {
+            pad_char = '0';
+            p++;
+        }
+
+        while (*p >= '0' && *p <= '9') {
+            width = width * 10 + (*p - '0');
+            p++;
+        }
 
         switch (*p) {
             case 's': {
@@ -130,12 +163,12 @@ void printk(const char* fmt, ...) {
             }
 
             case 'd':
-                print_int(va_arg(args, int), 10);
+                print_int_padded(va_arg(args, int), 10, width, pad_char, true);
                 break;
 
             case 'x':
                 outc('0'); outc('x');
-                print_uint(va_arg(args, unsigned int), 16);
+                print_uint_padded(va_arg(args, unsigned int), 16, width, pad_char);
                 break;
 
             case 'c':
@@ -151,19 +184,23 @@ void printk(const char* fmt, ...) {
 
             case 'u': {
                 unsigned int v = va_arg(args, unsigned int);
-                print_uint(v, 10);   // yoksa print_int benzeri unsigned versiyon yaz
+                print_uint_padded(v, 10, width, pad_char);
                 break;
             }
 
             case 'p': {
                 uintptr_t pv = (uintptr_t)va_arg(args, void*);
                 outc('0'); outc('x');
-                print_uint((uint32_t)pv, 16);
+                print_uint_padded((uint32_t)pv, 16, 8, '0');
                 break;
             }
 
             case '%':
                 outc('%');
+                break;
+
+            case 'o':
+                print_uint_padded(va_arg(args, unsigned int), 8, width, pad_char);
                 break;
 
             default:
@@ -186,30 +223,6 @@ static inline void outc_to_buf(buf_context_t* ctx, char c) {
     *(ctx->ptr) = '\0';
 }
 
-static void print_int_buf(buf_context_t* ctx, int value, int base) {
-    char buf[32];
-    int i = 0;
-    char *digits = "0123456789ABCDEF";
-
-    if (value == 0) {
-        outc_to_buf(ctx, '0');
-        return;
-    }
-
-    if (value < 0 && base == 10) {
-        outc_to_buf(ctx, '-');
-        value = -value;
-    }
-
-    while (value > 0) {
-        buf[i++] = digits[value % base];
-        value /= base;
-    }
-
-    while (--i >= 0)
-        outc_to_buf(ctx, buf[i]);
-}
-
 static void print_uint_buf(buf_context_t* ctx, unsigned int value, int base) {
     char buf[32];
     int i = 0;
@@ -229,7 +242,6 @@ static void print_uint_buf(buf_context_t* ctx, unsigned int value, int base) {
         outc_to_buf(ctx, buf[i]);
 }
 
-// ---- KSPRINTF ANA FONKSİYONU ----
 int ksprintf(char *buf, const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -243,8 +255,8 @@ int ksprintf(char *buf, const char* fmt, ...) {
             continue;
         }
 
-        // ---- FORMAT ----
         p++;
+        while (*p >= '0' && *p <= '9') p++; // Basit atlama
 
         switch (*p) {
             case 's': {
@@ -253,39 +265,21 @@ int ksprintf(char *buf, const char* fmt, ...) {
                 while (*s) outc_to_buf(&ctx, *s++);
                 break;
             }
-
             case 'd':
-                print_int_buf(&ctx, va_arg(args, int), 10);
+            case 'u':
+                print_uint_buf(&ctx, (unsigned int)va_arg(args, int), 10);
                 break;
-
             case 'x':
                 outc_to_buf(&ctx, '0'); 
                 outc_to_buf(&ctx, 'x');
                 print_uint_buf(&ctx, va_arg(args, unsigned int), 16);
                 break;
-
             case 'c':
                 outc_to_buf(&ctx, (char)va_arg(args, int));
                 break;
-
-            case 'u': {
-                unsigned int v = va_arg(args, unsigned int);
-                print_uint_buf(&ctx, v, 10);
-                break;
-            }
-
-            case 'p': {
-                uintptr_t pv = (uintptr_t)va_arg(args, void*);
-                outc_to_buf(&ctx, '0'); 
-                outc_to_buf(&ctx, 'x');
-                print_uint_buf(&ctx, (uint32_t)pv, 16);
-                break;
-            }
-
             case '%':
                 outc_to_buf(&ctx, '%');
                 break;
-
             default:
                 outc_to_buf(&ctx, '%');
                 outc_to_buf(&ctx, *p);

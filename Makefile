@@ -61,6 +61,7 @@ SRC_C = \
     kernel/drivers/power.c \
     kernel/drivers/vga_font.c \
     kernel/drivers/virtio_blk.c \
+    kernel/exec/loader.c \
     kernel/fs/fs_init.c \
     kernel/fs/kvxfs.c \
     kernel/fs/ramfs.c \

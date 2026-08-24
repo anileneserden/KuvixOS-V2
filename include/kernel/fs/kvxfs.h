@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define KVX_DIR_SIZE 0xFFFFFFFFu
+
 int kvxfs_init(void);
 int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size);
 int kvxfs_read_at(const char* path, void* out, uint32_t offset, uint32_t n, uint32_t* out_nread);
@@ -13,10 +15,13 @@ int kvxfs_force_format(void);
 int kvxfs_mkdir(const char* path);
 int kvxfs_remove(const char* path);
 void kvxfs_list_all(const char* filter_path);
+int kvxfs_list_callback(const char* filter_path, int (*cb)(const char* name, uint32_t size, void* u), void* u);
 int kvxfs_tree(const char* root_path);
 int kvxfs_format(void);
 int kvxfs_rename(const char* old_path, const char* new_path);
 int kvxfs_get_file_count(const char* path);
 int kvxfs_get_file_name_at(const char* path, int index, char* dest_name, int max_len);
+int kvxfs_chmod(const char* path, uint16_t permissions);
+int kvxfs_stat(const char* path, uint32_t* size, uint16_t* permissions, uint8_t* owner_uid, int* is_dir);
 
 #endif

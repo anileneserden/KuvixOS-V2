@@ -7,13 +7,13 @@
 
 typedef struct {
     const char* base_path;
+    int detailed;
 } ls_context_t;
 
 static int ls_cb(const char* name, uint32_t size, void* u) {
     ls_context_t* ctx = (ls_context_t*)u;
     
-    // GÜVENLİK FİLTRESİ: Eğer gelen isim listenen klasörün kendi tam yoluyla aynıysa listede gösterme
-    if (strcmp(name, ctx->base_path) == 0) {
+    if (!name || strcmp(name, ctx->base_path) == 0) {
         return 0; 
     }
 
@@ -26,16 +26,36 @@ static int ls_cb(const char* name, uint32_t size, void* u) {
     strcat(full_path, name);
 
     vfs_stat_t st;
+    int is_dir = (size == KVX_DIR_SIZE);
+    uint32_t mode = 0644; // Varsayılan dosya izni
+
+    // Eğer vfs_stat başarılı olursa gerçek izinleri alalım
     if (vfs_stat(full_path, &st) == 0) {
-        if (st.type == VFS_T_DIR) {
+        is_dir = (st.type == VFS_T_DIR);
+        mode = st.permissions;
+        size = st.size;
+    }
+
+    if (ctx->detailed) {
+        // -l (Detaylı Mod)
+        if (is_dir) {
             fb_console_set_color(0x000000FF, 0x00000000); // Mavi (Klasör)
+            printk("[dir]  [drwxr-xr-x]         -  ");
         } else {
             fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz (Dosya)
+            printk("[%04o]            %6d bytes  ", mode, size);
         }
-
-        printk("%d bytes  ", st.size);
         commands_puts(name);
         commands_puts("\n");
+    } else {
+        // Normal Mod (Yan yana)
+        if (is_dir) {
+            fb_console_set_color(0x000000FF, 0x00000000); // Mavi
+        } else {
+            fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz
+        }
+        commands_puts(name);
+        commands_puts("  ");
     }
 
     fb_console_set_color(0x00FFFFFF, 0x00000000);
@@ -44,8 +64,18 @@ static int ls_cb(const char* name, uint32_t size, void* u) {
 
 void cmd_ls(int argc, char** argv) {
     char resolved[VFS_PATH_MAX];
-    
-    const char* input = (argc > 1) ? argv[1] : vfs_get_cwd();
+    int detailed = 0;
+    const char* target_path = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-l") == 0) {
+            detailed = 1;
+        } else {
+            target_path = argv[i];
+        }
+    }
+
+    const char* input = target_path ? target_path : vfs_get_cwd();
     if (!input) {
         input = "/";
     }
@@ -55,9 +85,12 @@ void cmd_ls(int argc, char** argv) {
         return;
     }
 
-    // Kendi yazdığımız printk başlığını kaldırdık, çünkü alt katman otomatik basıyor.
-    ls_context_t ctx = { .base_path = resolved };
+    ls_context_t ctx = { .base_path = resolved, .detailed = detailed };
     vfs_list(resolved, ls_cb, &ctx);
+    
+    if (!detailed) {
+        commands_puts("\n");
+    }
 }
 
-REGISTER_COMMAND(ls, cmd_ls, "Dizin icerigini listeler");
+REGISTER_COMMAND(ls, cmd_ls, "Dizin icerigini listeler (-l ile detayli)");

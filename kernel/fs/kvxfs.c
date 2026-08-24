@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/drivers/video/fb_console.h>
+#include <init/session.h>
 
 #define KVX_MAGIC     "KVXFS1"
 #define KVX_MAX_FILES 256         // Sınırı 32'den 256'ya çıkardık!
@@ -17,9 +18,10 @@
 typedef struct {
     char     path[64];
     uint32_t start_lba;
-    uint32_t size;      // KVX_DIR_SIZE => directory
+    uint32_t size;
     uint8_t  used;
-    uint8_t  _pad[3];
+    uint16_t permissions;
+    uint8_t  owner_uid;
 } __attribute__((packed)) kvx_ent_t;
 
 typedef struct {
@@ -239,6 +241,8 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
         strncpy(g_meta.ent[idx].path, clean, 63);
         g_meta.ent[idx].used = 1;
         g_meta.file_count++;
+        g_meta.ent[idx].permissions = 0644;
+        g_meta.ent[idx].owner_uid   = 0;
     }
     uint32_t new_sectors = (size + 511u) / 512u;
     uint32_t start = g_meta.next_free_lba;
@@ -255,12 +259,40 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     return meta_write();
 }
 
+// Basit bir yetki kontrol fonksiyonu örneği (Genişletilebilir)
+static int kvxfs_check_read_permission(const kvx_ent_t* ent) {
+    // Şimdilik aktif kullanıcının root (UID 0) olduğunu varsayıyoruz.
+    // Eğer dosya sahibi root ise veya herkes için okuma izni varsa geçe izin ver.
+    // Örn: POSIX other read biti (0004) veya owner read biti (0400) kontrolü
+    
+    // Eğer root (uid == 0) ise her zaman okuyabilir
+    // Veya dosyanın okuma izinleri açık ise okuyabilir
+    
+    // Örnek basit kural: Eğer permission 0600 ise ve UID 0 değilse reddet.
+    if (ent->permissions == 0600 && ent->owner_uid != 0) {
+        // Normal kullanıcı okuyamaz
+        return 0; 
+    }
+    
+    return 1; // İzin verildi
+}
+
 int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size) {
     if (!path || !out || !kvxfs_init()) return 0;
     char clean[64];
     kvxfs_trim_path(path, clean, 64);
     int idx = find_ent(clean);
     if (idx < 0 || g_meta.ent[idx].size == KVX_DIR_SIZE) return 0;
+
+    // --- İzin Kontrolü ---
+    user_session_t* session = session_get_current();
+    uint32_t current_uid = session ? session->uid : 1000;
+
+    // Eğer dosya root'a (UID 0) aitse ve okumaya çalışan kullanıcı root değilse engelle!
+    if (g_meta.ent[idx].owner_uid == 0 && current_uid != 0) {
+        return 0; // Yetki yok
+    }
+
     uint32_t sz = (g_meta.ent[idx].size > cap) ? cap : g_meta.ent[idx].size;
     uint32_t sectors = (sz + 511u) / 512u;
     uint8_t sec[512];
@@ -342,6 +374,26 @@ void kvxfs_list_all(const char* filter_path) {
     if (!found) {
         printk("(Bos)\n");
     }
+}
+
+int kvxfs_list_callback(const char* filter_path, int (*cb)(const char* name, uint32_t size, void* u), void* u) {
+    if (!filter_path || !kvxfs_init() || !cb) return 0;
+    
+    char norm[64];
+    kvxfs_trim_path(filter_path, norm, sizeof(norm));
+    
+    for (int i = 0; i < KVX_MAX_FILES; i++) {
+        if (!g_meta.ent[i].used) continue;
+        if (strcmp(g_meta.ent[i].path, norm) == 0) continue;
+        
+        if (!kvxfs_path_is_direct_child(norm, g_meta.ent[i].path)) continue;
+        
+        const char* name = kvxfs_basename_ptr(g_meta.ent[i].path);
+        if (name && name[0] == '.') continue;
+        
+        cb(name, g_meta.ent[i].size, u);
+    }
+    return 1;
 }
 
 int kvxfs_tree(const char* root_path) {
@@ -473,4 +525,40 @@ int kvxfs_get_file_name_at(const char* path, int index, char* dest_name, int max
         }
     }
     return 0;
+}
+
+int kvxfs_chmod(const char* path, uint16_t permissions) {
+    if (!path || !kvxfs_init()) return 0;
+    
+    char clean[64];
+    kvxfs_trim_path(path, clean, 64);
+    
+    int idx = find_ent(clean);
+    if (idx < 0) {
+        // Dosya bulunamadı
+        return 0;
+    }
+    
+    // İzinleri güncelle
+    g_meta.ent[idx].permissions = permissions;
+    
+    // Değişiklikleri diske kalıcı olarak yaz
+    return meta_write();
+}
+
+int kvxfs_stat(const char* path, uint32_t* size, uint16_t* permissions, uint8_t* owner_uid, int* is_dir) {
+    if (!path || !kvxfs_init()) return 0;
+    
+    char clean[64];
+    kvxfs_trim_path(path, clean, 64);
+    
+    int idx = find_ent(clean);
+    if (idx < 0) return 0;
+    
+    if (size) *size = g_meta.ent[idx].size;
+    if (permissions) *permissions = g_meta.ent[idx].permissions;
+    if (owner_uid) *owner_uid = g_meta.ent[idx].owner_uid;
+    if (is_dir) *is_dir = (g_meta.ent[idx].size == KVX_DIR_SIZE);
+    
+    return 1;
 }

@@ -12,6 +12,12 @@
 
 #include <kernel/drivers/input/keyboard.h>
 
+#include <init/session.h>
+
+// ✅ Dışarıdan passwd modülünün durumunu ve tuş işleyicisini çağırabilmek için:
+extern int passwd_is_active(void);
+extern int passwd_handle_scancode(uint16_t scancode);
+
 // ------------------------------------------------------------
 // Identity + cwd
 // ------------------------------------------------------------
@@ -38,41 +44,50 @@ static void shell_cmd_out(void* u, const char* s) {
 
 static void shell_cmd_clear(void* u) {
     (void)u;
-    fb_console_clear(); // bu zaten present yapıyor ama kalsın
+    fb_console_clear(); 
     g_dirty = 1;
 }
 
 // ------------------------------------------------------------
 // Prompt
 // ------------------------------------------------------------
-static void shell_print_prompt(void) {
-    // 1. Kullanıcı ve Hostname (Yeşil kısım)
-    fb_console_set_color(0x0000FF00, 0x00000000);
-    printk("%s", g_username);
-    printk("@%s", g_hostname);
+void shell_print_prompt(void) {
+    user_session_t* session = session_get_current();
+    uint32_t current_uid = session ? session->uid : 1; 
 
-    // 2. Ayırıcı (Beyaz)
     fb_console_set_color(0x00FFFFFF, 0x00000000);
-    printk(":");
 
-    // 3. Yol Hesaplama (Mavi veya Beyaz tercih edebilirsin)
+    const char* active_user = (session && session->username[0]) ? session->username : g_username;
+    printk("%s", active_user);
+    printk("@%s:", g_hostname);
+
     const char* cwd = vfs_get_cwd();
-    
-    // Eğer CWD tam olarak "/home/anil" ise sadece "~" bas
-    if (strcmp(cwd, "/home/anil") == 0) {
+    const char* home_dir = (session && session->home_dir[0]) ? session->home_dir : "/home/anil";
+    int home_len = strlen(home_dir);
+
+    // Ev dizini kontrolü (Kullanıcı kim olursa olsun, kendi home dizinindeyse ~ yazdır)
+    if (strcmp(cwd, home_dir) == 0 || (strncmp(cwd, home_dir, home_len) == 0 && cwd[home_len] == '\0')) {
         printk("~");
     } 
-    // Eğer "/home/anil/" ile başlıyorsa (alt klasördeyse), yolu kısaltabiliriz
-    else if (strncmp(cwd, "/home/anil/", 11) == 0) {
-        printk("~/%s", cwd + 11);
+    else if (strncmp(cwd, home_dir, home_len) == 0 && cwd[home_len] == '/') {
+        // Ev dizininin altındaki alt klasörler (~/klasor)
+        if (cwd[home_len + 1] == '\0') {
+            printk("~");
+        } else {
+            printk("~%s", cwd + home_len);
+        }
     }
-    // Değilse (root veya başka dizindeyse) tam yolu bas
     else {
+        // Ev dizini dışındaysa tam yolu yazdır (örn: /etc, /root vb.)
         printk("%s", cwd);
     }
 
-    // 4. Prompt karakteri
-    printk("$ ");
+    // Yetkiye göre prompt işareti (# veya $)
+    if (current_uid == 0) {
+        printk("# ");
+    } else {
+        printk("$ ");
+    }
     
     g_dirty = 1;
 }
@@ -125,17 +140,11 @@ void shell_init(void) {
 
     fb_console_clear();
 
-    // ✅ Kullanıcı adını USER_NAME makrosundan veya kernel_main'den gelen veriden alabiliriz
-    // Ama şimdilik kernel_main'de shell_set_username çağıracağız.
-
     printk("KuvixOS Shell V2 Hazir!\n");
     printk("Komutlar icin 'help' yazabilirsiniz.\n\n");
 
     g_len = 0;
     g_line[0] = 0;
-
-    // ✅ Shell açıldığında VFS'in mevcut konumunu güncelle (anil klasörü için)
-    // Eğer kernel_main'de vfs_set_cwd yaptıysan bu prompt doğru gelecektir.
     
     shell_print_prompt();
     fb_console_flush();
@@ -156,6 +165,11 @@ void shell_tick(void) {
 // Input
 // ------------------------------------------------------------
 void shell_handle_scancode(uint16_t ev) {
+    // ✅ Eğer interaktif passwd modundaysak, tuşları doğrudan passwd komutuna yönlendir!
+    if (passwd_is_active()) {
+        passwd_handle_scancode(ev);
+        return;
+    }
 
     uint8_t sc = (uint8_t)(ev & 0xFF);
     uint8_t is_e0 = ((ev & 0xFF00) == 0xE000);
@@ -167,9 +181,7 @@ void shell_handle_scancode(uint16_t ev) {
     if (!c) return;
 
     if (c == '\n' || c == '\r') {
-
         g_line[g_len] = 0;
-
         echo_newline();
 
         if (g_len > 0) {
@@ -179,30 +191,32 @@ void shell_handle_scancode(uint16_t ev) {
         g_len = 0;
         g_line[0] = 0;
 
-        shell_print_prompt();
+        // ✅ EĞER passwd komutu aktif hale geldiyse, hemen prompt BASMA!
+        if (passwd_is_active()) {
+            return;
+        }
+
+        // ✅ Oturum hala açık mı kontrol et. Logout yapıldıysa prompt basma!
+        if (session_is_logged_in()) {
+            shell_print_prompt();
+        }
         return;
     }
 
     if (c == '\b' || (uint8_t)c == 8 || (uint8_t)c == 127) {
-
         if (g_len > 0) {
             g_len--;
             g_line[g_len] = 0;
             echo_backspace();
         }
-
         return;
     }
 
     uint8_t uc = (uint8_t)c;
-
     if (uc >= 32) {
-
         if (g_len < (int)sizeof(g_line) - 1) {
-
             g_line[g_len++] = (char)uc;
             g_line[g_len] = 0;
-
             echo_char(uc);
         }
     }
