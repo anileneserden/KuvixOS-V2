@@ -134,7 +134,6 @@ static void kernel_log(const char* msg) {
 static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
     if (!filepath) return 0;
 
-    // 10 MB güvenli dinamik alan (1920x1080 ARGB görsel için)
     uint32_t max_size = 10 * 1024 * 1024; 
     uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
     if (!file_buf) return 0;
@@ -158,19 +157,6 @@ static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
 
     int max_w = fb_get_width();
     int max_h = fb_get_height();
-
-    // Tam ekran çizimlerinde hızlı bellek kopyalama (fb_backbuffer_ptr kullanılıyor)
-    if (target_x == 0 && target_y == 0 && width == max_w && height == max_h) {
-        uint32_t* fb = fb_backbuffer_ptr();
-        if (fb) {
-            for (uint32_t i = 0; i < (uint32_t)(width * height); i++) {
-                KBIPixel p = pixels[i];
-                fb[i] = ((uint32_t)p.r << 16) | ((uint32_t)p.g << 8) | p.b;
-            }
-            kfree(file_buf);
-            return 1;
-        }
-    }
 
     // Normal koordinatlı çizim
     for (uint16_t y = 0; y < height; y++) {
