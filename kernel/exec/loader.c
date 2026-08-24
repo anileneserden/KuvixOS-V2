@@ -51,6 +51,10 @@ typedef struct {
 } KBIPixel;
 #pragma pack(pop)
 
+// İleri bildirimler (Forward Declarations)
+void load_desktop_module(const char* filepath);
+void load_login_module(const char* filepath);
+
 // --- ORTAK KERNEL WRAPPER'LARI ---
 static void kernel_draw_rect(int x, int y, int w, int h, uint32_t color) {
     int max_w = fb_get_width();
@@ -167,7 +171,7 @@ static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
     return -1;
 }
 
-// --- MOUSE WRAPPERS (Ayrı struct tipleri kullandıkları için ayrı yazılabilir) ---
+// --- MOUSE WRAPPERS ---
 static void kernel_get_de_mouse(de_mouse_state_t* state) {
     if (!state) return;
     extern void ps2_mouse_poll(void); 
@@ -228,6 +232,50 @@ static uint32_t load_elf_or_binary(const char* filepath) {
 
     kfree(file_buf);
     return entry_point;
+}
+
+// --- LOGIN BAŞARILI OLDUĞUNDA ÇALIŞACAK FONKSİYON ---
+static void kernel_start_desktop_from_login(void) {
+    printk("[LOGIN API] Giris basarili, masaustune geciliyor...\n");
+    
+    char cfg_buf[256];
+    const char* target_desktop = "/sys/de/desktopIconsLoad.kde"; 
+
+    int bytes = kernel_read_file("/sys/configs/session.cfg", cfg_buf, sizeof(cfg_buf) - 1);
+    if (bytes > 0) {
+        cfg_buf[bytes] = '\0';
+        char* line = cfg_buf;
+        while (*line != '\0') {
+            while (*line == ' ' || *line == '\t' || *line == '\r') line++;
+
+            if (strncmp(line, "desktopScreen", 13) == 0) {
+                char* p = line + 13;
+                while (*p == ' ' || *p == '\t' || *p == '=') p++;
+
+                char* val_start = p;
+                while (*p != '\0' && *p != '\n' && *p != '\r' && *p != ' ' && *p != '\t') {
+                    p++;
+                }
+                
+                if (p > val_start) {
+                    static char parsed_path[128];
+                    int len = p - val_start;
+                    if (len >= (int)sizeof(parsed_path)) len = (int)sizeof(parsed_path) - 1;
+                    
+                    memcpy(parsed_path, val_start, len);
+                    parsed_path[len] = '\0';
+
+                    target_desktop = parsed_path;
+                    break;
+                }
+            }
+            while (*line != '\0' && *line != '\n') line++;
+            if (*line == '\n') line++;
+        }
+    }
+
+    // Login modülünün döngüsünden çıkıp masaüstünü başlat
+    load_desktop_module(target_desktop);
 }
 
 // --- 1. MASAÜSTÜ YÜKLEYİCİ (.kde) ---
@@ -302,6 +350,7 @@ void load_login_module(const char* filepath) {
     g_login_api.log            = kernel_log;
     g_login_api.read_file      = kernel_read_file;
     g_login_api.render_kbi     = kernel_render_kbi;
+    g_login_api.start_desktop  = kernel_start_desktop_from_login; // Yeni bağlama!
 
     fb_console_set_enabled(false);
     fb_clear(0x000000);

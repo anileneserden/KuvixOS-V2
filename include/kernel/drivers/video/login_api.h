@@ -34,6 +34,7 @@ typedef struct {
     int (*read_file)(const char* path, char* buffer, uint32_t max_size);
 
     int (*render_kbi)(int target_x, int target_y, const char* filepath);
+    void (*start_desktop)(void);
 } LoginAPI;
 
 // Sadece C++ derleyicisi derlerken extern "C" kullanılsın
@@ -47,4 +48,4 @@ LoginAPI* get_login_api();
 }
 #endif
 
-#endif
+#endif /* LOGIN_API_H */
