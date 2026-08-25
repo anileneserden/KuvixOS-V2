@@ -308,6 +308,7 @@ void load_desktop_module(const char* filepath) {
     g_de_api.create_file       = (void*)(uintptr_t)kvxfs_write_all;
     g_de_api.read_file         = kernel_read_file;
     g_de_api.fill_round_rect   = gfx_fill_round_rect;
+    g_de_api.fill_round_rect4  = gfx_fill_round_rect4;
     g_de_api.get_file_count    = kvxfs_get_file_count;
     g_de_api.get_file_name_at  = kvxfs_get_file_name_at;
 
