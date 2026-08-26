@@ -9,6 +9,14 @@
 #include <kernel/drivers/video/fb_console.h>
 #include <init/session.h>
 
+#define KVXFS_DEBUG_ENABLED 0  // 1 yaparsan debug logları açılır, 0 yaparsan kapanır
+
+#if KVXFS_DEBUG_ENABLED
+#define KVXFS_DEBUG(fmt, ...) printk(fmt, ##__VA_ARGS__)
+#else
+#define KVXFS_DEBUG(fmt, ...) ((void)0)
+#endif
+
 #define KVX_MAGIC     "KVXFS1"
 #define KVX_MAX_FILES 256         // Sınırı 32'den 256'ya çıkardık!
 #define KVX_META_LBA  2048
@@ -241,8 +249,17 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
         strncpy(g_meta.ent[idx].path, clean, 63);
         g_meta.ent[idx].used = 1;
         g_meta.file_count++;
-        g_meta.ent[idx].permissions = 0644;
-        g_meta.ent[idx].owner_uid   = 0;
+        
+        user_session_t* session = session_get_current();
+        g_meta.ent[idx].owner_uid = session ? session->uid : 0;
+
+        // BURASI HAYATİ ÖNEM TAŞIYOR:
+        // Eğer dosya /etc/ dizini altındaysa, otomatik olarak herkesin okuyabileceği (0644) yap!
+        if (strncmp(clean, "/etc/", 5) == 0 || strcmp(clean, "/etc/passwd") == 0) {
+            g_meta.ent[idx].permissions = 0644; 
+        } else {
+            g_meta.ent[idx].permissions = 0600; // Diğer kişisel dosyalar gizli kalır
+        }
     }
     uint32_t new_sectors = (size + 511u) / 512u;
     uint32_t start = g_meta.next_free_lba;
@@ -259,22 +276,29 @@ int kvxfs_write_all(const char* path, const uint8_t* data, uint32_t size) {
     return meta_write();
 }
 
-// Basit bir yetki kontrol fonksiyonu örneği (Genişletilebilir)
 static int kvxfs_check_read_permission(const kvx_ent_t* ent) {
-    // Şimdilik aktif kullanıcının root (UID 0) olduğunu varsayıyoruz.
-    // Eğer dosya sahibi root ise veya herkes için okuma izni varsa geçe izin ver.
-    // Örn: POSIX other read biti (0004) veya owner read biti (0400) kontrolü
-    
-    // Eğer root (uid == 0) ise her zaman okuyabilir
-    // Veya dosyanın okuma izinleri açık ise okuyabilir
-    
-    // Örnek basit kural: Eğer permission 0600 ise ve UID 0 değilse reddet.
-    if (ent->permissions == 0600 && ent->owner_uid != 0) {
-        // Normal kullanıcı okuyamaz
-        return 0; 
+    user_session_t* session = session_get_current();
+    uint32_t current_uid = session ? session->uid : 0; // Oturum açılmadıysa root (0)
+
+    // 1. Root (UID 0) her zaman her şeyi okuyabilir!
+    if (current_uid == 0) {
+        return 1;
     }
-    
-    return 1; // İzin verildi
+
+    // 2. İşlemi yapan kullanıcı dosyanın SAHİBİ mi?
+    if (ent->owner_uid == current_uid) {
+        return 1; // Sahibi kendi dosyasını her zaman okuyabilir
+    }
+
+    // 3. Kullanıcı sahip değil, 'Others' (Diğerleri) okuma izni var mı?
+    // POSIX others-read biti: 0x0004 (veya octal 0004)
+    int others_read = (ent->permissions & 0x0004); 
+    if (others_read) {
+        return 1; // Başkaları okuyabilir (örn: 0644)
+    }
+
+    // 4. Yetki yok!
+    return 0; 
 }
 
 int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_size) {
@@ -284,20 +308,44 @@ int kvxfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_s
     int idx = find_ent(clean);
     if (idx < 0 || g_meta.ent[idx].size == KVX_DIR_SIZE) return 0;
 
-    // --- İzin Kontrolü ---
-    user_session_t* session = session_get_current();
-    uint32_t current_uid = session ? session->uid : 1000;
+    kvx_ent_t* ent = &g_meta.ent[idx];
 
-    // Eğer dosya root'a (UID 0) aitse ve okumaya çalışan kullanıcı root değilse engelle!
-    if (g_meta.ent[idx].owner_uid == 0 && current_uid != 0) {
-        return 0; // Yetki yok
+    // --- İzin Kontrolü & Debug Makrosu ---
+    user_session_t* session = session_get_current();
+    uint32_t current_uid = session ? session->uid : 0;
+
+    KVXFS_DEBUG("\n[DEBUG] Okuyan UID: %u | Dosya Sahibi UID: %u | Perms: %o\n", 
+                current_uid, ent->owner_uid, ent->permissions);
+
+    int allowed = 0;
+    
+    // 1. Root her zaman her şeyi okuyabilir
+    if (current_uid == 0) {
+        allowed = 1;
+    } 
+    // 2. YENİ KURAL: Eğer dosya /etc/ altındaysa (passwd vb.), herkes okuyabilir!
+    else if (strncmp(clean, "/etc/", 5) == 0) {
+        allowed = 1;
+    }
+    // 3. Dosyanın sahibi mi?
+    else if (ent->owner_uid == current_uid) {
+        allowed = 1; 
+    } 
+    // 4. Diğerleri okuma iznine sahip mi? (0004)
+    else if (ent->permissions & 0x0004) {
+        allowed = 1;
     }
 
-    uint32_t sz = (g_meta.ent[idx].size > cap) ? cap : g_meta.ent[idx].size;
+    if (!allowed) {
+        KVXFS_DEBUG("[DEBUG] Erisim reddedildi!\n");
+        return 0; 
+    }
+
+    uint32_t sz = (ent->size > cap) ? cap : ent->size;
     uint32_t sectors = (sz + 511u) / 512u;
     uint8_t sec[512];
     for (uint32_t s = 0; s < sectors; s++) {
-        block_read(g_meta.ent[idx].start_lba + s, 1, sec);
+        block_read(ent->start_lba + s, 1, sec);
         uint32_t take = (sz - s * 512 > 512) ? 512 : (sz - s * 512);
         memcpy(out + (s * 512), sec, take);
     }

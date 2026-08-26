@@ -41,13 +41,11 @@ void cmd_cat(int argc, char** argv) {
         cat_buf[read_size] = '\0';
         printk("%s\n", (const char*)cat_buf);
     } else {
-        // Dosya okunamadı. Acaba dosya var mı yoksa yetki mi yok?
-        // Oturumu kontrol edelim:
-        user_session_t* session = session_get_current();
-        if (session && session->uid != 0 && strcmp(target_path, "/etc/passwd") == 0) {
-            printk("Hata: Erişim reddedildi (Permission Denied): %s\n", target_path);
+        // Dosya okunamadı. Acaba dosya gerçekten var mı yoksa yetki mi yok?
+        if (kvxfs_exists(target_path)) {
+            printk("Hata: Erişim reddedildi (Permission denied): %s\n", target_path);
         } else {
-            printk("Hata: Dosya bulunamadı veya okunamadı: %s\n", target_path);
+            printk("Hata: Dosya bulunamadı: %s\n", target_path);
         }
     }
 }

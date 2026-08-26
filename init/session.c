@@ -110,10 +110,23 @@ void session_logout(void) {
     has_previous_session = 0;
     is_logged_in = 0;
     
-    fb_console_clear();
-    printk("[SESSION] Oturum kapatiliyor...\n");
+    // Oturumdaki kullanıcı bilgilerini temizle
+    session_set_user(0, "", "");
     
-    session_init();
+    // Giriş değişkenlerini sıfırla
+    login_step = 0;
+    user_pos = 0;
+    pass_pos = 0;
+    
+    fb_console_clear();
+    printk("[SESSION] Oturum kapatildi.\n\n");
+    
+    // Diskleri ve dosya sistemini sıfırlayan session_init() yerine 
+    // doğrudan temiz bir şekilde giriş ekranını ekrana basalım:
+    fb_console_set_color(0x00FFFFFF, 0x00000000);
+    printk("--- KUVIX OS GIRIS SISTEMI ---\n");
+    printk("Kullanici adi (login): ");
+    fb_console_flush();
 }
 
 static int check_user_exists(const char* username) {
@@ -236,8 +249,8 @@ int authenticate_user(const char* username, const char* password, int start_shel
             }
 
             if (match) {
-                uint32_t uid = (f_idx >= 1) ? (uint32_t)simple_atoi(fields[1]) : 0;
-                const char* home = (f_idx >= 3) ? fields[3] : "/home";
+                uint32_t uid = (f_idx >= 2) ? (uint32_t)simple_atoi(fields[2]) : 0;
+                const char* home = (f_idx >= 5) ? fields[5] : "/home";
                 
                 session_set_user(uid, fields[0], home);
                 vfs_set_cwd(home);

@@ -10,6 +10,28 @@ typedef struct {
     int detailed;
 } ls_context_t;
 
+// Octal izinleri rwx formatına çeviren küçük bir yardımcı fonksiyon (Örn: 0644 -> -rw-r--r--)
+static void format_permissions(uint16_t mode, int is_dir, char* out_str) {
+    out_str[0] = is_dir ? 'd' : '-';
+    
+    // Owner (Sahip) izinleri
+    out_str[1] = (mode & 0400) ? 'r' : '-';
+    out_str[2] = (mode & 0200) ? 'w' : '-';
+    out_str[3] = (mode & 0100) ? 'x' : '-';
+    
+    // Group (Grup) izinleri
+    out_str[4] = (mode & 0040) ? 'r' : '-';
+    out_str[5] = (mode & 0020) ? 'w' : '-';
+    out_str[6] = (mode & 0010) ? 'x' : '-';
+    
+    // Others (Diğerleri) izinleri
+    out_str[7] = (mode & 0004) ? 'r' : '-';
+    out_str[8] = (mode & 0002) ? 'w' : '-';
+    out_str[9] = (mode & 0001) ? 'x' : '-';
+    
+    out_str[10] = '\0';
+}
+
 static int ls_cb(const char* name, uint32_t size, void* u) {
     ls_context_t* ctx = (ls_context_t*)u;
     
@@ -27,24 +49,30 @@ static int ls_cb(const char* name, uint32_t size, void* u) {
 
     vfs_stat_t st;
     int is_dir = (size == KVX_DIR_SIZE);
-    uint32_t mode = 0644; // Varsayılan dosya izni
+    uint16_t mode = 0644; // Varsayılan dosya izni
+    uint8_t owner_uid = 0;
 
-    // Eğer vfs_stat başarılı olursa gerçek izinleri alalım
+    // Eğer vfs_stat başarılı olursa gerçek izinleri, sahibi ve boyutu alalım
     if (vfs_stat(full_path, &st) == 0) {
         is_dir = (st.type == VFS_T_DIR);
         mode = st.permissions;
         size = st.size;
+        owner_uid = st.owner_uid;
     }
 
     if (ctx->detailed) {
-        // -l (Detaylı Mod)
+        // -l (Detaylı Mod - Linux Tarzı)
+        char perm_str[12];
+        format_permissions(mode, is_dir, perm_str);
+
         if (is_dir) {
             fb_console_set_color(0x000000FF, 0x00000000); // Mavi (Klasör)
-            printk("[dir]  [drwxr-xr-x]         -  ");
         } else {
             fb_console_set_color(0x00FFFFFF, 0x00000000); // Beyaz (Dosya)
-            printk("[%04o]            %6d bytes  ", mode, size);
         }
+
+        // Örnek çıktı formatı: -rw-r--r--   root     128 file.txt
+        printk("%s  uid:%d  %6d bytes  ", perm_str, owner_uid, size);
         commands_puts(name);
         commands_puts("\n");
     } else {
