@@ -5,8 +5,8 @@
 #include <kernel/block/block.h>
 #include <kernel/printk.h>
 #include <kernel/serial.h>
-
 #include <kernel/user.h>
+#include <lib/string.h>
 
 static void ensure_dir(const char* p) {
     if (!p || !p[0]) return;
@@ -14,12 +14,24 @@ static void ensure_dir(const char* p) {
 }
 
 int fs_prepare_user_layout(void) {
-    // ensure_dir uyarısını gidermek için diskte olması gereken yerleri kontrol edelim
-    // Eğer yoklarsa (disk yeniyse) oluşturur
+    // Disk üzerinde olması gereken temel dizinleri kontrol edip oluşturuyoruz
     ensure_dir("/home");
     ensure_dir("/home/anil");
     ensure_dir("/sys");
     ensure_dir("/sys/drivers");
+    ensure_dir("/etc");
+
+    // /etc/passwd dosyası daha önce oluşturulmadıysa ilk açılışta yazıyoruz
+    if (!vfs_exists("/etc/passwd")) {
+        const char* passwd_data = "root:x:0:0:root:/root:/bin/sh\nanil:x:1000:1000:Anil:/home/anil:/bin/sh\n";
+        // kvxfs_write_all kullanarak dosyayı içeriğiyle birlikte diske kaydediyoruz
+        int res = kvxfs_write_all("/etc/passwd", (const uint8_t*)passwd_data, strlen(passwd_data));
+        if (res) {
+            printk("[FS] /etc/passwd basariyla olusturuldu.\n");
+        } else {
+            printk("[FS] HATA: /etc/passwd olusturulamadi!\n");
+        }
+    }
 
     if (vfs_exists("/home/anil")) {
         printk("[FS] Kullanici dizini hazir: /home/anil\n");
