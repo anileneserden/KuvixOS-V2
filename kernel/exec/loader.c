@@ -365,6 +365,55 @@ void load_login_module(const char* filepath) {
     printk("[LOADER] Login ekrani sonlandirildi.\n");
 }
 
+// --- KDF SÜRÜCÜ YÜKLEYİCİ (.kdf) ---
+
+// Çekirdeğin sürücüye sunacağı servisler (Driver.py ile uyumlu)
+typedef struct {
+    void (*printk)(const char* fmt, ...);
+    uint8_t (*inb)(uint16_t port);
+    void (*outb)(uint16_t port, uint8_t data);
+    void (*register_interrupt)(int irq, void (*handler)(void));
+} KernelAPI;
+
+typedef struct {
+    int (*read)(void* buffer, uint32_t size);
+    int (*write)(const void* buffer, uint32_t size);
+    int (*control)(const char* command, void* arg, uint32_t arg_size);
+} KDF_Operations;
+
+void load_driver_module(const char* filepath) {
+    if (!filepath) return;
+    printk("[LOADER] Sürücü yükleniyor: %s\n", filepath);
+
+    // 1. Sürücü binary dosyasını oku (Örn: /sys/drivers/mouse_ps2.kdf)
+    uint32_t entry_point = load_elf_or_binary(filepath);
+    if (!entry_point) {
+        printk("Hata: Sürücü yüklenemedi!\n");
+        return;
+    }
+
+    // 2. Canlı Kernel Servislerini Hazırla
+    static KernelAPI kapi;
+    kapi.printk = printk;
+    // Gerekirse port okuma/yazma fonksiyonları buraya bağlanabilir:
+    // kapi.inb = inb;
+    // kapi.outb = outb;
+
+    static KDF_Operations driver_ops;
+    memset(&driver_ops, 0, sizeof(KDF_Operations));
+
+    // 3. Sürücünün Giriş Noktasını (driver_init) Çağır
+    typedef int (*driver_init_t)(KernelAPI*, KDF_Operations*);
+    driver_init_t init_func = (driver_init_t)(uintptr_t)entry_point;
+
+    int result = init_func(&kapi, &driver_ops);
+    if (result) {
+        printk("[LOADER] Sürücü başarıyla başlatıldı ve kaydedildi!\n");
+    } else {
+        printk("Hata: Sürücü başlatma rutininden başarısız döndü!\n");
+    }
+}
+
 // Geriye dönük uyumluluk veya eski çağrılar için:
 void load_user_module(const char* filepath) {
     load_desktop_module(filepath);
