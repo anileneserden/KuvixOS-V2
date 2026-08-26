@@ -378,7 +378,7 @@ void gfx_blit_argb_key(int x, int y, int w, int h, const uint32_t* data, uint32_
 
 // UTF-8 -> CP1254 (Türkçe subset) tek byte çevirir.
 // Dönen: 0..255 tek byte, '?' fallback
-static uint8_t utf8_to_cp1254_1(const char** ps) {
+static __attribute__((unused)) uint8_t utf8_to_cp1254_1(const char** ps) {
     const unsigned char* s = (const unsigned char*)(*ps);
 
     if (s[0] < 0x80) { // ASCII

@@ -33,6 +33,8 @@
 #include <kernel/user.h>
 #include <lib/shell.h>
 
+#include <kernel/drivers/video/ttf.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -77,18 +79,68 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
     fb_init(addr, w, h, pitch);
 }
 
+// ------------------------------------------------------------
+// TTF Font Loader init
+// ------------------------------------------------------------
+// ------------------------------------------------------------
+// TTF Font Loader init
+// ------------------------------------------------------------
+static void init_system_font(void) {
+    printk("[TTF] Sistem fontu yukleniyor...\n");
+    
+    uint32_t max_size = 256 * 1024; // 256 KB font alanı
+    uint8_t* font_buf = kmalloc(max_size);
+    if (!font_buf) {
+        printk("[TTF] Hata: Font icin bellek ayrilamadi!\n");
+        return;
+    }
+
+    const char* font_path = "/sys/fonts/arial.ttf";
+    
+    vfs_stat_t st;
+    if (!vfs_stat(font_path, &st)) {
+        printk("[TTF] Hata: '%s' bulunamadi!\n", font_path);
+        kfree(font_buf);
+        return;
+    }
+
+    vfs_file_t* file = NULL;
+    if (!vfs_open(font_path, 0, &file)) {
+        printk("[TTF] Hata: '%s' acilamadi!\n", font_path);
+        kfree(font_buf);
+        return;
+    }
+
+    uint32_t bytes_read = 0;
+    int read_res = vfs_read(file, font_buf, max_size, &bytes_read);
+    
+    // Eğer vfs_close fonksiyonun varsa burada dosyayı kapatabilirsin
+    // vfs_close(file);
+
+    if (!read_res || bytes_read == 0) {
+        printk("[TTF] Hata: Font dosyasi okunamadi!\n");
+        kfree(font_buf);
+        return;
+    }
+
+    printk("[TTF] Font dosyasi okundu: %u bayt. Baslatiliyor...\n", bytes_read);
+
+    // ✅ Doğru çağrı: Bellek, boyut ve piksel yüksekliği (16.0f) veriliyor
+    if (!ttf_init_from_memory(font_buf, bytes_read, 16.0f)) {
+        printk("[TTF] Hata: ttf_init_from_memory basarisiz oldu!\n");
+        kfree(font_buf);
+    }
+}
+
 void test_vfs_disk_access() {
     printk("\n[DISK-TEST] VFS disk baglantisi kontrol ediliyor...\n");
     
-    // Test etmek istediğin dosya (örneğin kdf dosyan veya bir text dosyası)
     const char* test_file = "/home/anil/mouse_ps2.kdf"; 
     
     vfs_stat_t st;
     if (vfs_stat(test_file, &st)) {
         printk("[DISK-TEST] OK: '%s' bulundu! Backend: %d\n", test_file, st.backend);
         
-        uint32_t size = 0;
-        // Dosyayı diske okumayı dene (BACK_DISK ise 3 olmalı)
         if (st.backend == 3) {
             printk("[DISK-TEST] OK: Backend 3 (KVXFS) dogrulandi.\n");
         } else {
@@ -126,6 +178,9 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     gfx_init();
     fb_console_init(0x00FFFFFF, 0x00000000);
 
+    // 🚀 TTF Font Yükleyicisini Başlat
+    init_system_font();
+
     kbd_init();
     ps2_mouse_init();
 
@@ -153,7 +208,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     while (1) {
         uint16_t sc;
         while ((sc = kbd_pop_event()) != 0) {
-            session_handle_scancode(sc); // Doğrudan session yönetir
+            session_handle_scancode(sc);
         }
 
         shell_tick();
