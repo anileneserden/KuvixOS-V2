@@ -239,7 +239,7 @@ int authenticate_user(const char* username, const char* password, int start_shel
                 }
             } else {
                 if (strcmp(fields[0], username) == 0) {
-                    if (strcmp(fields[4], password) == 0) {
+                    if (strcmp(fields[1], password) == 0) {
                         match = 1;
                     } else {
                         kfree(buf);
