@@ -167,7 +167,6 @@ void printk(const char* fmt, ...) {
                 break;
 
             case 'x':
-                outc('0'); outc('x');
                 print_uint_padded(va_arg(args, unsigned int), 16, width, pad_char);
                 break;
 

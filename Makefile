@@ -80,6 +80,7 @@ SRC_C = \
 	lib/shell/shell.c \
 	lib/string/string.c \
 	lib/math.c \
+	lib/sha256.c \
 
 COMMAND_SOURCES = $(wildcard kernel/commands/*.c)
 SRC_C += $(COMMAND_SOURCES)
