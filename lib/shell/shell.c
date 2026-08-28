@@ -9,14 +9,15 @@
 #include <stdint.h>
 
 #include <kernel/fs/vfs.h>
-
 #include <kernel/drivers/input/keyboard.h>
-
 #include <init/session.h>
 
 // ✅ Dışarıdan passwd modülünün durumunu ve tuş işleyicisini çağırabilmek için:
 extern int passwd_is_active(void);
 extern int passwd_handle_scancode(uint16_t scancode);
+
+// ✅ Dışarıdan harici komut yükleyicimizi çağırabilmek için:
+extern void load_command_module(const char* filepath, int argc, char** argv);
 
 // ------------------------------------------------------------
 // Identity + cwd
@@ -185,7 +186,68 @@ void shell_handle_scancode(uint16_t ev) {
         echo_newline();
 
         if (g_len > 0) {
-            commands_execute(g_line);
+            // Komut satırını argümanlarına bölmek için bir kopya oluşturalım
+            char line_copy[128];
+            strncpy(line_copy, g_line, sizeof(line_copy) - 1);
+            line_copy[sizeof(line_copy) - 1] = '\0';
+
+            char* argv[16];
+            int argc = 0;
+            char* p = line_copy;
+
+            while (*p != '\0' && argc < 16) {
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p == '\0') break;
+
+                argv[argc++] = p;
+
+                while (*p != '\0' && *p != ' ' && *p != '\t') p++;
+                if (*p != '\0') {
+                    *p = '\0';
+                    p++;
+                }
+            }
+
+            if (argc > 0) {
+                char bin_path[128];
+                int found = 0;
+                vfs_stat_t st;
+
+                if (argv[0][0] == '/') {
+                    strncpy(bin_path, argv[0], sizeof(bin_path) - 1);
+                    bin_path[sizeof(bin_path) - 1] = '\0';
+                    
+                    // Dosya gerçekten diskte / VFS'de var mı kontrol et
+                    if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
+                        found = 1;
+                    }
+                } else {
+                    // 1. Önce /bin/ dizinini kontrol et (örn: /bin/cat)
+                    strncpy(bin_path, "/bin/", sizeof(bin_path) - 1);
+                    bin_path[sizeof(bin_path) - 1] = '\0';
+                    strncat(bin_path, argv[0], sizeof(bin_path) - strlen(bin_path) - 1);
+                    
+                    if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
+                        found = 1;
+                    } else {
+                        // 2. /bin altında yoksa /sys/bin/ dizinine bak
+                        strncpy(bin_path, "/sys/bin/", sizeof(bin_path) - 1);
+                        bin_path[sizeof(bin_path) - 1] = '\0';
+                        strncat(bin_path, argv[0], sizeof(bin_path) - strlen(bin_path) - 1);
+                        
+                        if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
+                            found = 1;
+                        }
+                    }
+                }
+
+                if (found) {
+                    load_command_module(bin_path, argc, argv);
+                } else {
+                    // Harici komut bulunamadıysa dahili komutları çalıştır
+                    commands_execute(g_line);
+                }
+            }
         }
 
         g_len = 0;

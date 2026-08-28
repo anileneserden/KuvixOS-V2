@@ -424,7 +424,8 @@ int vfs_read_all(const char* path, uint8_t* out, uint32_t cap, uint32_t* out_siz
     if (strncmp(resolved, "/persist", 8) == 0 || 
         strncmp(resolved, "/home", 5) == 0 || 
         strncmp(resolved, "/sys", 4) == 0 ||
-        strncmp(resolved, "/etc", 4) == 0) {
+        strncmp(resolved, "/etc", 4) == 0 ||
+        strncmp(resolved, "/bin", 4) == 0) {
         if (kvxfs_read_all(resolved, out, cap, out_size)) return 1;
     }
 

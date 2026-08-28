@@ -414,6 +414,43 @@ void load_driver_module(const char* filepath) {
     }
 }
 
+// --- 3. KOMUT YÜKLEYİCİ VE API (CLI) ---
+typedef struct {
+    void (*print)(const char* str);
+    char (*get_key)(void);
+    int  (*read_file)(const char* path, char* buffer, uint32_t max_size);
+    int  (*write_file)(const char* path, const char* buffer, uint32_t size);
+    int  (*get_file_size)(const char* path);
+} CmdAPI;
+
+static CmdAPI g_cmd_api;
+
+static void cmd_print_wrapper(const char* str) {
+    if (str) printk("%s", str);
+}
+
+void load_command_module(const char* filepath, int argc, char** argv) {
+    if (!filepath) return;
+    // printk("[LOADER] Komut calistiriliyor: %s\n", filepath);
+
+    uint32_t entry_point = load_elf_or_binary(filepath);
+    if (!entry_point) {
+        printk("Hata: Komut yuklenemedi veya bulunamadi: %s\n", filepath);
+        return;
+    }
+
+    memset(&g_cmd_api, 0, sizeof(CmdAPI));
+    g_cmd_api.print      = cmd_print_wrapper; // Sarmalayıcı fonksiyon atandı
+    g_cmd_api.get_key    = kernel_get_key;
+    g_cmd_api.read_file  = kernel_read_file;
+    g_cmd_api.write_file = (void*)(uintptr_t)kvxfs_write_all;
+
+    typedef void (__attribute__((cdecl)) *cmd_entry_t)(int, char**, CmdAPI*);
+    cmd_entry_t start_cmd = (cmd_entry_t)(uintptr_t)entry_point;
+
+    start_cmd(argc, argv, &g_cmd_api);
+}
+
 // Geriye dönük uyumluluk veya eski çağrılar için:
 void load_user_module(const char* filepath) {
     load_desktop_module(filepath);

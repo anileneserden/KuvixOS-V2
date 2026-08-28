@@ -50,4 +50,4 @@ void cmd_cat(int argc, char** argv) {
     }
 }
 
-REGISTER_COMMAND(cat, cmd_cat, "Displays file content");
+//REGISTER_COMMAND(cat, cmd_cat, "Displays file content");
