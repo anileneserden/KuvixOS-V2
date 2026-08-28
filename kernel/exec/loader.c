@@ -1,3 +1,5 @@
+#include <kernel/exec/loader.h>
+
 #include <kernel/drivers/video/de_api.h>
 #include <kernel/drivers/video/login_api.h>
 #include <kernel/drivers/video/fb_console.h>
@@ -11,6 +13,7 @@
 #include <kernel/drivers/input/mouse_ps2.h>
 #include <kernel/drivers/input/keyboard.h>
 #include <kernel/fs/kvxfs.h>
+#include <arch/x86/io.h>
 
 #define DEFAULT_LOAD_ADDRESS 0x00800000
 
@@ -54,6 +57,7 @@ typedef struct {
 // İleri bildirimler (Forward Declarations)
 void load_desktop_module(const char* filepath);
 void load_login_module(const char* filepath);
+int load_driver_module_named(const char* name, const char* filepath);
 
 // --- ORTAK KERNEL WRAPPER'LARI ---
 static void kernel_draw_rect(int x, int y, int w, int h, uint32_t color) {
@@ -274,7 +278,6 @@ static void kernel_start_desktop_from_login(void) {
         }
     }
 
-    // Login modülünün döngüsünden çıkıp masaüstünü başlat
     load_desktop_module(target_desktop);
 }
 
@@ -351,7 +354,7 @@ void load_login_module(const char* filepath) {
     g_login_api.log            = kernel_log;
     g_login_api.read_file      = kernel_read_file;
     g_login_api.render_kbi     = kernel_render_kbi;
-    g_login_api.start_desktop  = kernel_start_desktop_from_login; // Yeni bağlama!
+    g_login_api.start_desktop  = kernel_start_desktop_from_login;
 
     fb_console_set_enabled(false);
     fb_clear(0x000000);
@@ -365,53 +368,80 @@ void load_login_module(const char* filepath) {
     printk("[LOADER] Login ekrani sonlandirildi.\n");
 }
 
+// --- SÜRÜCÜ KAYIT VE YÖNETİM SİSTEMİ ---
+#define MAX_LOADED_DRIVERS 16
+
+typedef struct {
+    char name[32];
+    KDF_Operations ops;
+} registered_driver_t;
+
+static registered_driver_t g_drivers[MAX_LOADED_DRIVERS];
+static int g_driver_count = 0;
+
+static void register_driver_ops(const char* name, KDF_Operations* ops) {
+    if (!name || !ops || g_driver_count >= MAX_LOADED_DRIVERS) return;
+    
+    int i = 0;
+    while (name[i] != '\0' && i < 31) {
+        g_drivers[g_driver_count].name[i] = name[i];
+        i++;
+    }
+    g_drivers[g_driver_count].name[i] = '\0';
+    g_drivers[g_driver_count].ops = *ops;
+    g_driver_count++;
+}
+
+static int kernel_get_driver_value(const char* driver_name, const char* key, char* out_buf, uint32_t max_size) {
+    if (!driver_name || !key || !out_buf || max_size == 0) return -1;
+
+    for (int i = 0; i < g_driver_count; i++) {
+        if (strcmp(g_drivers[i].name, driver_name) == 0) {
+            if (g_drivers[i].ops.control) {
+                return g_drivers[i].ops.control(key, out_buf, max_size);
+            }
+        }
+    }
+    return -1;
+}
+
 // --- KDF SÜRÜCÜ YÜKLEYİCİ (.kdf) ---
+// Eski çağrılarla uyumlu olması için isimli versiyonu kullanıyoruz
+int load_driver_module_named(const char* name, const char* filepath) {
+    if (!filepath || !name) return -1;
+    printk("[LOADER] Sürücü yükleniyor (%s): %s\n", name, filepath);
 
-// Çekirdeğin sürücüye sunacağı servisler (Driver.py ile uyumlu)
-typedef struct {
-    void (*printk)(const char* fmt, ...);
-    uint8_t (*inb)(uint16_t port);
-    void (*outb)(uint16_t port, uint8_t data);
-    void (*register_interrupt)(int irq, void (*handler)(void));
-} KernelAPI;
-
-typedef struct {
-    int (*read)(void* buffer, uint32_t size);
-    int (*write)(const void* buffer, uint32_t size);
-    int (*control)(const char* command, void* arg, uint32_t arg_size);
-} KDF_Operations;
-
-void load_driver_module(const char* filepath) {
-    if (!filepath) return;
-    printk("[LOADER] Sürücü yükleniyor: %s\n", filepath);
-
-    // 1. Sürücü binary dosyasını oku (Örn: /sys/drivers/mouse_ps2.kdf)
     uint32_t entry_point = load_elf_or_binary(filepath);
     if (!entry_point) {
         printk("Hata: Sürücü yüklenemedi!\n");
-        return;
+        return -1;
     }
 
-    // 2. Canlı Kernel Servislerini Hazırla
     static KernelAPI kapi;
     kapi.printk = printk;
-    // Gerekirse port okuma/yazma fonksiyonları buraya bağlanabilir:
-    // kapi.inb = inb;
-    // kapi.outb = outb;
+    kapi.inb = inb;
+    kapi.outb = outb;
 
     static KDF_Operations driver_ops;
     memset(&driver_ops, 0, sizeof(KDF_Operations));
 
-    // 3. Sürücünün Giriş Noktasını (driver_init) Çağır
     typedef int (*driver_init_t)(KernelAPI*, KDF_Operations*);
     driver_init_t init_func = (driver_init_t)(uintptr_t)entry_point;
 
     int result = init_func(&kapi, &driver_ops);
     if (result) {
+        register_driver_ops(name, &driver_ops);
         printk("[LOADER] Sürücü başarıyla başlatıldı ve kaydedildi!\n");
+        return 0; // Başarılı
     } else {
         printk("Hata: Sürücü başlatma rutininden başarısız döndü!\n");
+        return -1;
     }
+}
+
+// Geriye dönük eski tek parametreli fonksiyon imzası
+void load_driver_module(const char* filepath) {
+    load_driver_module_named("unknown", filepath);
 }
 
 // --- 3. KOMUT YÜKLEYİCİ VE API (CLI) ---
@@ -421,6 +451,8 @@ typedef struct {
     int  (*read_file)(const char* path, char* buffer, uint32_t max_size);
     int  (*write_file)(const char* path, const char* buffer, uint32_t size);
     int  (*get_file_size)(const char* path);
+    int  (*get_driver_value)(const char* driver_name, const char* key, char* out_buf, uint32_t max_size);
+    int  (*load_driver)(const char* name, const char* filepath);
 } CmdAPI;
 
 static CmdAPI g_cmd_api;
@@ -431,7 +463,6 @@ static void cmd_print_wrapper(const char* str) {
 
 void load_command_module(const char* filepath, int argc, char** argv) {
     if (!filepath) return;
-    // printk("[LOADER] Komut calistiriliyor: %s\n", filepath);
 
     uint32_t entry_point = load_elf_or_binary(filepath);
     if (!entry_point) {
@@ -440,10 +471,12 @@ void load_command_module(const char* filepath, int argc, char** argv) {
     }
 
     memset(&g_cmd_api, 0, sizeof(CmdAPI));
-    g_cmd_api.print      = cmd_print_wrapper; // Sarmalayıcı fonksiyon atandı
-    g_cmd_api.get_key    = kernel_get_key;
-    g_cmd_api.read_file  = kernel_read_file;
-    g_cmd_api.write_file = (void*)(uintptr_t)kvxfs_write_all;
+    g_cmd_api.print            = cmd_print_wrapper;
+    g_cmd_api.get_key          = kernel_get_key;
+    g_cmd_api.read_file        = kernel_read_file;
+    g_cmd_api.write_file       = (void*)(uintptr_t)kvxfs_write_all;
+    g_cmd_api.get_driver_value = kernel_get_driver_value;
+    g_cmd_api.load_driver      = load_driver_module_named; // ✅ Modprobe desteği bağlandı
 
     typedef void (__attribute__((cdecl)) *cmd_entry_t)(int, char**, CmdAPI*);
     cmd_entry_t start_cmd = (cmd_entry_t)(uintptr_t)entry_point;
@@ -451,7 +484,6 @@ void load_command_module(const char* filepath, int argc, char** argv) {
     start_cmd(argc, argv, &g_cmd_api);
 }
 
-// Geriye dönük uyumluluk veya eski çağrılar için:
 void load_user_module(const char* filepath) {
     load_desktop_module(filepath);
 }
