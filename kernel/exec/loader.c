@@ -421,6 +421,8 @@ typedef struct {
     int  (*read_file)(const char* path, char* buffer, uint32_t max_size);
     int  (*write_file)(const char* path, const char* buffer, uint32_t size);
     int  (*get_file_size)(const char* path);
+    int  (*get_driver_value)(const char* driver_name, const char* key, char* out_buf, uint32_t max_size);
+    int  (*load_driver)(const char* name, const char* filepath);
 } CmdAPI;
 
 static CmdAPI g_cmd_api;
