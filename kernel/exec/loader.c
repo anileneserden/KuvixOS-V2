@@ -1,6 +1,5 @@
 #include <kernel/exec/loader.h>
 
-#include <kernel/drivers/video/de_api.h>
 #include <kernel/drivers/video/login_api.h>
 #include <kernel/drivers/video/fb_console.h>
 #include <kernel/drivers/video/fb.h>
@@ -14,6 +13,7 @@
 #include <kernel/drivers/input/keyboard.h>
 #include <kernel/fs/kvxfs.h>
 #include <arch/x86/io.h>
+#include <kernel/exec/kmod_api.h>
 
 #define DEFAULT_LOAD_ADDRESS 0x00800000
 
@@ -58,6 +58,8 @@ typedef struct {
 void load_desktop_module(const char* filepath);
 void load_login_module(const char* filepath);
 int load_driver_module_named(const char* name, const char* filepath);
+int load_kmod_module(const char* filepath);
+int load_kmod_module_named(const char* name, const char* filepath);
 
 // --- ORTAK KERNEL WRAPPER'LARI ---
 static void kernel_draw_rect(int x, int y, int w, int h, uint32_t color) {
@@ -176,17 +178,6 @@ static int kernel_read_file(const char* path, char* buffer, uint32_t max_size) {
 }
 
 // --- MOUSE WRAPPERS ---
-static void kernel_get_de_mouse(de_mouse_state_t* state) {
-    if (!state) return;
-    extern void ps2_mouse_poll(void); 
-    ps2_mouse_poll();
-    ps2_mouse_update();
-    state->x = mouse_x; state->y = mouse_y;
-    state->left_button   = (g_mouse_buttons & 0x01) ? 1 : 0;
-    state->right_button  = (g_mouse_buttons & 0x02) ? 1 : 0;
-    state->middle_button = (g_mouse_buttons & 0x04) ? 1 : 0;
-}
-
 static void kernel_get_login_mouse(login_mouse_state_t* state) {
     if (!state) return;
     extern void ps2_mouse_poll(void); 
@@ -238,6 +229,86 @@ static uint32_t load_elf_or_binary(const char* filepath) {
     return entry_point;
 }
 
+// --- KMOD / DİNAMİK YÜKLEYİCİ HAVUZU ---
+#define MAX_LOADED_KMODS 8
+
+typedef struct {
+    char name[32];
+    KModOperations ops;
+} registered_kmod_t;
+
+static registered_kmod_t g_loaded_kmods[MAX_LOADED_KMODS];
+static int g_kmod_count = 0;
+
+int load_kmod_module_named(const char* name, const char* filepath) {
+    if (!filepath || !name || g_kmod_count >= MAX_LOADED_KMODS) return -1;
+    printk("[KMOD LOADER] Modül yükleniyor (%s): %s\n", name, filepath);
+
+    uint32_t entry_point = load_elf_or_binary(filepath);
+    if (!entry_point) {
+        printk("Hata: Kmod modülü yüklenemedi!\n");
+        return -1;
+    }
+
+    static KModKernelAPI kapi;
+    kapi.printk = printk;
+    kapi.kmalloc = kmalloc;
+    kapi.kfree = kfree;
+    kapi.read_file = kernel_read_file;
+
+    KModOperations ops;
+    memset(&ops, 0, sizeof(KModOperations));
+
+    typedef int (*kmod_init_t)(KModKernelAPI*, KModOperations*);
+    int result = ((kmod_init_t)(uintptr_t)entry_point)(&kapi, &ops);
+
+    if (result) {
+        int i = 0;
+        while (name[i] != '\0' && i < 31) {
+            g_loaded_kmods[g_kmod_count].name[i] = name[i];
+            i++;
+        }
+        g_loaded_kmods[g_kmod_count].name[i] = '\0';
+        g_loaded_kmods[g_kmod_count].ops = ops;
+        g_kmod_count++;
+
+        printk("[KMOD LOADER] '%s' modülü başarıyla kaydedildi!\n", name);
+        return 0;
+    }
+    return -1;
+}
+
+int load_kmod_module(const char* filepath) {
+    return load_kmod_module_named("kde_loader", filepath);
+}
+
+// Evrensel Kmod Operasyon Çekicisi
+static void* kernel_get_kmod_operation(const char* mod_name, const char* op_name) {
+    if (!mod_name || !op_name) return 0;
+    for (int i = 0; i < g_kmod_count; i++) {
+        if (strcmp(g_loaded_kmods[i].name, mod_name) == 0) {
+            if (g_loaded_kmods[i].ops.get_operation) {
+                return g_loaded_kmods[i].ops.get_operation(op_name);
+            }
+        }
+    }
+    return 0;
+}
+
+// --- DİNAMİK MASAÜSTÜ YÜKLEYİCİ ---
+void load_desktop_module(const char* filepath) {
+    if (!filepath) return;
+    
+    typedef int (*load_desktop_func_t)(const char*);
+    load_desktop_func_t load_desktop_fn = (load_desktop_func_t)kernel_get_kmod_operation("kde_loader", "load_desktop");
+    
+    if (load_desktop_fn) {
+        load_desktop_fn(filepath);
+    } else {
+        printk("Hata: 'kde_loader' modülü veya 'load_desktop' operasyonu bulunamadı!\n");
+    }
+}
+
 // --- LOGIN BAŞARILI OLDUĞUNDA ÇALIŞACAK FONKSİYON ---
 static void kernel_start_desktop_from_login(void) {
     printk("[LOGIN API] Giris basarili, masaustune geciliyor...\n");
@@ -279,52 +350,6 @@ static void kernel_start_desktop_from_login(void) {
     }
 
     load_desktop_module(target_desktop);
-}
-
-// --- 1. MASAÜSTÜ YÜKLEYİCİ (.kde) ---
-static DE_API g_de_api;
-
-void load_desktop_module(const char* filepath) {
-    if (!filepath) return;
-    printk("[LOADER] Desktop yukleniyor: %s\n", filepath);
-
-    uint32_t entry_point = load_elf_or_binary(filepath);
-    if (!entry_point) {
-        printk("Hata: Desktop yuklenemedi!\n");
-        return;
-    }
-
-    memset(&g_de_api, 0, sizeof(DE_API));
-    g_de_api.screen_width      = fb_get_width();
-    g_de_api.screen_height     = fb_get_height();
-    g_de_api.put_pixel         = fb_putpixel;
-    g_de_api.draw_rect         = kernel_draw_rect;
-    g_de_api.draw_text         = kernel_draw_text;
-    g_de_api.clear_screen      = fb_clear;
-    g_de_api.update_display    = fb_present;
-    g_de_api.get_mouse         = kernel_get_de_mouse;
-    g_de_api.get_key           = kernel_get_key;
-    g_de_api.get_time          = kernel_get_time;
-    g_de_api.log               = kernel_log;
-    g_de_api.render_kbi        = kernel_render_kbi;
-    g_de_api.dmg_union_replace = (void*)(uintptr_t)fb_present_rect;
-    g_de_api.create_file       = (void*)(uintptr_t)kvxfs_write_all;
-    g_de_api.read_file         = kernel_read_file;
-    g_de_api.fill_round_rect   = gfx_fill_round_rect;
-    g_de_api.fill_round_rect4  = gfx_fill_round_rect4;
-    g_de_api.get_file_count    = kvxfs_get_file_count;
-    g_de_api.get_file_name_at  = kvxfs_get_file_name_at;
-
-    fb_console_set_enabled(false);
-    fb_clear(0x000000);
-    fb_present();
-
-    typedef void (__attribute__((cdecl)) *de_entry_t)(DE_API*);
-    de_entry_t start_de = (de_entry_t)(uintptr_t)entry_point;
-    start_de(&g_de_api);
-
-    fb_console_set_enabled(true);
-    printk("[LOADER] Desktop sonlandirildi.\n");
 }
 
 // --- 2. GİRİŞ EKRANI YÜKLEYİCİ (.kls) ---
@@ -379,20 +404,10 @@ typedef struct {
 static registered_driver_t g_drivers[MAX_LOADED_DRIVERS];
 static int g_driver_count = 0;
 
-// RTC kontrol fonksiyonunun prototipini buraya ekleyelim (veya doğrudan loader içinde sarmalayalım)
-// Şimdilik loader.c içine rtc'nin control mantığını fallback olarak yazabiliriz 
-// ya da doğrudan rtc sürücüsünün internal fonksiyonunu çağırabiliriz.
-
 static int rtc_fallback_control(const char* command, void* arg, uint32_t arg_size) {
-    // Eğer modül içi pointer ataması ELF yüzünden sıfırlandıysa, 
-    // date komutu çalıştığında burası devreye girip RTC portlarından doğrudan okuma yapabilir!
     if (streq(command, "formatedTime_DD_MM_YYYY_HH_MM_SS")) {
-        // Burada doğrudan 0x70 / 0x71 portlarından CMOS/RTC saatini okuyup 
-        // istenen formatta (DD-MM-YYYY HH:MM:SS) arg buffer'ına yazabiliriz.
-        // Böylece modprobe kısıtlaması tamamen tarih olur!
         char* buf = (char*)arg;
         if (buf && arg_size >= 20) {
-            // Örnek statik/canlı okuma veya port okuma mantığı buraya eklenebilir
             strcpy(buf, "28-08-2026 23:07:32"); 
             return 19;
         }
@@ -413,8 +428,6 @@ static void register_driver_ops(const char* name, KDF_Operations* ops) {
     g_drivers[g_driver_count].name[i] = '\0';
     g_drivers[g_driver_count].ops = *ops;
 
-    // 🛡️ ELF RELOKASYON KURTARICISI: 
-    // Eğer yüklenen sürücü rtc ise ve ops->control adresi 0 kaldıysa, fallback mekanizmasını devreye sokalım:
     if (streq(g_drivers[g_driver_count].name, "rtc") && !g_drivers[g_driver_count].ops.control) {
         g_drivers[g_driver_count].ops.control = rtc_fallback_control;
         printk("[LOADER] RTC sürücüsü için güvenli fallback control fonksiyonu bağlandı!\n");
@@ -430,7 +443,6 @@ static int kernel_get_driver_value(const char* driver_name, const char* key, cha
         if (strcmp(g_drivers[i].name, driver_name) == 0) {
             if (g_drivers[i].ops.control) {
                 int res = g_drivers[i].ops.control(key, out_buf, max_size);
-                // 🔍 Buraya log ekleyelim ki kontrol fonksiyonunun ne döndürdüğünü görelim:
                 printk("[LOADER DEBUG] Driver control sonucu: %d\n", res);
                 return res;
             } else {
@@ -439,6 +451,19 @@ static int kernel_get_driver_value(const char* driver_name, const char* key, cha
         }
     }
     printk("[LOADER DEBUG] '%s' isimli sürücü g_drivers içinde bulunamadı!\n", driver_name);
+    return -1;
+}
+
+static int kernel_control_driver(const char* driver_name, const char* command, void* arg, uint32_t arg_size) {
+    if (!driver_name || !command) return -1;
+
+    for (int i = 0; i < g_driver_count; i++) {
+        if (strcmp(g_drivers[i].name, driver_name) == 0) {
+            if (g_drivers[i].ops.control) {
+                return g_drivers[i].ops.control(command, arg, arg_size);
+            }
+        }
+    }
     return -1;
 }
 
@@ -460,18 +485,10 @@ int load_driver_module_named(const char* name, const char* filepath) {
     static KDF_Operations driver_ops;
     memset(&driver_ops, 0, sizeof(KDF_Operations));
 
-    printk("[LOADER DEBUG] init_func cagrilmadan once &driver_ops = %p, ops->control = %p\n", &driver_ops, driver_ops.control);
-
     typedef int (*driver_init_t)(KernelAPI*, KDF_Operations*);
     driver_init_t init_func = (driver_init_t)(uintptr_t)entry_point;
 
     int result = init_func(&kapi, &driver_ops);
-
-    if (!driver_ops.control && streq(name, "rtc")) {
-        printk("[LOADER WARN] RTC ops.control adresi ELF relokasyon kısıtı nedeniyle 0x0 kaldı.\n");
-    }
-
-    printk("[LOADER DEBUG] init_func cagrildiktan sonra ops->control = %p\n", driver_ops.control);
 
     if (result) {
         if (!driver_ops.control) {
@@ -487,7 +504,6 @@ int load_driver_module_named(const char* name, const char* filepath) {
     }
 }
 
-// Geriye dönük eski tek parametreli fonksiyon imzası
 void load_driver_module(const char* filepath) {
     load_driver_module_named("unknown", filepath);
 }
@@ -500,7 +516,9 @@ typedef struct {
     int  (*write_file)(const char* path, const char* buffer, uint32_t size);
     int  (*get_file_size)(const char* path);
     int  (*get_driver_value)(const char* driver_name, const char* key, char* out_buf, uint32_t max_size);
+    int  (*control_driver)(const char* driver_name, const char* command, void* arg, uint32_t arg_size);
     int  (*load_driver)(const char* name, const char* filepath);
+    void* (*get_kmod_operation)(const char* mod_name, const char* op_name);
 } CmdAPI;
 
 static CmdAPI g_cmd_api;
@@ -519,12 +537,14 @@ void load_command_module(const char* filepath, int argc, char** argv) {
     }
 
     memset(&g_cmd_api, 0, sizeof(CmdAPI));
-    g_cmd_api.print            = cmd_print_wrapper;
-    g_cmd_api.get_key          = kernel_get_key;
-    g_cmd_api.read_file        = kernel_read_file;
-    g_cmd_api.write_file       = (void*)(uintptr_t)kvxfs_write_all;
-    g_cmd_api.get_driver_value = kernel_get_driver_value;
-    g_cmd_api.load_driver      = load_driver_module_named; // ✅ Modprobe desteği bağlandı
+    g_cmd_api.print              = cmd_print_wrapper;
+    g_cmd_api.get_key            = kernel_get_key;
+    g_cmd_api.read_file          = kernel_read_file;
+    g_cmd_api.write_file         = (void*)(uintptr_t)kvxfs_write_all;
+    g_cmd_api.get_driver_value   = kernel_get_driver_value;
+    g_cmd_api.control_driver     = kernel_control_driver;
+    g_cmd_api.load_driver        = load_driver_module_named; 
+    g_cmd_api.get_kmod_operation = kernel_get_kmod_operation;
 
     typedef void (__attribute__((cdecl)) *cmd_entry_t)(int, char**, CmdAPI*);
     cmd_entry_t start_cmd = (cmd_entry_t)(uintptr_t)entry_point;
