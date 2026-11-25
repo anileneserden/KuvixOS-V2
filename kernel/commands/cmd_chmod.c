@@ -53,4 +53,4 @@ void cmd_chmod(int argc, char** argv) {
     }
 }
 
-REGISTER_COMMAND(chmod, cmd_chmod, "Changes file permissions");
+// REGISTER_COMMAND(chmod, cmd_chmod, "Changes file permissions");
