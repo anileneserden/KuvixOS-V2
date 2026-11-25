@@ -222,21 +222,30 @@ void shell_handle_scancode(uint16_t ev) {
                         found = 1;
                     }
                 } else {
-                    // 1. Önce /bin/ dizinini kontrol et (örn: /bin/cat)
+                    // 1. Önce /bin/ dizinini kontrol et
                     strncpy(bin_path, "/bin/", sizeof(bin_path) - 1);
                     bin_path[sizeof(bin_path) - 1] = '\0';
                     strncat(bin_path, argv[0], sizeof(bin_path) - strlen(bin_path) - 1);
-                    
+
                     if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
                         found = 1;
                     } else {
-                        // 2. /bin altında yoksa /sys/bin/ dizinine bak
-                        strncpy(bin_path, "/sys/bin/", sizeof(bin_path) - 1);
+                        // 2. /usr/bin/ dizinine bak
+                        strncpy(bin_path, "/usr/bin/", sizeof(bin_path) - 1);
                         bin_path[sizeof(bin_path) - 1] = '\0';
                         strncat(bin_path, argv[0], sizeof(bin_path) - strlen(bin_path) - 1);
-                        
+
                         if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
                             found = 1;
+                        } else {
+                            // 3. /sys/bin/ dizinine bak
+                            strncpy(bin_path, "/sys/bin/", sizeof(bin_path) - 1);
+                            bin_path[sizeof(bin_path) - 1] = '\0';
+                            strncat(bin_path, argv[0], sizeof(bin_path) - strlen(bin_path) - 1);
+
+                            if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
+                                found = 1;
+                            }
                         }
                     }
                 }
