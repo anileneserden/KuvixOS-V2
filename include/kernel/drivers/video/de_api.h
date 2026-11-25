@@ -29,7 +29,7 @@ typedef struct {
     void (*put_pixel)(int x, int y, uint32_t color);
     void (*draw_rect)(int x, int y, int w, int h, uint32_t color);
     void (*fill_round_rect)(int x, int y, int w, int h, int r, uint32_t color);
-    void (*fill_round_rect4)(int x, int y, int w, int h, int rtl, int rtr, int rbl, int rbr, uint32_t color); // <--- Yeni eklendi
+    void (*fill_round_rect4)(int x, int y, int w, int h, int rtl, int rtr, int rbl, int rbr, uint32_t color);
     void (*draw_text)(int x, int y, const char* text, uint32_t color);
     void (*clear_screen)(uint32_t color);
     void (*update_display)(void);
@@ -51,12 +51,15 @@ typedef struct {
     int (*get_file_count)(const char* path);
     int (*get_file_name_at)(const char* path, int index, char* dest_name, int max_len);
 
-    // Uygulama Çalıştırma ve Pencere İşlevleri
+    // Uygulama Çalıştırma Fonksiyonu
     int (*exec)(const char* path);
+
+    // Dinamik Pencere Oluşturma İşlevi (ID Döner)
     int (*create_window)(int x, int y, int w, int h);
 
-    // String Fonksiyonları
+    // String Formatlama İşlevi (ksprintf'e yönlendirilmiştir)
     int (*ksprintf)(char* str, unsigned long size, const char* format, ...);
+
     size_t (*strlen)(const char* str);
     int (*strcmp)(const char* s1, const char* s2);
     int (*strncmp)(const char* s1, const char* s2, size_t n);

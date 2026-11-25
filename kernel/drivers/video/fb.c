@@ -22,20 +22,22 @@ void fb_init(uint32_t lfb_addr, uint32_t width, uint32_t height, uint32_t pitch_
     FB_PITCH_BYTES = pitch_bytes;
     FB_PITCH_PIXELS = (pitch_bytes / 4); // 32bpp varsayımı
 
-    // Güvenlik: pitch hiç gelmediyse “packed” varsay
     if (FB_PITCH_PIXELS == 0) {
         FB_PITCH_PIXELS = FB_WIDTH;
         FB_PITCH_BYTES = FB_WIDTH * 4;
     }
 
-    // Backbuffer'ı gerçek çözünürlükte ayır
     fb_backbuffer = (uint32_t*)kmalloc(FB_WIDTH * FB_HEIGHT * sizeof(uint32_t));
+    if (!fb_backbuffer) {
+        printk("FB HATA: backbuffer ayrilamadi (%dx%d)\n", FB_WIDTH, FB_HEIGHT);
+    }
 
     fb_clear(0x1a1a1a);
     fb_present();
 
-    printk("FB INIT: addr=%x w=%d h=%d pitchB=%d pitchP=%d\n",
-           (uint32_t)fb_addr, FB_WIDTH, FB_HEIGHT, FB_PITCH_BYTES, FB_PITCH_PIXELS);
+    printk("FB INIT: addr=%x backbuf=%x w=%d h=%d pitchB=%d pitchP=%d\n",
+           (uint32_t)fb_addr, (uint32_t)fb_backbuffer, FB_WIDTH, FB_HEIGHT,
+           FB_PITCH_BYTES, FB_PITCH_PIXELS);
 }
 
 void fb_putpixel(int x, int y, uint32_t color) {

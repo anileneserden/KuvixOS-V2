@@ -82,9 +82,6 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
 // ------------------------------------------------------------
 // TTF Font Loader init
 // ------------------------------------------------------------
-// ------------------------------------------------------------
-// TTF Font Loader init
-// ------------------------------------------------------------
 static void init_system_font(void) {
     printk("[TTF] Sistem fontu yukleniyor...\n");
     

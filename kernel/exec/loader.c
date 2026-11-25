@@ -103,7 +103,7 @@ static void kernel_get_time(char* buffer) {
 }
 
 static void kernel_log(const char* msg) {
-    if (msg) printk("%s", msg);
+    if (msg) printk("[DE] %s\n", msg);
 }
 
 static int kernel_render_kbi(int target_x, int target_y, const char* filepath) {
@@ -196,39 +196,83 @@ static void kernel_get_login_mouse(login_mouse_state_t* state) {
 
 // --- ORTAK ELF OKUYUCU YARDIMCISI ---
 static uint32_t load_elf_or_binary(const char* filepath) {
+    if (!filepath) return 0;
+
     uint32_t max_size = 64 * 1024;
     uint8_t* file_buf = (uint8_t*)kmalloc(max_size);
-    if (!file_buf) return 0;
+    if (!file_buf) {
+        printk("[ELF] HATA: file_buf icin kmalloc basarisiz\n");
+        return 0;
+    }
 
     memset(file_buf, 0, max_size);
     uint32_t nread = 0;
     if (!vfs_read_all(filepath, file_buf, max_size, &nread) || nread == 0) {
+        printk("[ELF] HATA: dosya okunamadi veya bos: %s (nread=%u)\n", filepath, nread);
         kfree(file_buf);
         return 0;
     }
 
+    printk("[ELF] Dosya okundu: %s, boyut=%u byte\n", filepath, nread);
+
     uint32_t entry_point = 0;
-    if (nread >= sizeof(elf32_ehdr_t) && 
-        file_buf[0] == 0x7F && file_buf[1] == 'E' && 
+
+    if (nread >= sizeof(elf32_ehdr_t) &&
+        file_buf[0] == 0x7F && file_buf[1] == 'E' &&
         file_buf[2] == 'L' && file_buf[3] == 'F') {
 
         elf32_ehdr_t* ehdr = (elf32_ehdr_t*)file_buf;
         entry_point = ehdr->e_entry;
 
+        printk("[ELF] 32-bit ELF bulundu: entry=0x%x phoff=%u phnum=%u\n",
+               ehdr->e_entry, ehdr->e_phoff, ehdr->e_phnum);
+
+        if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0 ||
+            (uint64_t)ehdr->e_phoff + (uint64_t)ehdr->e_phnum * sizeof(elf32_phdr_t) > nread) {
+            printk("[ELF] HATA: gecersiz program header tablosu\n");
+            kfree(file_buf);
+            return 0;
+        }
+
         elf32_phdr_t* phdr = (elf32_phdr_t*)(file_buf + ehdr->e_phoff);
+        int loaded_segments = 0;
+
         for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
             if (phdr[i].p_type == PT_LOAD) {
+                if ((uint64_t)phdr[i].p_offset + (uint64_t)phdr[i].p_filesz > nread) {
+                    printk("[ELF] HATA: segment %u dosya boyutunu asiyor\n", i);
+                    kfree(file_buf);
+                    return 0;
+                }
+
                 void* dest = (void*)(uintptr_t)phdr[i].p_vaddr;
-                memcpy(dest, file_buf + phdr[i].p_offset, phdr[i].p_filesz);
+                printk("[ELF] PT_LOAD[%u]: vaddr=0x%x off=%u filesz=%u memsz=%u\n",
+                       i, phdr[i].p_vaddr, phdr[i].p_offset, phdr[i].p_filesz, phdr[i].p_memsz);
+
+                if (phdr[i].p_filesz > 0) {
+                    memcpy(dest, file_buf + phdr[i].p_offset, phdr[i].p_filesz);
+                }
                 if (phdr[i].p_memsz > phdr[i].p_filesz) {
                     memset((uint8_t*)dest + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
                 }
+                loaded_segments++;
             }
+        }
+
+        if (loaded_segments == 0 || entry_point == 0) {
+            printk("[ELF] HATA: yuklenen PT_LOAD yok veya entry=0x%x\n", entry_point);
+            kfree(file_buf);
+            return 0;
         }
     } else {
         entry_point = DEFAULT_LOAD_ADDRESS;
+        printk("[ELF] Raw binary olarak yukleniyor: entry=0x%x boyut=%u\n", entry_point, nread);
         memcpy((void*)(uintptr_t)entry_point, file_buf, nread);
     }
+
+    uint8_t* ep = (uint8_t*)(uintptr_t)entry_point;
+    printk("[ELF] entry_point (0x%x) ilk 8 bayt: %x %x %x %x %x %x %x %x\n",
+           entry_point, ep[0], ep[1], ep[2], ep[3], ep[4], ep[5], ep[6], ep[7]);
 
     kfree(file_buf);
     return entry_point;
@@ -287,13 +331,14 @@ void load_desktop_module(const char* filepath) {
 
     uint32_t entry_point = load_elf_or_binary(filepath);
     if (!entry_point) {
-        printk("Hata: Desktop yuklenemedi!\n");
+        printk("[LOADER] Hata: Desktop yuklenemedi!\n");
         return;
     }
+    printk("[LOADER] entry_point=0x%x\n", entry_point);
 
     memset(&g_de_api, 0, sizeof(DE_API));
-    g_de_api.screen_width      = fb_get_width();
-    g_de_api.screen_height     = fb_get_height();
+    g_de_api.screen_width      = (int)fb_get_width();
+    g_de_api.screen_height     = (int)fb_get_height();
     g_de_api.put_pixel         = fb_putpixel;
     g_de_api.draw_rect         = kernel_draw_rect;
     g_de_api.draw_text         = kernel_draw_text;
@@ -312,10 +357,13 @@ void load_desktop_module(const char* filepath) {
     g_de_api.get_file_count    = kvxfs_get_file_count;
     g_de_api.get_file_name_at  = kvxfs_get_file_name_at;
 
+    /*
     fb_console_set_enabled(false);
     fb_clear(0x000000);
     fb_present();
+    */
 
+    printk("[LOADER] start_de cagriliyor (0x%x)...\n", entry_point);
     typedef void (__attribute__((cdecl)) *de_entry_t)(DE_API*);
     de_entry_t start_de = (de_entry_t)(uintptr_t)entry_point;
     start_de(&g_de_api);
