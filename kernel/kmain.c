@@ -35,6 +35,8 @@
 
 #include <kernel/drivers/video/ttf.h>
 
+#include <kernel/exec/loader.h>
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -135,7 +137,7 @@ static void init_system_font(void) {
 void test_vfs_disk_access() {
     printk("\n[DISK-TEST] VFS disk baglantisi kontrol ediliyor...\n");
     
-    const char* test_file = "/home/anil/mouse_ps2.kdf"; 
+    const char* test_file = "/sys/drivers/rtc.kdf"; 
     
     vfs_stat_t st;
     if (vfs_stat(test_file, &st)) {
@@ -143,6 +145,7 @@ void test_vfs_disk_access() {
         
         if (st.backend == 3) {
             printk("[DISK-TEST] OK: Backend 3 (KVXFS) dogrulandi.\n");
+            
         } else {
             printk("[DISK-TEST] UYARI: Dosya bulundu ama backend beklenenden farkli: %d\n", st.backend);
         }
@@ -195,6 +198,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     fs_init_once();
 
     test_vfs_disk_access();
+
+    load_driver_module("/sys/drivers/rtc.kdf");
 
     vfs_set_cwd("/home/anil");
 
