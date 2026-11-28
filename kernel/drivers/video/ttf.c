@@ -54,15 +54,21 @@ bool ttf_init_from_memory(uint8_t* font_buffer, size_t buffer_size, float pixel_
     g_font_buffer = font_buffer;
     g_font_size = pixel_height;
 
+    printk("[TTF] 1/3 stbtt_GetFontOffsetForIndex...\n");
+    int offset = stbtt_GetFontOffsetForIndex(g_font_buffer, 0);
+    printk("[TTF] offset=%d, stbtt_InitFont...\n", offset);
+
     // TrueType font dosyasını başlat ve parse et
-    if (!stbtt_InitFont(&g_font_info, g_font_buffer, stbtt_GetFontOffsetForIndex(g_font_buffer, 0))) {
+    if (!stbtt_InitFont(&g_font_info, g_font_buffer, offset)) {
         printk("[TTF] Hata: stbtt_InitFont basarisiz oldu!\n");
         g_ttf_initialized = false;
         return false;
     }
 
+    printk("[TTF] 2/3 stbtt_ScaleForPixelHeight...\n");
     // Ölçek faktörünü ve metrikleri hesapla
     g_scale = stbtt_ScaleForPixelHeight(&g_font_info, g_font_size);
+    printk("[TTF] 3/3 stbtt_GetFontVMetrics...\n");
     stbtt_GetFontVMetrics(&g_font_info, &g_ascent, &g_descent, &g_line_gap);
 
     g_ttf_initialized = true;

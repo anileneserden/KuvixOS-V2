@@ -39,3 +39,25 @@ float acos(float x) {
     if (x <= -1.0f) return 3.14159265f;
     return 1.5707963f - x; 
 }
+
+float floor(float x) {
+    int i = (int)x;
+    if ((float)i > x) {
+        i -= 1;
+    }
+    return (float)i;
+}
+
+float ceil(float x) {
+    int i = (int)x;
+    if ((float)i < x) {
+        i += 1;
+    }
+    return (float)i;
+}
+
+float fmod(float x, float y) {
+    if (y == 0.0f) return 0.0f;
+    int trunc_q = (int)(x / y);
+    return x - ((float)trunc_q * y);
+}

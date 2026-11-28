@@ -37,6 +37,8 @@
 
 #include <kernel/exec/loader.h>
 
+#define DEBUG_TTF_SCREEN 0
+
 extern void gdt_init(void);
 extern void idt_init(void);
 
@@ -86,37 +88,28 @@ static void init_framebuffer(uint32_t magic, multiboot_info_t* mbi) {
 // ------------------------------------------------------------
 static void init_system_font(void) {
     printk("[TTF] Sistem fontu yukleniyor...\n");
-    
-    uint32_t max_size = 256 * 1024; // 256 KB font alanı
-    uint8_t* font_buf = kmalloc(max_size);
-    if (!font_buf) {
-        printk("[TTF] Hata: Font icin bellek ayrilamadi!\n");
-        return;
-    }
 
     const char* font_path = "/sys/fonts/arial.ttf";
-    
+
     vfs_stat_t st;
     if (!vfs_stat(font_path, &st)) {
         printk("[TTF] Hata: '%s' bulunamadi!\n", font_path);
-        kfree(font_buf);
         return;
     }
 
-    vfs_file_t* file = NULL;
-    if (!vfs_open(font_path, 0, &file)) {
-        printk("[TTF] Hata: '%s' acilamadi!\n", font_path);
-        kfree(font_buf);
+    if (st.size == 0) {
+        printk("[TTF] Hata: '%s' bos!\n", font_path);
+        return;
+    }
+
+    uint8_t* font_buf = kmalloc(st.size + 16);
+    if (!font_buf) {
+        printk("[TTF] Hata: Font icin bellek ayrilamadi (%u bayt)\n", st.size);
         return;
     }
 
     uint32_t bytes_read = 0;
-    int read_res = vfs_read(file, font_buf, max_size, &bytes_read);
-    
-    // Eğer vfs_close fonksiyonun varsa burada dosyayı kapatabilirsin
-    // vfs_close(file);
-
-    if (!read_res || bytes_read == 0) {
+    if (!vfs_read_all(font_path, font_buf, st.size + 16, &bytes_read) || bytes_read == 0) {
         printk("[TTF] Hata: Font dosyasi okunamadi!\n");
         kfree(font_buf);
         return;
@@ -124,25 +117,91 @@ static void init_system_font(void) {
 
     printk("[TTF] Font dosyasi okundu: %u bayt. Baslatiliyor...\n", bytes_read);
 
-    // ✅ Doğru çağrı: Bellek, boyut ve piksel yüksekliği (16.0f) veriliyor
     if (!ttf_init_from_memory(font_buf, bytes_read, 16.0f)) {
         printk("[TTF] Hata: ttf_init_from_memory basarisiz oldu!\n");
         kfree(font_buf);
     }
 }
 
+#if DEBUG_TTF_SCREEN
+static void ttf_debug_draw_string(const char* str, int x, int baseline_y, uint32_t color) {
+    if (!ttf_is_initialized() || !str) return;
+
+    int pen_x = x;
+    for (int i = 0; str[i] != '\0'; i++) {
+        unsigned char ch = (unsigned char)str[i];
+        int w = 0, h = 0, xoff = 0, yoff = 0;
+
+        unsigned char* bmp = ttf_get_code_bitmap((uint32_t)ch, &w, &h, &xoff, &yoff);
+        if (bmp) {
+            for (int row = 0; row < h; row++) {
+                for (int col = 0; col < w; col++) {
+                    unsigned char alpha = bmp[row * w + col];
+                    if (alpha > 45) {
+                        fb_putpixel(pen_x + xoff + col, baseline_y + yoff + row, color);
+                    }
+                }
+            }
+            ttf_free_bitmap(bmp);
+        }
+
+        pen_x += (w > 0 ? w + 2 : 10);
+    }
+}
+
+static void run_ttf_debug_screen(void) {
+    fb_console_set_enabled(false);
+    fb_clear(0x0010131A);
+
+    for (int y = 30; y < 74; y++) {
+        for (int x = 30; x < 620; x++) {
+            fb_putpixel(x, y, 0x001C2230);
+        }
+    }
+
+    if (ttf_is_initialized()) {
+        ttf_debug_draw_string("KuvixOS - TTF Debug Menu", 44, 58, 0x00F5B041);
+        ttf_debug_draw_string("Font: /sys/fonts/arial.ttf (OK)", 44, 115, 0x00EAECEF);
+        ttf_debug_draw_string("[ESC / F1] Normal acilisa gec", 44, 155, 0x009AA5B4);
+    } else {
+        gfx_draw_text_utf8(44, 46, 0x00F5B041, "KuvixOS - TTF Debug Menu (Fallback)");
+        gfx_draw_text_utf8(44, 96, 0x00FF6B6B, "TTF baslatilamadi (/sys/fonts/arial.ttf kontrol et)");
+        gfx_draw_text_utf8(44, 136, 0x009AA5B4, "[ESC / F1] Normal acilisa gec");
+    }
+
+    // Karşılaştırma için gfx_draw_text_utf8 (8x16 bitmap + UTF-8/KVX dönüşümü)
+    gfx_draw_line(44, 185, 620, 185, 0x002B3344);
+    gfx_draw_text_utf8(44, 200, 0x007DD3FC, "[gfx_draw_text_utf8] Karsilastirma Metni (8x16)");
+    gfx_draw_text_utf8(44, 224, 0x00EAECEF, "Turkce karakter testi: ç ğ ı İ ö ş ü Ç Ğ Ö Ş Ü");
+
+    fb_present();
+
+    while (1) {
+        uint16_t sc;
+        while ((sc = kbd_pop_event()) != 0) {
+            if (sc == 0x01 || sc == 0x3B) {
+                fb_console_set_enabled(true);
+                fb_clear(0x00000000);
+                fb_present();
+                return;
+            }
+        }
+        asm volatile("hlt");
+    }
+}
+#endif
+
 void test_vfs_disk_access() {
     printk("\n[DISK-TEST] VFS disk baglantisi kontrol ediliyor...\n");
-    
-    const char* test_file = "/sys/drivers/rtc.kdf"; 
-    
+
+    const char* test_file = "/sys/drivers/rtc.kdf";
+
     vfs_stat_t st;
     if (vfs_stat(test_file, &st)) {
         printk("[DISK-TEST] OK: '%s' bulundu! Backend: %d\n", test_file, st.backend);
-        
+
         if (st.backend == 3) {
             printk("[DISK-TEST] OK: Backend 3 (KVXFS) dogrulandi.\n");
-            
         } else {
             printk("[DISK-TEST] UYARI: Dosya bulundu ama backend beklenenden farkli: %d\n", st.backend);
         }
@@ -178,9 +237,6 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     gfx_init();
     fb_console_init(0x00FFFFFF, 0x00000000);
 
-    // 🚀 TTF Font Yükleyicisini Başlat
-    init_system_font();
-
     kbd_init();
     ps2_mouse_init();
 
@@ -193,6 +249,13 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     asm volatile("sti");
 
     fs_init_once();
+
+#if DEBUG_TTF_SCREEN
+    init_system_font();
+    run_ttf_debug_screen();
+#else
+    init_system_font();
+#endif
 
     test_vfs_disk_access();
 

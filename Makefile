@@ -107,7 +107,7 @@ $(BUILD)/%.o: %.asm
 
 $(KERNEL): $(OBJS)
 	@mkdir -p $(BUILD)
-	$(CC) $(LDFLAGS) -o $@ -Wl,--start-group $(OBJS) -lgcc -Wl,--end-group
+	$(CC) $(LDFLAGS) -o $@ -Wl,--start-group $(OBJS) "$(LIBGCC)" -Wl,--end-group
 
 # --- ISO üret ---
 iso: $(KERNEL)
