@@ -42,6 +42,12 @@
 extern void gdt_init(void);
 extern void idt_init(void);
 
+extern int load_driver_module_named(const char* name, const char* filepath);
+typedef int (*driver_read_fn)(void* buffer, uint32_t size);
+
+extern void* getDriverFunction(const char* driver_name, const char* function_name);
+extern void session_handle_char(char c);
+
 extern uint8_t _end;
 
 static inline uintptr_t align_up(uintptr_t x, uintptr_t a) {
@@ -259,7 +265,10 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     test_vfs_disk_access();
 
-    load_driver_module("/sys/drivers/rtc.kdf");
+    //load_driver_module("/sys/drivers/rtc.kdf");
+    load_driver_module_named("ehci", "/sys/drivers/ehci");
+
+    driver_read_fn ehci_read_char = (driver_read_fn)getDriverFunction("ehci", "read_char");
 
     vfs_set_cwd("/home/anil");
 
@@ -276,8 +285,15 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
             session_handle_scancode(sc);
         }
 
+        if (ehci_read_char) {
+            char ch = 0;
+            if (ehci_read_char(&ch, 1) > 0 && ch != 0) {
+                session_handle_char(ch);
+            }
+        }
+
         shell_tick();
 
-        asm volatile("hlt");
+        asm volatile("pause");
     }
 }

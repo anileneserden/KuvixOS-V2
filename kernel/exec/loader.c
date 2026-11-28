@@ -15,6 +15,8 @@
 #include <kernel/fs/kvxfs.h>
 #include <arch/x86/io.h>
 
+#include <kernel/drivers/net/pci.h>
+
 #define DEFAULT_LOAD_ADDRESS 0x00800000
 
 // --- ORTAK ELF YAPILARI VE KBI ---
@@ -490,6 +492,35 @@ static int kernel_get_driver_value(const char* driver_name, const char* key, cha
     return -1;
 }
 
+void* getDriverFunction(const char* driver_name, const char* function_name) {
+    if (!driver_name || !function_name) return 0;
+
+    for (int i = 0; i < g_driver_count; i++) {
+        if (strcmp(g_drivers[i].name, driver_name) == 0) {
+            if (strcmp(function_name, "read") == 0 || strcmp(function_name, "read_char") == 0) {
+                return (void*)(uintptr_t)g_drivers[i].ops.read;
+            }
+            if (strcmp(function_name, "write") == 0) {
+                return (void*)(uintptr_t)g_drivers[i].ops.write;
+            }
+            if (strcmp(function_name, "control") == 0) {
+                return (void*)(uintptr_t)g_drivers[i].ops.control;
+            }
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static void* kapi_dma_alloc(uint32_t size, uint32_t align) {
+    if (size == 0) return 0;
+    if (align < 4u) align = 4u;
+    uint32_t raw = (uint32_t)kmalloc(size + align);
+    if (!raw) return 0;
+    uint32_t aligned = (raw + (align - 1u)) & ~(align - 1u);
+    return (void*)aligned;
+}
+
 int load_driver_module_named(const char* name, const char* filepath) {
     if (!filepath || !name) return -1;
     printk("[LOADER] Sürücü yükleniyor (%s): %s\n", name, filepath);
@@ -504,6 +535,9 @@ int load_driver_module_named(const char* name, const char* filepath) {
     kapi.printk = printk;
     kapi.inb = inb;
     kapi.outb = outb;
+    kapi.pci_read32 = pci_read32;
+    kapi.pci_write32 = pci_write32;
+    kapi.dma_alloc = kapi_dma_alloc;
 
     static KDF_Operations driver_ops;
     memset(&driver_ops, 0, sizeof(KDF_Operations));
@@ -522,8 +556,8 @@ int load_driver_module_named(const char* name, const char* filepath) {
     printk("[LOADER DEBUG] init_func cagrildiktan sonra ops->control = %p\n", driver_ops.control);
 
     if (result) {
-        if (!driver_ops.control) {
-            printk("Hata: Sürücü başlatıldı ancak ops.control atanmadı!\n");
+        if (!driver_ops.control && streq(name, "rtc")) {
+            printk("Hata: RTC sürücüsü başlatıldı ancak ops.control atanmadı!\n");
         }
 
         register_driver_ops(name, &driver_ops);

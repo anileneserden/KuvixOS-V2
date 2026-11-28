@@ -180,6 +180,7 @@ void shell_handle_scancode(uint16_t ev) {
 
     char c = kbd_scancode_to_ascii(sc);
     if (!c) return;
+    shell_handle_char(c);
 
     if (c == '\n' || c == '\r') {
         g_line[g_len] = 0;
@@ -268,6 +269,113 @@ void shell_handle_scancode(uint16_t ev) {
         }
 
         // ✅ Oturum hala açık mı kontrol et. Logout yapıldıysa prompt basma!
+        if (session_is_logged_in()) {
+            shell_print_prompt();
+        }
+        return;
+    }
+
+    if (c == '\b' || (uint8_t)c == 8 || (uint8_t)c == 127) {
+        if (g_len > 0) {
+            g_len--;
+            g_line[g_len] = 0;
+            echo_backspace();
+        }
+        return;
+    }
+
+    uint8_t uc = (uint8_t)c;
+    if (uc >= 32) {
+        if (g_len < (int)sizeof(g_line) - 1) {
+            g_line[g_len++] = (char)uc;
+            g_line[g_len] = 0;
+            echo_char(uc);
+        }
+    }
+}
+
+void shell_handle_char(char c) {
+    if (!c) return;
+
+    if (c == '\n' || c == '\r') {
+        g_line[g_len] = 0;
+        echo_newline();
+
+        if (g_len > 0) {
+            char line_copy[128];
+            strncpy(line_copy, g_line, sizeof(line_copy) - 1);
+            line_copy[sizeof(line_copy) - 1] = '\0';
+
+            char* argv[16];
+            int argc = 0;
+            char* p = line_copy;
+
+            while (*p != '\0' && argc < 16) {
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p == '\0') break;
+
+                argv[argc++] = p;
+
+                while (*p != '\0' && *p != ' ' && *p != '\t') p++;
+                if (*p != '\0') {
+                    *p = '\0';
+                    p++;
+                }
+            }
+
+            if (argc > 0) {
+                char bin_path[128];
+                int found = 0;
+                vfs_stat_t st;
+
+                if (argv[0][0] == '/') {
+                    strncpy(bin_path, argv[0], sizeof(bin_path) - 1);
+                    bin_path[sizeof(bin_path) - 1] = '\0';
+
+                    if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
+                        found = 1;
+                    }
+                } else {
+                    strncpy(bin_path, "/bin/", sizeof(bin_path) - 1);
+                    bin_path[sizeof(bin_path) - 1] = '\0';
+                    strncat(bin_path, argv[0], sizeof(bin_path) - strlen(bin_path) - 1);
+
+                    if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
+                        found = 1;
+                    } else {
+                        strncpy(bin_path, "/usr/bin/", sizeof(bin_path) - 1);
+                        bin_path[sizeof(bin_path) - 1] = '\0';
+                        strncat(bin_path, argv[0], sizeof(bin_path) - strlen(bin_path) - 1);
+
+                        if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
+                            found = 1;
+                        } else {
+                            strncpy(bin_path, "/sys/bin/", sizeof(bin_path) - 1);
+                            bin_path[sizeof(bin_path) - 1] = '\0';
+                            strncat(bin_path, argv[0], sizeof(bin_path) - strlen(bin_path) - 1);
+
+                            if (vfs_stat(bin_path, &st) && st.type == VFS_T_FILE) {
+                                found = 1;
+                            }
+                        }
+                    }
+                }
+
+                if (found) {
+                    load_command_module(bin_path, argc, argv);
+                } else {
+                    commands_execute(g_line);
+                }
+            }
+        }
+
+        g_len = 0;
+        g_line[0] = 0;
+
+        if (passwd_is_active()) {
+            return;
+        }
+
         if (session_is_logged_in()) {
             shell_print_prompt();
         }

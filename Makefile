@@ -142,6 +142,10 @@ run: iso
 
 	qemu-system-i386 -cdrom $(IMAGE) \
 		-drive file=/home/anil/KuvixOS-V2/main/disk.img,format=raw,index=0,media=disk \
+		-drive if=none,id=usbstick,file=/tmp/usb_test.img,format=raw \
+		-device usb-ehci,id=ehci \
+		-device usb-storage,drive=usbstick,bus=ehci.0 \
+		-device usb-kbd,bus=ehci.0 \
 		-boot d \
 		-vga std \
 		-display sdl,gl=on \
